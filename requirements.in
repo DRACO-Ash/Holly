@@ -1,0 +1,10 @@
+# Runtime dependencies for Holly (server archetype). Exact pins only; never a range.
+# This is the manifest. The lock is requirements.txt, hash-pinned and generated from this file:
+#   uv pip compile requirements.in --universal --python-version 3.12 --generate-hashes -o requirements.txt
+# Never edit requirements.txt by hand. Recompile it, then recompile requirements-dev.txt.
+fastapi==0.143.0
+gunicorn==26.2.0
+uvicorn==0.54.0
+# Reason recorded (dependencies skill): the template's uvicorn.workers.UvicornWorker is deprecated
+# upstream in favour of this package, which is maintained by the uvicorn maintainer.
+uvicorn-worker==0.4.0

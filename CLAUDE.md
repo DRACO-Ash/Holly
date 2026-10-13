@@ -1,12 +1,12 @@
 # CLAUDE.md
 
-> Adoption note (delete after filling): this file is inherited from the Bluestaq Foundations baseline. Replace every `${PLACEHOLDER}` with a real value (the list and how to obtain each is in `AUDIT.md`), then delete this note. Keep this file short; procedures live in `skills/`, not here.
+> Adoption note (delete when the two open items are resolved): this file is inherited from the Bluestaq Foundations baseline and was filled at scaffold. Still open, both `TBC, re-verify`: the App Store slug, and the platform's exact install and test commands for the python template (rehearse the confirmed command with `TEST_CMD='...' sh scripts/simulate-pipeline.sh`). Keep this file short; procedures live in `skills/`, not here.
 
 Always-true conventions for this project. Procedures live in `.claude/skills/`. The house voice is in `.claude/output-styles/house-voice.md`. When a rule here and a skill disagree, this file wins for conventions and the skill wins for procedure.
 
 ## What this project is
 
-`${PROJECT_ONE_LINE}` Archetype: `${ARCHETYPE}` (one of: `static` single-file or built-static artifact; `server` backed container application). Deployment target: the Bluestaq App Store at `${APP_SLUG}.apps.bluestaq.com`, detected template `${APP_STORE_TEMPLATE}` (one of `static-html`, `node-react`, `java-spring`, `python`, `docker-only`).
+Holly, the Daily Ops Dashboard: a Python 3.12 FastAPI server. Archetype: `server` (one of: `static` single-file or built-static artifact; `server` backed container application). Deployment target: the Bluestaq App Store at `<slug>.apps.bluestaq.com`, slug `TBC, re-verify` (assumed `holly` in `sonar-project.properties`), detected template `python` (one of `static-html`, `node-react`, `java-spring`, `python`, `docker-only`), detected from `requirements.txt` with the `Dockerfile` at the root.
 
 ## Hard rules (never violate)
 
@@ -28,32 +28,35 @@ Always-true conventions for this project. Procedures live in `.claude/skills/`. 
 - **Listen on `process.env.PORT`, default 8080, bound to `0.0.0.0`.** Never add `ENV PORT=` to the Dockerfile. Answer `/`, `/healthz`, `/readyz`, `/livez`, `/ping` with HTTP 200, unauthenticated, touching nothing.
 - **Secrets are server-side only.** Compare the team token in constant time. Validate every request body and every LLM output before storing or returning it; the dataset merge never silently shrinks.
 
-## Commands (fill the ones this project uses)
+## Commands
 
 ```
-${INSTALL_CMD}          # e.g. npm ci
-${TEST_CMD}             # e.g. npm test                          local verification loop
-${DEV_CMD}              # e.g. npm run dev                       static archetype: open the file
-${BUILD_CMD}            # e.g. ./scripts/build-package.sh <v> <date>   OR   docker build -t ${APP_SLUG} .
+python3.12 -m venv .venv && .venv/bin/pip install --require-hashes -r requirements-dev.txt   # install from the lockfile
+sh scripts/verify.sh                     # the verification loop: pin, format, lint, types, complexity, duplication, tests with coverage, audit
+PYTHONPATH=src .venv/bin/python -m app   # dev server on 0.0.0.0, at PORT or 8080
+docker build -t holly .                  # the container build (release path, human-gated)
+sh scripts/simulate-pipeline.sh          # before every upload: package, check out and test the way the platform does
 ```
+
+Relock after any dependency change with the `uv pip compile` command in the header of `requirements.in`, then `requirements-dev.in`; never edit a lockfile by hand.
 
 Every change runs the verification loop, then passes the `engineering-reviewer` and `security-reviewer` gates before it is done. Anything that deploys, publishes, or mutates external state requires the `deploy-gate` verdict and an explicit human confirmation.
 
 ## Directory layout
 
 ```
-${SOURCE_PATH}          the application source (static: the single artifact; server: src/, public/)
-scripts/ or Dockerfile  build and verification (static: scripts/; server: Dockerfile)
-tests/ or test/         the spec table / test suite
-docs/                   deployment runbooks, changelog
+src/app/                the application: factory.py (create_app), main.py (ASGI entry), config.py
+Dockerfile              the container build, hardened and flattened to one layer
+scripts/                verify.sh (the loop), package-appstore.sh, simulate-pipeline.sh
+tests/                  the pytest suite (coverage.xml, 80% floor)
 .claude/                this baseline (skills, agents, output style, hooks, settings)
 ```
 
 ## Naming and versioning
 
-- Releases are `V${MAJOR}.${MINOR}`. Bump the in-app version stamp and add one audit row on every change.
-- Static delivery copies follow `Bluestaq_Limited_-_${PRODUCT}_-_V${MAJOR}_${MINOR}_-_<date>.html`.
-- The App Store app name (slug) is lowercase, hyphenated, starts and ends alphanumeric, unique in the store: `${APP_SLUG}`.
+- Releases are `V<major>.<minor>`; the current stamp is V0.1 (`__version__` in `src/app/__init__.py`, held equal to `pyproject.toml` by a test). Bump the in-app version stamp and add one audit row on every change.
+- Static delivery copies (static archetype only, so not used here) follow `Bluestaq_Limited_-_<product>_-_V<major>_<minor>_-_<date>.html`.
+- The App Store app name (slug) is lowercase, hyphenated, starts and ends alphanumeric, unique in the store: `TBC, re-verify`.
 
 ## House voice (applies to all prose, UI copy, comments, commits)
 

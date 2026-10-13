@@ -1,0 +1,9 @@
+# An allowlist (packaging): the image needs only the locked runtime requirements and the source.
+# Everything else stays out of the build context: tests, tooling, docs, .git, .claude, the
+# virtualenv, coverage output and any .env file. The upload allowlist is a separate contract,
+# kept in scripts/package-appstore.sh.
+*
+!requirements.txt
+!src/
+**/__pycache__
+**/*.py[cod]

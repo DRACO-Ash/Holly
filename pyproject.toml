@@ -1,0 +1,63 @@
+[project]
+name = "holly"
+version = "0.1.0"
+description = "Holly: Daily Ops Dashboard"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+# Dependencies are not declared here. The manifests are requirements.in (runtime) and
+# requirements-dev.in (tooling); the hash-pinned lockfiles are requirements.txt and
+# requirements-dev.txt.
+
+[tool.pytest.ini_options]
+minversion = "9.0"
+pythonpath = ["src"]
+testpaths = ["tests"]
+# Coverage flags are deliberately NOT set here. With `--cov` in addopts, the template's
+# `coverage run -m pytest && coverage xml` form writes a 0% coverage.xml (the inner and outer
+# measurements collide). Without it, all three forms the baseline documents write coverage.xml
+# and fail under 80%: `pytest --cov --cov-report=xml`, `pytest --cov=app --cov-report=xml`, and
+# `coverage run -m pytest && coverage xml`. A bare `pytest` runs the tests without coverage.
+addopts = ["--strict-markers", "--strict-config"]
+xfail_strict = true
+
+[tool.coverage.run]
+source = ["src"]
+branch = true
+relative_files = true
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true
+
+[tool.coverage.xml]
+output = "coverage.xml"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "A", "ARG", "B", "BLE", "C4", "C90", "DTZ", "E", "ERA", "F", "I", "N",
+    "PERF", "PIE", "PL", "PT", "RET", "RUF", "S", "SIM", "UP", "W",
+]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S104", "PLR2004"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+mypy_path = "src"
+files = ["src", "tests"]
+explicit_package_bases = true
+
+[tool.pylint.similarities]
+min-similarity-lines = 4
+ignore-comments = true
+ignore-docstrings = true
+ignore-imports = true
