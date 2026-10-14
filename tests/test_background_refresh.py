@@ -59,10 +59,12 @@ def publication(number: int, event_key: str, hours_ago: int) -> Notification:
     )
 
 
-def stored_summary(event_key: str, seen: list[Notification]) -> EventSummary:
+def stored_summary(
+    event_key: str, seen: list[Notification], error: str | None = None
+) -> EventSummary:
     """A summary already stored, written from the publications in `seen`."""
     return EventSummary(
-        event_key=event_key, source_notification_ids=[str(each.id) for each in seen]
+        event_key=event_key, source_notification_ids=[str(each.id) for each in seen], error=error
     )
 
 
@@ -90,9 +92,11 @@ def evaluation_run(*, persistent: bool = False, error: str | None = None) -> Eva
 def summary_outcome(
     event_key: str, *, persistent: bool = False, error: str | None = None
 ) -> SummaryOutcome:
-    """What generate_event_summary returns for one event."""
-    summary = EventSummary(event_key=event_key, narrative="Example narrative.", error=error)
-    return SummaryOutcome(summary=summary, persistent_failure=persistent)
+    """What generate_event_summary returns for one event: a stored summary, or for a failure,
+    no summary and the error."""
+    if error is not None:
+        return SummaryOutcome(summary=None, error=error, persistent_failure=persistent)
+    return SummaryOutcome(summary=EventSummary(event_key=event_key, narrative="Example narrative."))
 
 
 @dataclass(frozen=True)
@@ -451,6 +455,7 @@ class TestEventSummaries:
             pytest.param((1, 2), (1,), True, id="a newer publication unseen"),
             pytest.param((0, 1, 2), (1, 2), True, id="a late older publication unseen"),
             pytest.param((1, 2), (0, 1, 2), False, id="an older publication aged out"),
+            pytest.param((1, 2), "failed", True, id="a summary that records a failure"),
         ],
     )
     async def test_a_summary_is_stale_only_while_the_window_holds_a_publication_it_has_not_seen(
@@ -458,11 +463,17 @@ class TestEventSummaries:
         sessions: SessionFactory,
         services: Services,
         window: tuple[int, ...],
-        seen: tuple[int, ...] | None,
+        seen: tuple[int, ...] | str | None,
         stale: bool,
     ) -> None:
         history = [publication(1, EVENT, 30), publication(2, EVENT, 20), publication(3, EVENT, 10)]
-        stored = [] if seen is None else [stored_summary(EVENT, [history[i] for i in seen])]
+        if seen is None:
+            stored = []
+        elif isinstance(seen, str):
+            # Every publication is listed, but the row records a failure, as old rows can.
+            stored = [stored_summary(EVENT, history, error="Example assistant failure")]
+        else:
+            stored = [stored_summary(EVENT, [history[i] for i in seen])]
         sessions.script(
             FakeSession([rows_result([history[i] for i in window])]),
             FakeSession([rows_result(stored)]),
@@ -596,7 +607,7 @@ class TestEventSummaries:
         assert record.getMessage() == f"Event summary failed for {EVENT}"
         assert raised(record) is error
 
-    async def test_a_persistent_failure_is_stored_then_stops_the_cycle(
+    async def test_a_persistent_failure_stops_the_cycle(
         self, sessions: SessionFactory, services: Services, caplog: pytest.LogCaptureFixture
     ) -> None:
         # TEST-EVENT-1 is the newer event, so it is regenerated first.

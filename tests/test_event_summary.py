@@ -5,7 +5,6 @@ stored as the row's error rather than raised. call_claude is replaced with a rec
 test reaches the Anthropic API. Every value here is synthetic."""
 
 import uuid
-from collections.abc import Callable
 from datetime import timedelta
 from typing import Any, NamedTuple
 
@@ -18,8 +17,6 @@ from app.services import event_summary
 from app.services.claude import AssistantError, ClaudeReply
 from app.services.event_summary import SummaryOutcome, compute_event_key, generate_event_summary
 from fakes import NOW, FakeSession, scalar_result
-
-SettingsEnv = Callable[..., None]
 
 # One PostgreSQL dialect compiles every statement here. SQLAlchemy leaves its constructor
 # unannotated, hence the one ignore.
@@ -291,27 +288,19 @@ class TestTheStoredSummary:
         assert values["latest_notification_id"] == tied[1].id
 
     @pytest.mark.parametrize("persistent", [False, True])
-    async def test_an_assistant_failure_is_stored_as_the_error_not_raised(
-        self,
-        claude: ClaudeStub,
-        settings_env: SettingsEnv,
-        caplog: pytest.LogCaptureFixture,
-        persistent: bool,
+    async def test_an_assistant_failure_writes_nothing_and_is_not_raised(
+        self, claude: ClaudeStub, caplog: pytest.LogCaptureFixture, persistent: bool
     ) -> None:
-        settings_env(ANTHROPIC_MODEL="claude-fallback-test")
+        # Nothing is written, so an earlier narrative and the publications it lists stay as
+        # they were, and the event stays stale for the next cycle to try again.
         claude.error = AssistantError("Example assistant failure", persistent=persistent)
-        only = publication(1, udl_created_at=NOW)
-        run = await summarise([only])
-        assert stored_values(run.session) == {
-            "event_key": EVENT,
-            "narrative": "Event summary could not be generated.",
-            "source_notification_ids": [str(only.id)],
-            "latest_notification_id": only.id,
-            "publication_count": 1,
-            "model": "claude-fallback-test",
-            "error": "Example assistant failure",
-        }
-        assert run.outcome.persistent_failure is persistent
+        session = FakeSession()
+        only = [publication(1, udl_created_at=NOW)]
+        outcome = await generate_event_summary(session, EVENT, only)  # type: ignore[arg-type]
+        assert outcome == SummaryOutcome(
+            summary=None, error="Example assistant failure", persistent_failure=persistent
+        )
+        session.execute.assert_not_awaited()
         assert f"Event summary failed for {EVENT}: Example assistant failure" in caplog.messages
 
     async def test_an_empty_publication_list_is_refused_before_claude_is_asked(

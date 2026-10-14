@@ -139,9 +139,11 @@ async def _publications_by_event(window_start: datetime) -> dict[str, list[Notif
 
 
 def _summary_is_stale(existing: EventSummary | None, publications: list[Notification]) -> bool:
-    """Stale when the window holds a publication the summary has not seen. A publication that
-    has aged out of the window never makes a summary stale, so no summary ever shrinks."""
-    if existing is None:
+    """Stale when there is no summary, when the stored one records a failure (the Daily
+    Operations Dashboard wrote such rows), or when the window holds a publication the summary
+    has not seen. A publication that has aged out of the window never makes a summary stale,
+    so no summary ever shrinks."""
+    if existing is None or existing.error:
         return True
     seen = set(existing.source_notification_ids or ())
     return any(str(publication.id) not in seen for publication in publications)
@@ -195,7 +197,7 @@ async def _event_summary_phase() -> None:
                 await db.rollback()
                 continue
         if outcome.persistent_failure:
-            logger.warning("Stopping event summary cycle early: %s", outcome.summary.error)
+            logger.warning("Stopping event summary cycle early: %s", outcome.error)
             return
 
 

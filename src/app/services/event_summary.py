@@ -19,7 +19,6 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import get_settings
 from app.models.event_summary import EventSummary
 from app.models.notification import Notification
 from app.services.assistant import display_value
@@ -64,8 +63,11 @@ _HEAD_FIELDS = (
 
 @dataclass(frozen=True)
 class SummaryOutcome:
-    summary: EventSummary
-    persistent_failure: bool
+    """The stored summary; or, when the assistant failed, no summary and the error."""
+
+    summary: EventSummary | None
+    error: str | None = None
+    persistent_failure: bool = False
 
 
 def publication_order(n: Notification) -> tuple[datetime, str]:
@@ -146,21 +148,20 @@ async def generate_event_summary(
     """Generate or replace the summary for one logical event (the caller commits).
 
     The caller passes the event's publications; they are sorted oldest first here. The row is
-    upserted on event_key, so a re-run replaces the earlier text.
+    upserted on event_key, so a re-run replaces the earlier text. When the assistant fails,
+    nothing is written: an earlier narrative stays as it was, and the publications it has not
+    seen keep the event stale, so the next cycle tries again.
     """
     if not publications:
         msg = "Cannot summarise an empty publication list"
         raise AssistantError(msg)
     publications = sorted(publications, key=publication_order)
 
-    error: str | None = None
-    persistent = False
     try:
         narrative, model = await _narrate(publications)
     except AssistantError as exc:
         logger.warning("Event summary failed for %s: %s", event_key, exc)
-        error, persistent = str(exc), exc.persistent
-        narrative, model = "Event summary could not be generated.", get_settings().anthropic_model
+        return SummaryOutcome(summary=None, error=str(exc), persistent_failure=exc.persistent)
 
     values: dict[str, Any] = {
         "event_key": event_key,
@@ -169,7 +170,7 @@ async def generate_event_summary(
         "latest_notification_id": publications[-1].id,
         "publication_count": len(publications),
         "model": model,
-        "error": error,
+        "error": None,
     }
     stmt = pg_insert(EventSummary).values(values)
     replaced = {
@@ -183,4 +184,4 @@ async def generate_event_summary(
     summary = (
         await db.execute(select(EventSummary).where(EventSummary.event_key == event_key))
     ).scalar_one()
-    return SummaryOutcome(summary=summary, persistent_failure=persistent)
+    return SummaryOutcome(summary=summary)
