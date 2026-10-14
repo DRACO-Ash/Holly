@@ -14,27 +14,31 @@ from app.models.user import User, UserRole
 
 DbSession = Annotated[AsyncSession, Depends(get_db)]
 
-_credentials_error = HTTPException(
-    status_code=status.HTTP_401_UNAUTHORIZED,
-    detail="Could not validate credentials",
-    headers={"WWW-Authenticate": "Bearer"},
-)
+
+def _credentials_error() -> HTTPException:
+    """A new exception for each refusal: raising one shared instance again would add every
+    request's frames to its traceback and keep them alive for the life of the process."""
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
 
 
 def _extract_bearer_token(authorization: str | None) -> str:
     if not authorization or not authorization.lower().startswith("bearer "):
-        raise _credentials_error
+        raise _credentials_error()
     return authorization.split(" ", 1)[1].strip()
 
 
 def _access_subject(authorization: str | None) -> UUID:
     payload = decode_token(_extract_bearer_token(authorization))
     if payload is None or payload.get("type") != "access":
-        raise _credentials_error
+        raise _credentials_error()
     try:
         return UUID(str(payload.get("sub")))
     except ValueError as exc:
-        raise _credentials_error from exc
+        raise _credentials_error() from exc
 
 
 async def get_current_user(
@@ -43,7 +47,7 @@ async def get_current_user(
     user_id = _access_subject(authorization)
     user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
     if user is None or not user.is_active:
-        raise _credentials_error
+        raise _credentials_error()
     return user
 
 

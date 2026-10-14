@@ -2,6 +2,10 @@
 each attempt writes. The audit chain and the revocation list are replaced with recorders, so
 these tests read exactly what each route asked them to store."""
 
+import asyncio
+import threading
+import time
+import traceback
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
@@ -11,9 +15,12 @@ from unittest.mock import AsyncMock
 import httpx2
 import jwt
 import pytest
+from fastapi import HTTPException
 
+from app import dependencies
+from app.api.v1.routes import auth
 from app.config import get_settings
-from app.core.rate_limit import LOGIN_LIMIT
+from app.core.rate_limit import LOGIN_ADDRESS_LIMIT, LOGIN_LIMIT
 from app.core.security import (
     create_access_token,
     create_refresh_token,
@@ -182,7 +189,9 @@ class TestLogin:
         assert call["entity_type"] == "user"
         assert call["user_id"] == (user.id if user else None)
         assert call["entity_id"] == (str(user.id) if user else None)
-        assert call["detail"] == {"success": False, "username": "alice", "reason": reason}
+        # An unknown username is not kept: it may be a password typed into the wrong box.
+        expected = {"success": False, "reason": reason} | ({"username": "alice"} if user else {})
+        assert call["detail"] == expected
         session.commit.assert_awaited()
 
     async def test_login_success_emits_audit_row(
@@ -198,22 +207,29 @@ class TestLogin:
         assert call["ip_address"] == "127.0.0.1"
         assert call["detail"] == {"success": True, "username": "alice"}
 
+    @pytest.mark.parametrize("known", [True, False], ids=["an account", "no account"])
     async def test_repeated_failures_are_refused_with_429_and_audited(
-        self, api: httpx2.AsyncClient, use_session: UseSession, audit_calls: list[dict[str, Any]]
+        self,
+        api: httpx2.AsyncClient,
+        use_session: UseSession,
+        audit_calls: list[dict[str, Any]],
+        known: bool,
     ) -> None:
-        use_session(user_lookup(None))
+        user = make_user(password=KNOWN) if known else None
+        use_session(user_lookup(user))
         for _ in range(LOGIN_LIMIT.limit):
             LOGIN_LIMIT.record("alice")
         response = await api.post(
             "/api/v1/auth/login", json={"username": "alice", "password": KNOWN}
         )
         assert response.status_code == 429
+        assert response.json()["detail"].startswith("Too many failed sign-ins. Try again in ")
         assert int(response.headers["retry-after"]) >= 1
-        assert audit_calls[-1]["detail"] == {
-            "success": False,
-            "username": "alice",
-            "reason": "rate_limited",
-        }
+        [call] = audit_calls
+        assert call["user_id"] == (user.id if user else None)
+        assert call["detail"] == {"success": False, "reason": "rate_limited"} | (
+            {"username": "alice"} if known else {}
+        )
 
     async def test_each_failure_counts_and_a_success_clears_the_count(
         self, api: httpx2.AsyncClient, use_session: UseSession
@@ -429,3 +445,130 @@ class TestLogout:
         assert response.status_code == 401
         assert audit_calls[0]["detail"]["reason"] == "already_revoked"
         assert audit_calls[0]["user_id"] == user.id
+
+
+def recording_check(checked: list[str], result: bool = False) -> Callable[[str, str], bool]:
+    """A stand-in for verify_password that notes each hash it is asked to check."""
+
+    def check(_plain: str, hashed: str) -> bool:
+        checked.append(hashed)
+        return result
+
+    return check
+
+
+class TestSignInUnderLoad:
+    """bcrypt runs on worker threads, a few checks at a time, behind a limit per address, so a
+    burst of sign-ins can neither stall nor crash the one worker."""
+
+    async def test_an_unknown_username_still_costs_a_password_check(
+        self, api: httpx2.AsyncClient, use_session: UseSession, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        checked: list[str] = []
+        monkeypatch.setattr(auth, "verify_password", recording_check(checked))
+        use_session(user_lookup(None))
+        response = await api.post(
+            "/api/v1/auth/login", json={"username": "nobody", "password": KNOWN}
+        )
+        assert response.status_code == 401
+        assert checked == [auth._dummy_hash()]
+
+    async def test_attempts_are_limited_per_address_before_anything_is_checked(
+        self,
+        api: httpx2.AsyncClient,
+        use_session: UseSession,
+        audit_calls: list[dict[str, Any]],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        checked: list[str] = []
+        monkeypatch.setattr(auth, "verify_password", recording_check(checked))
+        session = use_session(user_lookup(None))
+        for _ in range(LOGIN_ADDRESS_LIMIT.limit):
+            LOGIN_ADDRESS_LIMIT.record("127.0.0.1")
+        response = await api.post(
+            "/api/v1/auth/login", json={"username": "alice", "password": KNOWN}
+        )
+        assert response.status_code == 429
+        assert response.json()["detail"].startswith(
+            "Too many sign-in attempts from this address. Try again in "
+        )
+        assert int(response.headers["retry-after"]) >= 1
+        assert checked == []
+        assert audit_calls == []
+        session.execute.assert_not_awaited()
+
+    async def test_a_sign_in_beyond_the_concurrent_checks_is_refused_at_once(
+        self, api: httpx2.AsyncClient, use_session: UseSession, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(auth, "_PASSWORD_CHECK_SLOTS", threading.BoundedSemaphore(1))
+        entered, release = threading.Event(), threading.Event()
+
+        def held_check(_plain: str, _hashed: str) -> bool:
+            entered.set()
+            release.wait(5)
+            return False
+
+        monkeypatch.setattr(auth, "verify_password", held_check)
+        use_session(user_lookup(None))
+        body = {"password": KNOWN}
+        first = asyncio.create_task(api.post("/api/v1/auth/login", json=body | {"username": "a"}))
+        assert await asyncio.to_thread(entered.wait, 5)
+        second = await api.post("/api/v1/auth/login", json=body | {"username": "b"})
+        release.set()
+        assert second.status_code == 503
+        assert second.json() == {"detail": "Sign-in is busy. Try again in a moment."}
+        assert second.headers["retry-after"] == "1"
+        assert (await first).status_code == 401
+        # The held check gave its slot back when it ended.
+        assert auth._PASSWORD_CHECK_SLOTS.acquire(blocking=False)
+
+    async def test_password_checks_leave_the_event_loop_free(
+        self, api: httpx2.AsyncClient, use_session: UseSession, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        entered = threading.Event()
+
+        def slow_check(_plain: str, _hashed: str) -> bool:
+            entered.set()
+            time.sleep(0.5)
+            return False
+
+        monkeypatch.setattr(auth, "verify_password", slow_check)
+        use_session(user_lookup(None))
+        logins = [
+            asyncio.create_task(
+                api.post("/api/v1/auth/login", json={"username": f"user{n}", "password": KNOWN})
+            )
+            for n in range(3)
+        ]
+        assert await asyncio.to_thread(entered.wait, 5)
+        started = time.perf_counter()
+        probe = await api.get("/livez")
+        elapsed = time.perf_counter() - started
+        assert probe.status_code == 200
+        assert elapsed < 0.25, f"/livez waited {elapsed:.2f}s behind the password checks"
+        assert [response.status_code for response in await asyncio.gather(*logins)] == [401] * 3
+
+
+class TestRefusalsAreNotShared:
+    def test_each_refusal_is_a_new_exception_whose_traceback_does_not_grow(self) -> None:
+        caught: list[HTTPException] = []
+        for _ in range(2):
+            with pytest.raises(HTTPException) as raised:
+                dependencies._access_subject(None)
+            caught.append(raised.value)
+        first, second = caught
+        assert first is not second
+        assert len(traceback.extract_tb(second.__traceback__)) == len(
+            traceback.extract_tb(first.__traceback__)
+        )
+
+    @pytest.mark.parametrize(
+        "refusal",
+        [auth._invalid_credentials, auth._invalid_refresh, dependencies._credentials_error],
+    )
+    def test_every_refusal_factory_builds_a_fresh_401(
+        self, refusal: Callable[[], HTTPException]
+    ) -> None:
+        first, second = refusal(), refusal()
+        assert first is not second
+        assert first.status_code == second.status_code == 401

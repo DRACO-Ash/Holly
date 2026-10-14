@@ -1,12 +1,17 @@
 """Sign-in, token refresh and sign-out, each written to the audit chain.
 
-Failed sign-ins are limited per username (core/rate_limit.py); a success clears the count.
-Every attempt costs one bcrypt check, against a dummy hash for an unknown username, so the
-response time does not reveal which usernames exist. Refresh tokens rotate: each one works
-once, and its id joins the block-list when it is used or signed out (ADR-011).
+Sign-in attempts are limited per client address before any password is checked, and failed
+sign-ins per username (core/rate_limit.py); a success clears a username's count. Every
+checked attempt costs one bcrypt check, against a dummy hash for an unknown username, so the
+response time does not reveal which usernames exist. bcrypt runs on worker threads, a few at
+a time, so a burst of sign-ins cannot stall the one worker. Refresh tokens rotate: each one
+works once, and its id joins the block-list when it is used or signed out (ADR-011).
 """
 
+import asyncio
+import logging
 import secrets
+import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from functools import lru_cache
@@ -18,7 +23,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.net import client_ip
-from app.core.rate_limit import LOGIN_LIMIT
+from app.core.rate_limit import LOGIN_ADDRESS_LIMIT, LOGIN_LIMIT
 from app.core.security import (
     create_access_token,
     create_refresh_token,
@@ -38,17 +43,26 @@ from app.schemas.auth import (
 from app.services.audit import write_audit
 from app.services.token_revocation import is_revoked, revoke
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-_invalid_credentials = HTTPException(
-    status_code=status.HTTP_401_UNAUTHORIZED,
-    detail="Invalid username or password",
-)
+# bcrypt is deliberately slow, a few hundred milliseconds a check. At most this many checks run
+# at once, each on a worker thread; a sign-in beyond them is refused at once, not queued.
+MAX_CONCURRENT_PASSWORD_CHECKS = 4
+_PASSWORD_CHECK_SLOTS = threading.BoundedSemaphore(MAX_CONCURRENT_PASSWORD_CHECKS)
 
-_invalid_refresh = HTTPException(
-    status_code=status.HTTP_401_UNAUTHORIZED,
-    detail="Invalid refresh token",
-)
+
+# Each refusal is a new exception: raising one shared instance again would add every request's
+# frames to its traceback and keep them alive for the life of the process.
+def _invalid_credentials() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid username or password"
+    )
+
+
+def _invalid_refresh() -> HTTPException:
+    return HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
 
 
 @dataclass(frozen=True)
@@ -101,6 +115,38 @@ def _login_failure(user: User | None, password: str) -> str | None:
     return None if password_ok else "wrong_password"
 
 
+def _login_failure_in_slot(user: User | None, password: str) -> str | None:
+    """_login_failure on a worker thread, giving its slot back when the check ends, even when
+    the request that asked for it has gone."""
+    try:
+        return _login_failure(user, password)
+    finally:
+        _PASSWORD_CHECK_SLOTS.release()
+
+
+async def _check_password(user: User | None, password: str) -> str | None:
+    if not _PASSWORD_CHECK_SLOTS.acquire(blocking=False):
+        logger.warning(
+            "Sign-in refused: %s password checks already running", MAX_CONCURRENT_PASSWORD_CHECKS
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Sign-in is busy. Try again in a moment.",
+            headers={"Retry-After": "1"},
+        )
+    return await asyncio.to_thread(_login_failure_in_slot, user, password)
+
+
+def _failure_detail(user: User | None, username: str, reason: str) -> dict[str, Any]:
+    """A failed sign-in as the audit chain records it. The username is kept only when it names
+    an account: an unknown one may be a password typed into the wrong box, and the chain is
+    append-only."""
+    detail: dict[str, Any] = {"success": False, "reason": reason}
+    if user is not None:
+        detail["username"] = username
+    return detail
+
+
 def _tokens_for(user_id: UUID) -> TokenResponse:
     subject = str(user_id)
     return TokenResponse(
@@ -121,27 +167,38 @@ def _refresh_claims(token: str) -> _RefreshClaims:
     return _RefreshClaims(user_id=user_id, jti=str(decoded["jti"]), expires_at=expires_at)
 
 
+def _too_many(message: str, wait: int) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        detail=f"{message} Try again in {wait} seconds.",
+        headers={"Retry-After": str(wait)},
+    )
+
+
 @router.post("/login")
 async def login(payload: LoginRequest, request: Request, db: DbSession) -> TokenResponse:
     username = payload.username.strip().lower()
     ip = client_ip(request)
-    wait = LOGIN_LIMIT.wait_time(username)
-    if wait:
-        detail = {"success": False, "username": username, "reason": "rate_limited"}
-        await _audit(db, "auth.user.login", user_id=None, ip=ip, detail=detail)
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"Too many failed sign-ins. Try again in {wait} seconds.",
-            headers={"Retry-After": str(wait)},
-        )
+    # Every attempt counts against its address before anything else is done for it.
+    address_wait = LOGIN_ADDRESS_LIMIT.retry_after(ip or "unknown")
+    if address_wait:
+        logger.warning("Sign-in refused: too many attempts from %s", ip)
+        raise _too_many("Too many sign-in attempts from this address.", address_wait)
 
     user = (await db.execute(select(User).where(User.username == username))).scalar_one_or_none()
-    reason = _login_failure(user, payload.password)
+    user_id = user.id if user else None
+    wait = LOGIN_LIMIT.wait_time(username)
+    if wait:
+        detail = _failure_detail(user, username, "rate_limited")
+        await _audit(db, "auth.user.login", user_id=user_id, ip=ip, detail=detail)
+        raise _too_many("Too many failed sign-ins.", wait)
+
+    reason = await _check_password(user, payload.password)
     if user is None or reason is not None:
         LOGIN_LIMIT.record(username)
-        detail = {"success": False, "username": username, "reason": reason}
-        await _audit(db, "auth.user.login", user_id=user.id if user else None, ip=ip, detail=detail)
-        raise _invalid_credentials
+        detail = _failure_detail(user, username, reason or "unknown_user")
+        await _audit(db, "auth.user.login", user_id=user_id, ip=ip, detail=detail)
+        raise _invalid_credentials()
 
     LOGIN_LIMIT.forget(username)
     detail = {"success": True, "username": username}
@@ -159,7 +216,7 @@ async def refresh(payload: RefreshRequest, request: Request, db: DbSession) -> T
     except _RefreshRejectedError as exc:
         detail = {"success": False, "reason": exc.reason}
         await _audit(db, "auth.token.refresh", user_id=None, ip=ip, detail=detail)
-        raise _invalid_refresh from exc
+        raise _invalid_refresh() from exc
 
     user = (await db.execute(select(User).where(User.id == claims.user_id))).scalar_one_or_none()
     if user is None or not user.is_active:
@@ -167,7 +224,7 @@ async def refresh(payload: RefreshRequest, request: Request, db: DbSession) -> T
         await _audit(
             db, "auth.token.refresh", user_id=user.id if user else None, ip=ip, detail=detail
         )
-        raise _invalid_refresh
+        raise _invalid_refresh()
 
     await revoke(db, jti=claims.jti, user_id=claims.user_id, expires_at=claims.expires_at)
     await _audit(db, "auth.token.refresh", user_id=user.id, ip=ip, detail={"success": True})
@@ -182,12 +239,12 @@ async def logout(payload: LogoutRequest, request: Request, db: DbSession) -> Non
     except _RefreshRejectedError as exc:
         detail = {"success": False, "reason": exc.reason}
         await _audit(db, "auth.user.logout", user_id=None, ip=ip, detail=detail)
-        raise _invalid_refresh from exc
+        raise _invalid_refresh() from exc
 
     if await is_revoked(db, claims.jti):
         detail = {"success": False, "reason": "already_revoked"}
         await _audit(db, "auth.user.logout", user_id=claims.user_id, ip=ip, detail=detail)
-        raise _invalid_refresh
+        raise _invalid_refresh()
 
     await revoke(db, jti=claims.jti, user_id=claims.user_id, expires_at=claims.expires_at)
     await _audit(db, "auth.user.logout", user_id=claims.user_id, ip=ip, detail={"success": True})
