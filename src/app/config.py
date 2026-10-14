@@ -7,14 +7,18 @@ validators stop a misconfigured container at boot with a clear message rather th
 fail later or run insecurely (security-hardening, fail closed).
 """
 
+import ipaddress
+import re
 from collections.abc import Mapping
 from functools import lru_cache
 from pathlib import PurePosixPath
 from typing import Literal, Self
-from urllib.parse import parse_qsl, quote, urlencode, urlsplit
+from urllib.parse import urlsplit
 
 from pydantic import Field, SecretStr, ValidationError, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict, SettingsError
+from sqlalchemy.engine import URL, make_url
+from sqlalchemy.exc import ArgumentError
 
 DEFAULT_PORT = 8080
 MAX_PORT = 65535
@@ -50,42 +54,68 @@ def resolve_port(environ: Mapping[str, str]) -> int:
 
 
 _BAD_DATABASE_URL = "DATABASE_URL must be a postgres:// or postgresql:// URL with a host"
+# A host name or an IPv4 address; an IPv6 address is checked by the ipaddress module.
+_HOST_NAME = re.compile(r"[A-Za-z0-9.\-]+")
 
 
-def asyncpg_url(url: str) -> str:
-    """Return a PostgreSQL URL with the asyncpg driver, whichever postgres scheme it arrived with.
+def _is_host(host: str | None) -> bool:
+    """A host name or an IP address. Anything else means the URL does not read as its author
+    meant, as when an unencoded @ in the password moves the end of the password into the host."""
+    if host is None or _HOST_NAME.fullmatch(host):
+        return host is not None
+    try:
+        ipaddress.IPv6Address(host)
+    except ValueError:
+        return False
+    return True
+
+
+def asyncpg_url(url: str) -> URL:
+    """The connection URL with the asyncpg driver, whichever postgres scheme it arrived with.
 
     The App Store POSTGRESQL add-on injects a connection URL; its exact scheme is not confirmed,
-    so postgres://, postgresql:// and postgresql+asyncpg:// are all accepted. Anything else
-    fails closed. The URL carries a password, so no message ever repeats it.
+    so postgres://, postgresql:// and postgresql+asyncpg:// are all accepted. SQLAlchemy's own
+    parser reads it once, and the parsed URL is what connects, so the check and the connection
+    cannot read it differently. Anything else fails closed. The URL carries a password, so no
+    message ever repeats it.
     """
-    scheme, separator, rest = url.partition("://")
-    try:
-        hostname = urlsplit(url).hostname
-    except ValueError:
-        # The parser's own message quotes the URL's user and password part.
-        hostname = None
-    if not separator or scheme.lower() not in _POSTGRES_SCHEMES or not hostname:
+    parsed = _postgres_url(url)
+    if parsed is None:
         raise ValueError(_BAD_DATABASE_URL)
-    return f"{ASYNCPG_SCHEME}://{_asyncpg_options(rest)}"
+    return _with_asyncpg_ssl(parsed.set(drivername=ASYNCPG_SCHEME))
 
 
-def _asyncpg_options(rest: str) -> str:
-    """The URL after its scheme, with libpq's sslmode renamed to asyncpg's ssl, which takes the
-    same values. SQLAlchemy hands every query parameter to asyncpg, which has no sslmode and
-    would refuse the first connection."""
-    location, mark, query = rest.partition("?")
-    if not mark:
-        return rest
-    options = [
-        ("ssl" if key == "sslmode" else key, value)
-        for key, value in parse_qsl(query, keep_blank_values=True)
-    ]
-    return f"{location}?{urlencode(options)}"
+def _postgres_url(url: str) -> URL | None:
+    try:
+        parsed = make_url(url)
+    except (ArgumentError, ValueError, TypeError):
+        # Each of the parser's errors quotes the URL, or the part of it that would not parse.
+        return None
+    port_ok = parsed.port is None or 0 < parsed.port <= MAX_PORT
+    postgres = parsed.drivername.lower() in _POSTGRES_SCHEMES
+    return parsed if postgres and _is_host(parsed.host) and port_ok else None
+
+
+def _with_asyncpg_ssl(url: URL) -> URL:
+    """libpq's sslmode renamed to asyncpg's ssl, which takes the same values. SQLAlchemy hands
+    every query parameter to asyncpg, which has no sslmode and would refuse the first
+    connection. An ssl parameter already present wins."""
+    if "sslmode" not in url.query:
+        return url
+    given = url.query["sslmode"]
+    # Given more than once, libpq takes the last value.
+    sslmode = given if isinstance(given, str) else given[-1]
+    url = url.difference_update_query(["sslmode"])
+    return url if "ssl" in url.query else url.update_query_dict({"ssl": sslmode})
 
 
 def _https_problem(name: str, value: str) -> str | None:
-    if value and urlsplit(value).scheme != "https":
+    try:
+        scheme = urlsplit(value).scheme
+    except ValueError:
+        # The parser's own message quotes the URL's host part, which may carry credentials.
+        scheme = ""
+    if value and scheme != "https":
         return f"{name} must use https outside development"
     return None
 
@@ -193,6 +223,8 @@ class Settings(BaseSettings):
             ]
         if self.postgres_password is None:
             return ["POSTGRES_PASSWORD is required with the POSTGRES_* settings"]
+        if not _is_host(self.postgres_host):
+            return ["POSTGRES_HOST must be a host name or an IP address"]
         return []
 
     def _transport_problems(self) -> list[str]:
@@ -220,16 +252,21 @@ class Settings(BaseSettings):
             return PurePosixPath(self.storage_mount_path) / "procedures"
         return PurePosixPath(DEFAULT_PROCEDURE_DIR)
 
-    def sqlalchemy_url(self) -> str:
-        """The asyncpg connection URL. It carries the password: never log it."""
+    def sqlalchemy_url(self) -> URL:
+        """The asyncpg connection URL, parsed once and handed to the engine as it is. It carries
+        the password: SQLAlchemy masks it when the URL is printed, so never render it otherwise."""
         if self.database_url is not None:
             return asyncpg_url(self.database_url.get_secret_value())
-        # The validator guarantees every part is present when DATABASE_URL is unset.
-        password = self.postgres_password.get_secret_value() if self.postgres_password else ""
-        user = quote(self.postgres_user or "", safe="")
-        return (
-            f"{ASYNCPG_SCHEME}://{user}:{quote(password, safe='')}"
-            f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+        # The validator guarantees every part is present when DATABASE_URL is unset. Built from
+        # its parts, the URL is never parsed, so no character in them can change its meaning.
+        password = self.postgres_password.get_secret_value() if self.postgres_password else None
+        return URL.create(
+            ASYNCPG_SCHEME,
+            username=self.postgres_user,
+            password=password,
+            host=self.postgres_host,
+            port=self.postgres_port,
+            database=self.postgres_db,
         )
 
 

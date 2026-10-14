@@ -5,13 +5,16 @@ Expected values are literals, never the module's own constants, so a changed bou
 """
 
 import runpy
+import string
 import traceback
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 import pytest
+import sqlalchemy.ext.asyncio
 from pydantic import SecretStr, ValidationError
+from sqlalchemy.engine import URL
 
 from app.config import InvalidSettingsError, Settings, asyncpg_url, get_settings, resolve_port
 from app.factory import create_app
@@ -20,10 +23,12 @@ from app.factory import create_app
 # str.isdigit() is true for both, so the ASCII check is what must refuse them.
 FULL_WIDTH_8080 = "".join(chr(code) for code in (0xFF18, 0xFF10, 0xFF18, 0xFF10))
 SUPERSCRIPT_TWO = chr(0x00B2)
-# NFKC normalisation turns it into @, so Python's URL parser refuses a netloc holding it and
-# quotes that netloc, user and password included, in its own message.
+# NFKC normalisation turns it into @: Python's URL parser once refused a netloc holding it and
+# quoted the netloc, password included. SQLAlchemy's parser keeps it as part of the password.
 FULL_WIDTH_AT = chr(0xFF20)
-REFUSED_CREDENTIAL = f"Zq7x{FULL_WIDTH_AT}SYNTHpw9X"
+FULL_WIDTH_CREDENTIAL = f"Zq7x{FULL_WIDTH_AT}SYNTHpw9X"
+# An unencoded @ in a password: SQLAlchemy reads the end of the password as the host.
+REFUSED_CREDENTIAL = "Zq7x@SYNTHpw9X"
 
 
 def fragments_in(text: str, *secrets: str) -> list[str]:
@@ -87,11 +92,22 @@ class TestDatabaseUrl:
         ],
     )
     def test_every_postgres_scheme_becomes_asyncpg(self, url: str) -> None:
-        assert asyncpg_url(url) == "postgresql+asyncpg://holly@db.example:5432/holly"
+        rendered = asyncpg_url(url).render_as_string(hide_password=False)
+        assert rendered == "postgresql+asyncpg://holly@db.example:5432/holly"
 
     @pytest.mark.parametrize(
         "url",
-        ["mysql://holly@db.example/holly", "db.example/holly", "postgresql:///holly", ""],
+        [
+            "mysql://holly@db.example/holly",
+            "db.example/holly",
+            "postgresql:///holly",
+            "",
+            "postgresql://holly@db.example:0/holly",
+            "postgresql://holly@db.example:65536/holly",
+            "postgresql://holly@db.example:port/holly",
+            "postgresql://holly@db example/holly",
+            "postgresql://holly@[db:5432]/holly",
+        ],
     )
     def test_anything_else_fails_closed(self, url: str) -> None:
         with pytest.raises(ValueError, match="DATABASE_URL must be a postgres"):
@@ -100,28 +116,48 @@ class TestDatabaseUrl:
     @pytest.mark.parametrize(
         ("query", "expected"),
         [
-            ("?sslmode=require", "?ssl=require"),
-            ("?sslmode=verify-full&connect_timeout=10", "?ssl=verify-full&connect_timeout=10"),
-            ("?ssl=require", "?ssl=require"),
-            ("", ""),
+            ("?sslmode=require", {"ssl": "require"}),
+            (
+                "?sslmode=verify-full&connect_timeout=10",
+                {"ssl": "verify-full", "connect_timeout": "10"},
+            ),
+            ("?ssl=require", {"ssl": "require"}),
+            ("?ssl=disable&sslmode=require", {"ssl": "disable"}),
+            ("?sslmode=disable&sslmode=require", {"ssl": "require"}),
+            ("", {}),
         ],
     )
-    def test_libpq_sslmode_becomes_asyncpg_ssl(self, query: str, expected: str) -> None:
-        url = f"postgres://holly:p%40ss@db.example:5432/holly{query}"
-        assert (
-            asyncpg_url(url) == f"postgresql+asyncpg://holly:p%40ss@db.example:5432/holly{expected}"
+    def test_libpq_sslmode_becomes_asyncpg_ssl(self, query: str, expected: dict[str, str]) -> None:
+        url = asyncpg_url(f"postgres://holly:p%40ss@db.example:5432/holly{query}")
+        assert (url.drivername, url.username, url.password) == (
+            "postgresql+asyncpg",
+            "holly",
+            "p@ss",
         )
+        assert (url.host, url.port, url.database) == ("db.example", 5432, "holly")
+        assert dict(url.query) == expected
+
+    @pytest.mark.parametrize("host", ["db.example", "10.0.0.7", "::1", "fd00::5"])
+    def test_a_host_name_or_any_ip_address_is_a_host(self, host: str) -> None:
+        bracketed = f"[{host}]" if ":" in host else host
+        assert asyncpg_url(f"postgresql://holly@{bracketed}:5432/holly").host == host
 
     def test_the_message_never_repeats_the_url(self) -> None:
         with pytest.raises(ValueError, match="DATABASE_URL") as raised:
             asyncpg_url("mysql://holly:pw-in-url@db.example/holly")
         assert "pw-in-url" not in str(raised.value)
 
-    def test_a_url_the_parser_refuses_is_named_without_repeating_it(self) -> None:
+    def test_a_password_holding_a_full_width_at_is_kept_exactly(self) -> None:
+        url = asyncpg_url(f"postgresql://holly:{FULL_WIDTH_CREDENTIAL}@pg:5432/holly")
+        assert (url.password, url.host, url.database) == (FULL_WIDTH_CREDENTIAL, "pg", "holly")
+
+    def test_a_url_read_with_part_of_its_password_as_host_is_refused_without_repeating_it(
+        self,
+    ) -> None:
         url = f"postgresql://holly:{REFUSED_CREDENTIAL}@pg:5432/holly"
         with pytest.raises(ValueError, match="DATABASE_URL must be a postgres") as raised:
             asyncpg_url(url)
-        assert raised.value.__context__ is None, "the parser's own error is not chained"
+        assert raised.value.__context__ is None, "no error of the parser's is chained"
         assert (
             fragments_in("".join(traceback.format_exception(raised.value)), REFUSED_CREDENTIAL)
             == []
@@ -194,6 +230,27 @@ class TestSettingsFailClosed:
         with pytest.raises(ValidationError, match="POSTGRES_PASSWORD is required"):
             build(postgres_host="db", postgres_db="holly", postgres_user="holly")
 
+    @pytest.mark.parametrize(
+        ("part", "problem"),
+        [
+            ({"postgres_host": "db/holly"}, "POSTGRES_HOST must be a host name or an IP address"),
+            ({"postgres_host": "user@db"}, "POSTGRES_HOST must be a host name or an IP address"),
+            ({"postgres_host": "db:5432"}, "POSTGRES_HOST must be a host name or an IP address"),
+            ({"postgres_host": "fe80::1::2"}, "POSTGRES_HOST must be a host name or an IP address"),
+        ],
+    )
+    def test_each_postgres_part_must_be_what_it_says(
+        self, build: Build, part: dict[str, Any], problem: str
+    ) -> None:
+        parts = {
+            "postgres_host": "db",
+            "postgres_db": "holly",
+            "postgres_user": "holly",
+            "postgres_password": SecretStr("unused-in-tests"),
+        }
+        with pytest.raises(ValidationError, match=problem):
+            build(**(parts | part))
+
 
 class TestResolvedValues:
     def test_the_url_is_built_from_the_parts_with_each_part_quoted(self, build: Build) -> None:
@@ -204,15 +261,20 @@ class TestResolvedValues:
             postgres_user="ops@holly",
             postgres_password=SecretStr("p%w:d/@"),
         )
-        assert settings.sqlalchemy_url() == (
+        url = settings.sqlalchemy_url()
+        assert (url.username, url.password) == ("ops@holly", "p%w:d/@")
+        assert (url.host, url.port, url.database) == ("db.example", 6543, "holly")
+        assert url.render_as_string(hide_password=False) == (
             "postgresql+asyncpg://ops%40holly:p%25w%3Ad%2F%40@db.example:6543/holly"
         )
+        assert "p%25w" not in str(url), "printing the URL masks the password"
 
     def test_database_url_wins_over_the_parts(
         self, build: Build, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("POSTGRES_HOST", "ignored.example")
-        assert build().sqlalchemy_url() == "postgresql+asyncpg://holly@db.invalid:5432/holly_test"
+        rendered = build().sqlalchemy_url().render_as_string(hide_password=False)
+        assert rendered == "postgresql+asyncpg://holly@db.invalid:5432/holly_test"
 
     @pytest.mark.parametrize(
         ("explicit", "mount", "expected"),
@@ -328,6 +390,15 @@ class TestABadEnvironmentStopsTheBootClearly:
         printed = "".join(traceback.format_exception(error))
         assert fragments_in(printed, url_credential, REFUSED_CREDENTIAL, *secrets.values()) == []
 
+    def test_a_service_url_the_parser_refuses_is_named_without_repeating_it(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Python's URL parser refuses this netloc and quotes it, credentials included.
+        monkeypatch.setenv("UDL_BASE_URL", f"https://ops:{FULL_WIDTH_CREDENTIAL}@udl.example/udl")
+        error = self.refused()
+        assert str(error) == "Holly cannot start: UDL_BASE_URL must use https outside development"
+        assert fragments_in("".join(traceback.format_exception(error)), FULL_WIDTH_CREDENTIAL) == []
+
     def test_the_worker_refuses_as_the_master_does(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("APP_SECRET_KEY")
         with pytest.raises(InvalidSettingsError, match="APP_SECRET_KEY: Field required"):
@@ -348,3 +419,80 @@ class TestABadEnvironmentStopsTheBootClearly:
         # gunicorn's BaseApplication.run catches RuntimeError around the master's start, where
         # on_starting runs the migrations, and prints "Error: <message>" with no traceback.
         assert issubclass(InvalidSettingsError, RuntimeError)
+
+
+class _StoppedBeforeConnectingError(Exception):
+    """Raised in place of the engine, so the master's migration run ends before any network."""
+
+
+# Every printable punctuation character, unencoded, inside a synthetic password.
+PUNCTUATED = {mark: f"Kx7p{mark}SYNTHqWm2" for mark in string.punctuation}
+
+
+class TestEveryPasswordCharacterReachesTheEngineExactly:
+    """A provider may inject a DATABASE_URL whose password is not percent-encoded. The master's
+    real start-up hook and the real Alembic environment run up to the engine, which is replaced
+    by a recorder. Each character but @ reaches the engine exactly; @ stops the boot with the
+    fixed message. Nothing printed on the way holds any piece of the password."""
+
+    @pytest.fixture(autouse=True)
+    def _empty_cwd(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        monkeypatch.chdir(tmp_path)
+        get_settings.cache_clear()
+
+    def start_master(self, monkeypatch: pytest.MonkeyPatch, secret: str, handed: list[URL]) -> None:
+        monkeypatch.setenv(
+            "DATABASE_URL", f"postgresql://holly:{secret}@pg:5432/holly?sslmode=require"
+        )
+
+        def recorder(_configuration: object, prefix: str, **kwargs: Any) -> NoReturn:
+            assert prefix == "sqlalchemy."
+            handed.append(kwargs["url"])
+            raise _StoppedBeforeConnectingError
+
+        # env.py imports the factory when Alembic loads it, so it picks up the recorder.
+        monkeypatch.setattr(sqlalchemy.ext.asyncio, "async_engine_from_config", recorder)
+        on_starting = runpy.run_module("app.gunicorn_conf")["on_starting"]
+        monkeypatch.setitem(on_starting.__globals__, "configure_logging", lambda: None)
+        on_starting(object())
+
+    @pytest.mark.parametrize(
+        "mark", [mark for mark in PUNCTUATED if mark != "@"], ids=lambda mark: f"U+{ord(mark):04X}"
+    )
+    def test_the_password_reaches_the_engine_exactly(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], mark: str
+    ) -> None:
+        secret = PUNCTUATED[mark]
+        handed: list[URL] = []
+        with pytest.raises(_StoppedBeforeConnectingError) as raised:
+            self.start_master(monkeypatch, secret, handed)
+        [url] = handed
+        assert (url.drivername, url.username, url.password) == (
+            "postgresql+asyncpg",
+            "holly",
+            secret,
+        )
+        assert (url.host, url.port, url.database, dict(url.query)) == (
+            "pg",
+            5432,
+            "holly",
+            {"ssl": "require"},
+        )
+        printed = capsys.readouterr().out + "".join(traceback.format_exception(raised.value))
+        assert fragments_in(printed, secret) == []
+
+    def test_an_unencoded_at_stops_the_boot_with_the_fixed_message(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        secret = PUNCTUATED["@"]
+        handed: list[URL] = []
+        with pytest.raises(InvalidSettingsError) as raised:
+            self.start_master(monkeypatch, secret, handed)
+        assert str(raised.value) == (
+            "Holly cannot start: "
+            "DATABASE_URL must be a postgres:// or postgresql:// URL with a host"
+        )
+        assert handed == [], "no engine was made"
+        assert raised.value.__cause__ is None
+        printed = capsys.readouterr().out + "".join(traceback.format_exception(raised.value))
+        assert fragments_in(printed, secret) == []

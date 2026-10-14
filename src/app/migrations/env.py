@@ -62,12 +62,13 @@ def do_run_migrations(connection: Connection) -> None:
 
 
 async def run_migrations_online() -> None:
-    # Inject the URL into the engine section directly rather than through
-    # config.set_main_option, which routes through ConfigParser and treats a `%` in the
-    # password as interpolation syntax.
+    # The parsed URL goes to the engine as it is, never through config.set_main_option, which
+    # routes through ConfigParser and treats a `%` in the password as interpolation syntax,
+    # and never as text, which SQLAlchemy would parse a second time.
     section = config.get_section(config.config_ini_section, {})
-    section["sqlalchemy.url"] = get_settings().sqlalchemy_url()
-    connectable = async_engine_from_config(section, prefix="sqlalchemy.")
+    connectable = async_engine_from_config(
+        section, prefix="sqlalchemy.", url=get_settings().sqlalchemy_url()
+    )
 
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
