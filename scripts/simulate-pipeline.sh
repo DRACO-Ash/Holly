@@ -6,37 +6,56 @@
 # This reproduces that checkout state and command, not just the command.
 #
 # Adapted for Holly (Python): POSIX sh rather than bash, a fresh temporary checkout on every
-# run, the locked pip install, and pytest writing coverage.xml. It packages the COMMITTED tree
-# (git archive HEAD), so commit before you simulate.
-# TBC, re-verify: the baseline does not record the platform's exact install and test commands
-# for the python template. By default this runs the canonical pair from toolchain-adapters under
-# GITLAB_CI=true. Once the platform team confirms its test command, rehearse that exact command:
-#   TEST_CMD='coverage run -m pytest && coverage xml' sh scripts/simulate-pipeline.sh
+# run, the transport reproduced through a Git round-trip, an allowlisted PATH, the locked pip
+# install, and pytest writing coverage.xml. It packages the COMMITTED tree (git archive HEAD),
+# so commit before you simulate. The checkout is removed afterwards; KEEP_SIM=1 keeps it.
+# TBC, re-verify: the baseline does not record the platform's exact stage commands for the
+# python template. By default this runs the canonical pair from toolchain-adapters under
+# GITLAB_CI=true. Once the platform team confirms its commands, rehearse exactly those:
+#   INSTALL_CMD='pip install -r requirements.txt' TEST_CMD='coverage run -m pytest && coverage xml' \
+#     sh scripts/simulate-pipeline.sh
 set -eu
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 PYTHON="${PYTHON:-python3.12}"
+INSTALL_CMD="${INSTALL_CMD:-pip install --require-hashes -r requirements-dev.txt}"
 TEST_CMD="${TEST_CMD:-pytest --cov --cov-report=xml}"
 SIM="$(mktemp -d "${TMPDIR:-/tmp}/appstore-sim.XXXXXX")"
 
+cleanup() {
+  if [ "${KEEP_SIM:-0}" != 1 ]; then rm -rf -- "$SIM"; else echo "kept $SIM"; fi
+}
+trap cleanup EXIT
+
 # 1. Produce the real upload artefact.
-(cd "$ROOT" && sh "$HERE/package-appstore.sh")
+sh "$HERE/package-appstore.sh"
 
-# 2. Check it out the way the platform does.
-unzip -q "$ROOT/dist/appstore.zip" -d "$SIM"
-printf 'stages: [test]\n' > "$SIM/.gitlab-ci.yml"   # the platform commits its own CI file
+# 2. Check it out the way the platform does: the zip is committed into a fresh Git project and
+#    the pipeline runs on a checkout of that commit, so the transport is reproduced (file modes,
+#    empty directories), not just the tree. Then the platform adds its own CI file.
+mkdir "$SIM/upload" "$SIM/checkout"
+unzip -q "$ROOT/dist/appstore.zip" -d "$SIM/upload"
+git -C "$SIM/upload" init -q
+git -C "$SIM/upload" add -A
+git -C "$SIM/upload" -c user.name=simulation -c user.email=simulation@localhost \
+  -c commit.gpgsign=false commit -q -m upload
+git -C "$SIM/upload" archive HEAD | tar -x -C "$SIM/checkout"
+printf 'stages: [test]\n' > "$SIM/checkout/.gitlab-ci.yml"   # the platform commits its own CI file
 
-# 3. Run the platform's install, command, and environment.
-cd "$SIM"
+# 3. Run the platform's install, command, and environment, on an allowlisted PATH so no tool
+#    on this machine can stand in for one the platform lacks.
+cd "$SIM/checkout"
 "$PYTHON" -m venv .venv
-.venv/bin/pip install --quiet --disable-pip-version-check --require-hashes -r requirements-dev.txt
+SIM_PATH="$SIM/checkout/.venv/bin:/usr/bin:/bin"
+echo "install command: $INSTALL_CMD"
+PATH="$SIM_PATH" sh -c "$INSTALL_CMD"
 echo "test command: $TEST_CMD"
-PATH="$SIM/.venv/bin:$PATH" GITLAB_CI=true sh -c "$TEST_CMD"
+PATH="$SIM_PATH" GITLAB_CI=true sh -c "$TEST_CMD"
 
 # 4. Confirm the artefact the SonarQube gate reads actually exists.
 test -s coverage.xml || {
   echo "coverage.xml is missing or empty; the Code Quality gate would score 0%"; exit 1
 }
 
-echo "pipeline simulation green in $SIM: necessary conditions met for the test and coverage stages, not proof the upload passes"
+echo "pipeline simulation green: necessary conditions met for the test and coverage stages, not proof the upload passes"

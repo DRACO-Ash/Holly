@@ -18,6 +18,7 @@ step "Format (ruff format --check)"
 "$BIN/ruff" format --check src tests
 
 step "Lint (ruff check)"
+echo "Reads: src and tests with the committed ruff profile. Cannot see: SonarQube rules outside it; the platform's analysis is binding."
 "$BIN/ruff" check src tests
 
 step "Types (mypy, strict)"

@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-> Adoption note (delete when the two open items are resolved): this file is inherited from the Bluestaq Foundations baseline and was filled at scaffold. Still open, both `TBC, re-verify`: the App Store slug, and the platform's exact install and test commands for the python template (rehearse the confirmed command with `TEST_CMD='...' sh scripts/simulate-pipeline.sh`). Keep this file short; procedures live in `skills/`, not here.
+> Adoption note (delete when the open items are resolved): this file is inherited from the Bluestaq Foundations baseline and was filled at scaffold. Still open: the App Store slug (`TBC, re-verify`); the platform's exact stage commands for the python template, install, test, check and build (`TBC, re-verify`; rehearse the confirmed ones with `INSTALL_CMD='...' TEST_CMD='...' sh scripts/simulate-pipeline.sh`); the upload baseline record and the rung that refuses without it, due before the first upload (appstore-gate-compliance section 3); and `.env.example` (`PORT=`), which this project's `Read(./.env.*)` deny rule stops Claude from creating. Keep this file short; procedures live in `skills/`, not here.
 
 Always-true conventions for this project. Procedures live in `.claude/skills/`. The house voice is in `.claude/output-styles/house-voice.md`. When a rule here and a skill disagree, this file wins for conventions and the skill wins for procedure.
 
@@ -34,8 +34,8 @@ Holly, the Daily Ops Dashboard: a Python 3.12 FastAPI server. Archetype: `server
 python3.12 -m venv .venv && .venv/bin/pip install --require-hashes -r requirements-dev.txt   # install from the lockfile
 sh scripts/verify.sh                     # the verification loop: pin, format, lint, types, complexity, duplication, tests with coverage, audit
 PYTHONPATH=src .venv/bin/python -m app   # dev server on 0.0.0.0, at PORT or 8080
-docker build -t holly .                  # the container build (release path, human-gated)
 sh scripts/simulate-pipeline.sh          # before every upload: package, check out and test the way the platform does
+sh scripts/smoke-container.sh            # before every upload: build the image from the upload, run it, probe the contract
 ```
 
 Relock after any dependency change with the `uv pip compile` command in the header of `requirements.in`, then `requirements-dev.in`; never edit a lockfile by hand.
@@ -45,16 +45,18 @@ Every change runs the verification loop, then passes the `engineering-reviewer` 
 ## Directory layout
 
 ```
-src/app/                the application: factory.py (create_app), main.py (ASGI entry), config.py
+src/app/                the application: factory.py (create_app), main.py (ASGI entry), config.py, gunicorn_conf.py
 Dockerfile              the container build, hardened and flattened to one layer
-scripts/                verify.sh (the loop), package-appstore.sh, simulate-pipeline.sh
+scripts/                verify.sh (the loop), package-appstore.sh, simulate-pipeline.sh, smoke-container.sh
 tests/                  the pytest suite (coverage.xml, 80% floor)
+docs/AUDIT-LOG.md       one row per change
+SECURITY.md             the accepted security positions and their trip-wires
 .claude/                this baseline (skills, agents, output style, hooks, settings)
 ```
 
 ## Naming and versioning
 
-- Releases are `V<major>.<minor>`; the current stamp is V0.1 (`__version__` in `src/app/__init__.py`, held equal to `pyproject.toml` by a test). Bump the in-app version stamp and add one audit row on every change.
+- Releases are `V<major>.<minor>`; the current stamp is V0.1 (`__version__` in `src/app/__init__.py`, held equal to `pyproject.toml` by a test). Bump the in-app version stamp and add one audit row to `docs/AUDIT-LOG.md` on every change.
 - Static delivery copies (static archetype only, so not used here) follow `Bluestaq_Limited_-_<product>_-_V<major>_<minor>_-_<date>.html`.
 - The App Store app name (slug) is lowercase, hyphenated, starts and ends alphanumeric, unique in the store: `TBC, re-verify`.
 

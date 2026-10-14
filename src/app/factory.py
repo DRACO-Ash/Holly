@@ -45,15 +45,16 @@ async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
     log_event("shutdown", version=__version__)
 
 
-async def _root() -> dict[str, str]:
+# Plain functions, not coroutines: none of these awaits anything (SonarQube python:S7503).
+def _root() -> dict[str, str]:
     return {"service": SERVICE_NAME, "status": "ok"}
 
 
-async def _health() -> PlainTextResponse:
+def _health() -> PlainTextResponse:
     return PlainTextResponse("ok")
 
 
-async def _status() -> dict[str, Any]:
+def _status() -> dict[str, Any]:
     """Secret-free diagnostics: each input as set or not and its length, never its value."""
     config = {}
     for name in CONFIG_INPUTS:
@@ -76,16 +77,28 @@ async def _security_headers(
 
 
 def create_app() -> FastAPI:
-    """Build the Holly application. The interactive API docs are off, so nothing extra is public."""
+    """Build the Holly application.
+
+    The interactive API docs are off, so nothing extra is public. Trailing slashes are not
+    redirected, because the redirect would echo the request's Host header in its Location.
+    """
     app = FastAPI(
         title="Holly",
         version=__version__,
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
+        redirect_slashes=False,
         lifespan=_lifespan,
     )
     app.middleware("http")(_security_headers)
+
+    @app.exception_handler(500)
+    def _server_error(_request: Request, _exc: Exception) -> PlainTextResponse:
+        # A generic body; the traceback stays in the server log. Starlette builds this response
+        # outside the header middleware, so the security headers are added here too.
+        return PlainTextResponse("Internal Server Error", status_code=500, headers=SECURITY_HEADERS)
+
     app.add_api_route("/", _root, methods=["GET", "HEAD"])
     for path in HEALTH_PATHS:
         app.add_api_route(path, _health, methods=["GET", "HEAD"])

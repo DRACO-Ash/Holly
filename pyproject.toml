@@ -38,9 +38,13 @@ line-length = 100
 src = ["src", "tests"]
 
 [tool.ruff.lint]
+# Preview is on only for rules named explicitly: RUF029 is the local twin of SonarQube's
+# python:S7503 (an async function that never awaits), which is in the Sonar way profile.
+preview = true
+explicit-preview-rules = true
 select = [
     "A", "ARG", "B", "BLE", "C4", "C90", "DTZ", "E", "ERA", "F", "I", "N",
-    "PERF", "PIE", "PL", "PT", "RET", "RUF", "S", "SIM", "UP", "W",
+    "PERF", "PIE", "PL", "PT", "RET", "RUF", "RUF029", "S", "SIM", "UP", "W",
 ]
 
 [tool.ruff.lint.mccabe]
@@ -55,6 +59,11 @@ strict = true
 mypy_path = "src"
 files = ["src", "tests"]
 explicit_package_bases = true
+
+[[tool.mypy.overrides]]
+# gunicorn ships no type information; only the tests import it, to check setting names.
+module = ["gunicorn.*"]
+ignore_missing_imports = true
 
 [tool.pylint.similarities]
 min-similarity-lines = 4
