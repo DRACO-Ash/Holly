@@ -9,6 +9,7 @@ from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from unittest.mock import MagicMock
 
 import httpx2
 import pytest
@@ -23,8 +24,15 @@ UseSession = Callable[[FakeSession], FakeSession]
 SignIn = Callable[[User], User]
 
 
-async def _write(previous_hash: str | None, **fields: Any) -> AuditLog:
-    session = FakeSession([None, scalar_result(previous_hash)])
+def _latest(previous: tuple[str, datetime] | None) -> MagicMock:
+    """The writer's read of the newest row: its hash and timestamp, or no row at all."""
+    result = MagicMock()
+    result.one_or_none.return_value = previous
+    return result
+
+
+async def _write(previous: tuple[str, datetime] | None, **fields: Any) -> AuditLog:
+    session = FakeSession([None, _latest(previous)])
     entry = await write_audit(session, **fields)  # type: ignore[arg-type]
     assert session.added == [entry]
     session.flush.assert_awaited_once()
@@ -34,7 +42,7 @@ async def _write(previous_hash: str | None, **fields: Any) -> AuditLog:
 async def _chain(length: int) -> list[AuditLog]:
     rows: list[AuditLog] = []
     for number in range(length):
-        previous = rows[-1].entry_hash if rows else None
+        previous = (rows[-1].entry_hash, rows[-1].timestamp) if rows else None
         rows.append(await _write(previous, action_type="test.event", detail={"number": number}))
     return rows
 
@@ -60,12 +68,26 @@ class TestWriteAudit:
         assert entry.entry_hash == expected_entry_hash(entry)
 
     async def test_an_entry_links_to_the_latest_hash(self) -> None:
-        entry = await _write("a" * 64, action_type="test.event")
+        entry = await _write(("a" * 64, NOW), action_type="test.event")
         assert entry.previous_hash == "a" * 64
         assert entry.entry_hash == expected_entry_hash(entry)
 
+    async def test_an_entry_is_timed_after_the_latest_even_when_this_clock_is_behind(
+        self,
+    ) -> None:
+        # Another container, its clock an hour ahead, wrote the latest row.
+        ahead = datetime.now(UTC) + timedelta(hours=1)
+        entry = await _write(("a" * 64, ahead), action_type="test.event")
+        assert entry.timestamp == ahead + timedelta(microseconds=1)
+        assert entry.entry_hash == expected_entry_hash(entry)
+
+    async def test_a_clock_ahead_of_the_chain_keeps_its_own_time(self) -> None:
+        before = datetime.now(UTC)
+        entry = await _write(("a" * 64, NOW - timedelta(days=1)), action_type="test.event")
+        assert before <= entry.timestamp <= datetime.now(UTC)
+
     async def test_the_writer_takes_the_chain_lock_first(self) -> None:
-        session = FakeSession([None, scalar_result(None)])
+        session = FakeSession([None, _latest(None)])
         await write_audit(session, action_type="test.event")  # type: ignore[arg-type]
         lock_statement = session.execute.await_args_list[0].args[0]
         assert "pg_advisory_xact_lock" in str(lock_statement)

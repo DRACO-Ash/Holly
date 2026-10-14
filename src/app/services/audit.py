@@ -3,15 +3,16 @@
 Each row's entry_hash is the SHA-256 of the previous entry_hash followed by the canonical JSON
 payload. The payload holds the row's own fields, including its timestamp, so anyone can
 recompute every hash from the table alone (expected_entry_hash, first_broken_link). A
-PostgreSQL advisory lock taken inside the transaction serialises writers, and the timestamp is
-read after the lock, so the chain's timestamp order is its write order.
+PostgreSQL advisory lock taken inside the transaction serialises writers, and each timestamp
+falls after the previous row's, so the chain's timestamp order, which the verifier walks, is
+its write order even when two containers' clocks differ or a clock steps back.
 """
 
 import hashlib
 import json
 import uuid
 from collections.abc import Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select, text
@@ -20,6 +21,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.audit import AuditLog
 
 AUDIT_ADVISORY_LOCK_KEY = 0x4F505841
+# The smallest step PostgreSQL's timestamp keeps.
+_ONE_TICK = timedelta(microseconds=1)
 
 
 def _serialise_payload(payload: dict[str, Any]) -> str:
@@ -66,15 +69,22 @@ async def write_audit(
         text("SELECT pg_advisory_xact_lock(:k)"),
         {"k": AUDIT_ADVISORY_LOCK_KEY},
     )
-    latest = await db.execute(
-        select(AuditLog.entry_hash).order_by(AuditLog.timestamp.desc()).limit(1)
-    )
-    previous_hash = latest.scalar_one_or_none()
+    latest = (
+        await db.execute(
+            select(AuditLog.entry_hash, AuditLog.timestamp)
+            .order_by(AuditLog.timestamp.desc())
+            .limit(1)
+        )
+    ).one_or_none()
+    previous_hash: str | None = None
+    timestamp = datetime.now(UTC)
+    if latest is not None:
+        previous_hash, previous_time = latest
+        timestamp = max(timestamp, previous_time + _ONE_TICK)
 
     # Stored detail goes through the same str() fallback as the hash, so json.loads of the
     # stored text reproduces exactly what was hashed.
     stored_detail = json.dumps(detail, default=str) if detail is not None else None
-    timestamp = datetime.now(UTC)
     payload = _payload(
         action_type=action_type,
         entity_type=entity_type,
