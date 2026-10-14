@@ -60,6 +60,25 @@ class TestRateLimiter:
         assert limiter.wait_time("first") == 0, "the stalest key was dropped"
         assert limiter.wait_time("third") == 60
 
+    @pytest.mark.parametrize(
+        ("limiter", "limit", "window_seconds"),
+        [
+            (rate_limit.GLOBAL_LIMIT, 600, 60),
+            (rate_limit.LOGIN_LIMIT, 10, 900),
+            (rate_limit.LOGIN_ADDRESS_LIMIT, 30, 60),
+            (rate_limit.ASSISTANT_LIMIT, 30, 600),
+        ],
+        ids=["every request", "sign-ins per username", "sign-ins per address", "assistant calls"],
+    )
+    def test_each_limit_is_the_documented_one(
+        self, limiter: RateLimiter, limit: int, window_seconds: int
+    ) -> None:
+        # Literals, so a loosened limit fails here; the documentation states the same values.
+        assert (limiter.limit, limiter.window_seconds) == (limit, window_seconds)
+
+    def test_a_limiter_remembers_at_most_10000_keys(self) -> None:
+        assert rate_limit.MAX_TRACKED_KEYS == 10_000
+
     def test_forget_and_reset_clear_the_counts(self) -> None:
         limiter = RateLimiter(limit=1, window_seconds=60, clock=FakeClock())
         limiter.record("a")

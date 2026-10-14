@@ -1,10 +1,11 @@
 """Sign-in, token refresh and sign-out, each written to the audit chain.
 
-Sign-in attempts are limited per client address before any password is checked, and failed
-sign-ins per username (core/rate_limit.py); a success clears a username's count. Every
-checked attempt costs one bcrypt check, against a dummy hash for an unknown username, so the
-response time does not reveal which usernames exist. bcrypt runs on worker threads, a few at
-a time, so a burst of sign-ins cannot stall the one worker. Refresh tokens rotate: each one
+Sign-in attempts are limited per client address before any password is checked, and per
+username (core/rate_limit.py): each checked attempt counts against its username before the
+check starts, and a success clears the count. Every checked attempt costs one bcrypt check,
+against a dummy hash for an unknown username, so the response time does not reveal which
+usernames exist. bcrypt runs on worker threads, a few at a time, so a burst of sign-ins cannot
+stall the one worker. Refresh tokens rotate: each one
 works once, and its id joins the block-list when it is used or signed out (ADR-011).
 """
 
@@ -117,14 +118,17 @@ def _login_failure(user: User | None, password: str) -> str | None:
 
 def _login_failure_in_slot(user: User | None, password: str) -> str | None:
     """_login_failure on a worker thread, giving its slot back when the check ends, even when
-    the request that asked for it has gone."""
+    the request that asked for it has gone. Nothing else gives the slot back."""
     try:
         return _login_failure(user, password)
     finally:
         _PASSWORD_CHECK_SLOTS.release()
 
 
-async def _check_password(user: User | None, password: str) -> str | None:
+async def _check_password(user: User | None, username: str, password: str) -> str | None:
+    """Check `password` on a worker thread once a slot is free, refusing with 503 when none is.
+    The attempt counts against `username` before the check starts, so concurrent guesses
+    cannot pass the limit; an attempt refused for want of a slot does not count."""
     if not _PASSWORD_CHECK_SLOTS.acquire(blocking=False):
         logger.warning(
             "Sign-in refused: %s password checks already running", MAX_CONCURRENT_PASSWORD_CHECKS
@@ -134,7 +138,10 @@ async def _check_password(user: User | None, password: str) -> str | None:
             detail="Sign-in is busy. Try again in a moment.",
             headers={"Retry-After": "1"},
         )
-    return await asyncio.to_thread(_login_failure_in_slot, user, password)
+    LOGIN_LIMIT.record(username)
+    # Shielded, so a request cancelled while its check still waits for a thread does not
+    # cancel the check, which alone gives the slot back.
+    return await asyncio.shield(asyncio.to_thread(_login_failure_in_slot, user, password))
 
 
 def _failure_detail(user: User | None, username: str, reason: str) -> dict[str, Any]:
@@ -187,15 +194,16 @@ async def login(payload: LoginRequest, request: Request, db: DbSession) -> Token
 
     user = (await db.execute(select(User).where(User.username == username))).scalar_one_or_none()
     user_id = user.id if user else None
+    # No await comes between this test and the count _check_password makes, so two attempts
+    # cannot both pass the last place under the limit.
     wait = LOGIN_LIMIT.wait_time(username)
     if wait:
         detail = _failure_detail(user, username, "rate_limited")
         await _audit(db, "auth.user.login", user_id=user_id, ip=ip, detail=detail)
         raise _too_many("Too many failed sign-ins.", wait)
 
-    reason = await _check_password(user, payload.password)
+    reason = await _check_password(user, username, payload.password)
     if user is None or reason is not None:
-        LOGIN_LIMIT.record(username)
         detail = _failure_detail(user, username, reason or "unknown_user")
         await _audit(db, "auth.user.login", user_id=user_id, ip=ip, detail=detail)
         raise _invalid_credentials()

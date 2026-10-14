@@ -2,7 +2,7 @@
 
 The coarse tier counts every request except the platform probes and the dashboard's static
 files, per client address; it protects the process. The fine tier counts sign-in attempts per
-client address, failed sign-ins per username and assistant calls per user; it protects the
+client address, checked sign-ins per username and assistant calls per user; it protects the
 routes that cost money or invite password guessing. Both answer 429 with Retry-After.
 
 The counters live in this process, so they reset when the container restarts. Holly runs one
@@ -84,8 +84,9 @@ class RateLimiter:
 
 # Coarse tier: per client address, every request except probes and static files.
 GLOBAL_LIMIT = RateLimiter(limit=600, window_seconds=60)
-# Fine tier: failed sign-ins per username (a success clears them), every sign-in attempt per
-# client address (counted before its password is checked), and assistant calls per user.
+# Fine tier: checked sign-ins per username (each counted before its check, a success clears
+# them), every sign-in attempt per client address (counted before anything is done for it), and
+# assistant calls per user.
 LOGIN_LIMIT = RateLimiter(limit=10, window_seconds=15 * 60)
 LOGIN_ADDRESS_LIMIT = RateLimiter(limit=30, window_seconds=60)
 ASSISTANT_LIMIT = RateLimiter(limit=30, window_seconds=10 * 60)

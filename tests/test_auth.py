@@ -8,6 +8,7 @@ import time
 import traceback
 import uuid
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from unittest.mock import AsyncMock
@@ -521,6 +522,85 @@ class TestSignInUnderLoad:
         assert (await first).status_code == 401
         # The held check gave its slot back when it ended.
         assert auth._PASSWORD_CHECK_SLOTS.acquire(blocking=False)
+        # The attempt refused for want of a slot does not count against its username.
+        assert len(LOGIN_LIMIT._hits["a"]) == 1
+        assert not LOGIN_LIMIT._hits.get("b")
+
+    async def test_four_checks_run_at_once_and_a_fifth_is_refused(
+        self, api: httpx2.AsyncClient, use_session: UseSession, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The module's own slots, not a stand-in.
+        entered, release = threading.Semaphore(0), threading.Event()
+
+        def held_check(_plain: str, _hashed: str) -> bool:
+            entered.release()
+            release.wait(5)
+            return False
+
+        monkeypatch.setattr(auth, "verify_password", held_check)
+        use_session(user_lookup(None))
+        held = [
+            asyncio.create_task(
+                api.post("/api/v1/auth/login", json={"username": f"user{n}", "password": KNOWN})
+            )
+            for n in range(4)
+        ]
+        for _ in held:
+            assert await asyncio.to_thread(entered.acquire, True, 5)
+        fifth = await api.post("/api/v1/auth/login", json={"username": "user4", "password": KNOWN})
+        release.set()
+        assert fifth.status_code == 503
+        assert [response.status_code for response in await asyncio.gather(*held)] == [401] * 4
+
+    async def test_each_check_counts_before_it_runs_so_concurrent_guesses_stop_at_the_limit(
+        self, api: httpx2.AsyncClient, use_session: UseSession, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        for _ in range(9):
+            LOGIN_LIMIT.record("alice")
+        entered, release = threading.Event(), threading.Event()
+        checked: list[str] = []
+
+        def held_check(_plain: str, hashed: str) -> bool:
+            checked.append(hashed)
+            entered.set()
+            release.wait(5)
+            return False
+
+        monkeypatch.setattr(auth, "verify_password", held_check)
+        use_session(user_lookup(make_user(password=KNOWN)))
+        body = {"username": "alice", "password": WRONG}
+        tenth = asyncio.create_task(api.post("/api/v1/auth/login", json=body))
+        assert await asyncio.to_thread(entered.wait, 5)
+        eleventh = await api.post("/api/v1/auth/login", json=body)
+        release.set()
+        assert eleventh.status_code == 429
+        assert (await tenth).status_code == 401
+        assert len(checked) == 1
+
+    async def test_a_check_cancelled_before_it_reaches_a_thread_still_gives_its_slot_back(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # One worker thread, kept busy, so the check queues behind it; then its request is
+        # cancelled. The check must still run, as only the check gives its slot back.
+        checked: list[str] = []
+        monkeypatch.setattr(auth, "verify_password", recording_check(checked))
+        slots = threading.BoundedSemaphore(1)
+        monkeypatch.setattr(auth, "_PASSWORD_CHECK_SLOTS", slots)
+        loop = asyncio.get_running_loop()
+        one_thread = ThreadPoolExecutor(max_workers=1)
+        loop.set_default_executor(one_thread)
+        release = threading.Event()
+        busy = loop.run_in_executor(None, release.wait, 5)
+        check = asyncio.create_task(auth._check_password(None, "alice", KNOWN))
+        await asyncio.sleep(0)
+        check.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await check
+        release.set()
+        await busy
+        one_thread.shutdown(wait=True)
+        assert slots.acquire(blocking=False), "the cancelled check never gave its slot back"
+        assert checked == [auth._dummy_hash()]
 
     async def test_password_checks_leave_the_event_loop_free(
         self, api: httpx2.AsyncClient, use_session: UseSession, monkeypatch: pytest.MonkeyPatch
