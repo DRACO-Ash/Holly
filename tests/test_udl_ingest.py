@@ -274,6 +274,64 @@ class TestUpsert:
             "Skipping UDL record TEST-MNVR-C: sat_no is out of range",
         ]
 
+    async def test_a_record_that_is_not_an_object_skips_only_itself(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        session = upsert_session()
+        records: list[Any] = ["not a record", 7, None, ["nested"], maneuver("TEST-MNVR-D")]
+        with caplog.at_level(logging.WARNING, logger="app.services.udl_records"):
+            async with udl_serving(records, []) as client:
+                result = await run_ingest("maneuver", session, client)
+        assert result == IngestResult(pulled=5, inserted=1, updated=0, skipped=4)
+        assert [row["udl_id"] for row in upserted_rows(session)] == ["TEST-MNVR-D"]
+        assert caplog.messages == ["Skipping a UDL record that is not a JSON object"] * 4
+
+    async def test_numbers_and_times_beyond_their_types_never_fail_the_pull(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        # Non-standard JSON: an Infinity token where an integer belongs, a 400-digit number
+        # where a float belongs, and a time that leaves the calendar once converted to UTC.
+        session = upsert_session()
+        records = [
+            maneuver("TEST-MNVR-A", satNo=float("inf")),
+            maneuver(
+                "TEST-MNVR-B",
+                deltaV=10**400,
+                eventStartTime="0001-01-01T00:00:00+05:00",
+                eventStopTime="2026-06-01T05:00:00+05:00",
+            ),
+        ]
+        with caplog.at_level(logging.WARNING, logger="app.services.udl_records"):
+            async with udl_serving(records, []) as client:
+                result = await run_ingest("maneuver", session, client)
+        assert result == IngestResult(pulled=2, inserted=1, updated=0, skipped=1)
+        assert caplog.messages == [
+            "Skipping UDL record TEST-MNVR-A: raw holds a number PostgreSQL JSON cannot store"
+        ]
+        [row] = upserted_rows(session)
+        assert row["udl_id"] == "TEST-MNVR-B"
+        assert "delta_v" not in row, "the number beyond any float is left out"
+        assert "event_start_time" not in row, "the time outside the calendar is left out"
+        assert row["event_stop_time"] == datetime(2026, 6, 1, tzinfo=UTC)
+
+    @pytest.mark.parametrize(
+        ("text", "expected"),
+        [
+            ("2026-06-01T00:00:00Z", datetime(2026, 6, 1, tzinfo=UTC)),
+            ("2026-06-01T05:30:00+05:30", datetime(2026, 6, 1, tzinfo=UTC)),
+            ("2026-06-01T00:00:00", datetime(2026, 6, 1)),  # noqa: DTZ001  naive stays naive
+            ("0001-01-01T00:00:00+05:00", None),
+            ("9999-12-31T23:00:00-05:00", None),
+        ],
+    )
+    def test_a_time_is_read_in_utc_or_refused(self, text: str, expected: datetime | None) -> None:
+        if expected is None:
+            with pytest.raises(ValueError, match="outside the calendar"):
+                udl_records.parse_datetime(text)
+        else:
+            parsed = udl_records.parse_datetime(text)
+            assert (parsed, parsed.tzinfo) == (expected, expected.tzinfo)
+
     async def test_a_character_postgresql_cannot_hold_skips_only_its_record(
         self, caplog: pytest.LogCaptureFixture
     ) -> None:

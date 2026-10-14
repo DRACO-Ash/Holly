@@ -11,7 +11,7 @@ import logging
 import uuid
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import (
@@ -58,8 +58,18 @@ class IngestResult:
 
 
 def parse_datetime(value: str) -> datetime:
-    # UDL often ends a timestamp with Z (UTC).
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    """An ISO 8601 time, converted to UTC when it carries an offset, as PostgreSQL stores it.
+    UDL often ends a timestamp with Z. Raises ValueError for anything else, and for a time
+    whose conversion leaves the calendar (year 1 behind UTC, or year 9999 ahead), which would
+    otherwise fail the whole write."""
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        return parsed
+    try:
+        return parsed.astimezone(UTC)
+    except OverflowError:
+        msg = "time outside the calendar once converted to UTC"
+        raise ValueError(msg) from None
 
 
 def set_if_present(target: Row, key: str, value: Any) -> None:
@@ -96,7 +106,7 @@ def copy_fields(target: Row, source: Record, pairs: Iterable[tuple[str, str]]) -
 def coerce_int(value: Any) -> int | None:
     try:
         return int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):  # OverflowError: an infinite float
         return None
 
 
@@ -110,7 +120,7 @@ def set_int_if_present(target: Row, key: str, value: Any) -> None:
 def coerce_float(value: Any) -> float | None:
     try:
         return float(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):  # OverflowError: an integer beyond any float
         return None
 
 
@@ -175,10 +185,13 @@ def map_records(
     records: Sequence[Record], mapper: Callable[[Record], Row | None], model: Any
 ) -> tuple[list[Row], int]:
     """The mapped rows, one per UDL id (the latest wins), and how many records were skipped:
-    those the mapper refused, those the table cannot store, and repeats of an id already in
-    the same pull."""
+    those that are not JSON objects, those the mapper refused, those the table cannot store,
+    and repeats of an id already in the same pull."""
     by_udl_id: dict[str, Row] = {}
     for record in records:
+        if not isinstance(record, dict):
+            logger.warning("Skipping a UDL record that is not a JSON object")
+            continue
         row = mapper(record)
         if row is None:
             continue
