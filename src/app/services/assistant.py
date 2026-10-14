@@ -28,7 +28,7 @@ from app.models.procedure import Procedure
 from app.schemas.assistant import AssistantEvaluationRead, StructuredEvaluation
 from app.services.audit import write_audit
 from app.services.claude import AssistantError, call_claude, extract_json_object
-from app.services.disclosure import NOT_CLEARED, is_cleared
+from app.services.disclosure import NOT_CLEARED, cleared_markings, is_cleared
 from app.services.procedure_storage import read_preview
 
 logger = logging.getLogger(__name__)
@@ -208,6 +208,8 @@ async def _load_relevant_maneuvers(db: AsyncSession, notification: Notification)
     stmt = (
         select(Maneuver)
         .where(Maneuver.sat_no.in_(sat_nos))
+        # A maneuver goes to the assistant on the same terms as a notice: its marking cleared.
+        .where(Maneuver.classification_marking.in_(cleared_markings()))
         .where(
             or_(
                 Maneuver.event_start_time.is_(None),

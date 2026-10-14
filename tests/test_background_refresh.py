@@ -399,16 +399,16 @@ class TestAutoEvaluation:
         ) in sql
         assert "FROM notification WHERE notification.udl_created_at >= " in sql
         assert_window_start(params["udl_created_at_1"], hours=9, span=span)
-        # ...whose marking is cleared for the assistant...
-        assert "AND notification.classification_marking IN (" in sql
-        assert params["classification_marking_1_1"] == "U"
-        # ...that has no evaluation yet, newest first, at most the configured number of them.
+        # ...that has no evaluation yet and whose latest publication is cleared for the
+        # assistant, newest first, at most the configured number of them.
         assert (
             "LEFT OUTER JOIN assistant_evaluation "
             "ON assistant_evaluation.notification_id = anon_1.id "
             "WHERE assistant_evaluation.id IS NULL "
-            "ORDER BY anon_1.udl_created_at DESC LIMIT "
+            "AND anon_1.classification_marking IN ("
         ) in sql
+        assert "ORDER BY anon_1.udl_created_at DESC LIMIT " in sql
+        assert params["classification_marking_1_1"] == "U"
         assert params["param_1"] == 3
         services.evaluate_once.assert_not_awaited()
 
@@ -647,7 +647,6 @@ class TestEventSummaries:
         [
             ("history", ["TEST-EVENT-2"]),
             ("generate", [EVENT, "TEST-EVENT-2"]),
-            ("commit", [EVENT, "TEST-EVENT-2"]),
         ],
     )
     async def test_a_failed_summary_is_rolled_back_and_the_next_event_still_runs(
@@ -679,6 +678,35 @@ class TestEventSummaries:
         assert keys_summarised(services) == summarised
         [record] = logged(caplog, logging.ERROR)
         assert record.getMessage() == f"Event summary failed for {EVENT}"
+        assert raised(record) is error
+
+    @pytest.mark.parametrize("failing_step", ["audit", "commit"])
+    async def test_a_narrative_that_cannot_be_recorded_stops_the_cycle(
+        self,
+        sessions: SessionFactory,
+        services: Services,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+        failing_step: str,
+    ) -> None:
+        # TEST-EVENT-1 is the newer event, so it is regenerated first.
+        in_window = [publication(1, "TEST-EVENT-2", 2), publication(2, EVENT, 1)]
+        error = RuntimeError("Example recording failure")
+        _window, _lookup, first = sessions.script(
+            FakeSession([rows_result(in_window)]),
+            FakeSession([rows_result([])]),
+            history_session([in_window[1]]),
+        )
+        if failing_step == "audit":
+            monkeypatch.setattr(background_refresh, "write_audit", AsyncMock(side_effect=error))
+        else:
+            first.commit.side_effect = error
+        await background_refresh._event_summary_phase()
+        first.rollback.assert_awaited_once()
+        # Fail closed: no further event is sent once a sending cannot be recorded.
+        assert keys_summarised(services) == [EVENT]
+        [record] = logged(caplog, logging.ERROR)
+        assert record.getMessage() == f"Could not record the narrative of {EVENT}; stopping"
         assert raised(record) is error
 
     async def test_a_persistent_failure_stops_the_cycle(

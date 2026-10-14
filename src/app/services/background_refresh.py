@@ -37,7 +37,7 @@ from app.models.event_summary import EventSummary
 from app.models.notification import Notification
 from app.services.assistant import EvaluationRun, evaluate_once, write_evaluation_audit
 from app.services.audit import write_audit
-from app.services.disclosure import cleared_condition
+from app.services.disclosure import cleared_condition, cleared_markings
 from app.services.event_summary import (
     compute_event_key,
     generate_event_summary,
@@ -87,7 +87,7 @@ async def _unevaluated_notification_ids(window_start: datetime, limit: int) -> l
     # duplicate is not worth an assistant call.
     async with get_session_factory()() as db:
         notif_alias, _dedup_subq = aliased_deduped_notifications(
-            [Notification.udl_created_at >= window_start, cleared_condition()]
+            [Notification.udl_created_at >= window_start]
         )
         stmt = (
             select(notif_alias.id)
@@ -96,6 +96,9 @@ async def _unevaluated_notification_ids(window_start: datetime, limit: int) -> l
                 AssistantEvaluation.notification_id == notif_alias.id,
             )
             .where(AssistantEvaluation.id.is_(None))
+            # Only a notice whose latest publication is cleared; an older cleared one would be
+            # evaluated while the dashboard shows the newer one as not sent.
+            .where(notif_alias.classification_marking.in_(cleared_markings()))
             .order_by(notif_alias.udl_created_at.desc())
             .limit(limit)
         )
@@ -210,12 +213,18 @@ async def _event_summary_phase() -> None:
             try:
                 history = await _event_history(db, key)
                 outcome = await generate_event_summary(db, key, history)
-                await write_audit(db, **_summary_audit(key, history, outcome.summary is None))
-                await db.commit()
             except Exception:
                 logger.exception("Event summary failed for %s", key)
                 await db.rollback()
                 continue
+            try:
+                await write_audit(db, **_summary_audit(key, history, outcome.summary is None))
+                await db.commit()
+            except Exception:
+                # Fail closed: no further event is sent while sendings cannot be recorded.
+                logger.exception("Could not record the narrative of %s; stopping", key)
+                await db.rollback()
+                return
         if outcome.persistent_failure:
             logger.warning("Stopping event summary cycle early: %s", outcome.error)
             return

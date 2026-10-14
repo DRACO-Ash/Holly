@@ -585,11 +585,14 @@ class TestTheQueries:
         sql, params = sent(session, 2)
         assert sql.endswith(
             "FROM maneuver WHERE maneuver.sat_no IN (__[POSTCOMPILE_sat_no_1]) "
+            "AND maneuver.classification_marking IN (__[POSTCOMPILE_classification_marking_1]) "
             "AND (maneuver.event_start_time IS NULL OR maneuver.event_start_time >= "
             "%(event_start_time_1)s::TIMESTAMP WITH TIME ZONE) "
             "ORDER BY maneuver.event_start_time DESC NULLS LAST LIMIT %(param_1)s::INTEGER"
         )
         assert params["sat_no_1"] == [99999, 99998]
+        # Only maneuvers whose marking is cleared for the assistant.
+        assert params["classification_marking_1"] == ["U"]
         window = timedelta(days=30)
         assert before - window <= params["event_start_time_1"] <= after - window
         assert params["param_1"] == 10
