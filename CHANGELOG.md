@@ -19,13 +19,13 @@ All notable changes to Holly are recorded here, newest first. Holly V0.2 is the 
 ● **`ASSISTANT_CLEARED_MARKINGS`**: the UDL classification markings whose notifications, and the manoeuvre records sent with them, may be sent to the assistant, `["U"]` by default. Any other marking, or none, never leaves Holly; the dashboard says which notices were not sent. Each background evaluation and event narrative is written to the audit chain; once a sending may have gone, any failure to store it or its row stops that phase for the cycle.
 ● **`python -m app.cli.verify_audit`**, which recomputes the audit chain and names the first broken link. Migration 0017 refuses every UPDATE, DELETE and TRUNCATE on the audit log, the insert-only rule ADR-005 recorded but no migration enforced.
 ● **Recurrence anchor for event timers** (migration 0016): a monthly timer set for the 31st now returns to the 31st after a shorter month.
-● **Unit tests for the dashboard's logic** (Vitest), and a server suite of 956 tests at 99% line coverage.
+● **Unit tests for the dashboard's logic** (Vitest), and a server suite of 1,019 tests at 99% line coverage.
 ● **`scripts/dev.sh`**, the local run: PostgreSQL from `infra/docker-compose.yml`, migrations, the API on 8080 and the dashboard on 3000.
 
 ### Changed
 
 ● **Renamed to Holly**: the page title and header, the browser storage keys (`holly.*`, so every analyst signs in once more), the service name in the logs and the package names.
-● **Settings are validated at boot and fail closed**: a signing key of at least 32 characters, no `*` origin, https for UDL and Mattermost outside development, and an absolute, writable procedure store (proved with a real write at boot). A refusal is one line that names each variable at fault and repeats no value. A `DATABASE_URL` may carry libpq's `sslmode`.
+● **Settings are validated at boot and fail closed**: a signing key of at least 32 characters, no `*` origin, https for UDL and Mattermost outside development, and an absolute, writable procedure store (proved with a real write at boot). A refusal is one line that names each variable at fault and repeats no value. A `DATABASE_URL` is read once, by the parser that connects: it may carry libpq's `sslmode`, and only an `@` in its password, or a `%` before two hexadecimal digits, needs encoding.
 ● **Failed sign-ins**: the audit chain records the username only when it names an account, since an unknown one may be a password typed into the wrong box.
 ● **Assistant failures** reach analysts as fixed messages; the Anthropic API's own text stays in the server log.
 ● **Sign-in tokens use PyJWT** in place of python-jose, whose ecdsa dependency carries an advisory with no fixed release. Decoding accepts the configured algorithm only and requires every claim.
@@ -48,7 +48,8 @@ All notable changes to Holly are recorded here, newest first. Holly V0.2 is the 
 ● Satellite ids that UDL sends as numbers no longer crash evaluations and event summaries.
 ● Event timers: a whitespace-only label is refused, targets are bounded to the years 2000 to 2099, and an unknown recurrence value is dismissed once instead of looping. The pre-alert badge and browser notification give the timer's own lead time, not a fixed 5 minutes.
 ● A manual UDL ingest may ask for at most 10,000 records in one pull. The element-set ingest's audit entry now records the data mode it asked for.
-● One UDL record that its table cannot store, such as text longer than its column, a NUL or lone surrogate in any text, or NaN in its raw JSON, no longer fails the whole pull: it is skipped, counted and logged by column.
+● One UDL record that its table cannot store, such as text longer than its column, a NUL or lone surrogate in any text, NaN in its raw JSON, a number or time beyond its column's type, or an element that is not a record, no longer fails the whole pull: it is skipped, counted and logged by column.
+● A model reply holding a character PostgreSQL cannot store is refused like any unusable reply, instead of failing the write after the call.
 ● Each refused request built a new traceback onto one shared exception, so memory grew with every 401; each refusal is now a new exception.
 ● An upload whose file write fails part-way, or whose request is cancelled, no longer leaves a file behind.
 ● An assistant reply nested too deeply to read is an assistant error, not a crash that re-billed the notice every cycle; the parser tries at most 20 opening braces, so a crafted reply cannot hold the worker.

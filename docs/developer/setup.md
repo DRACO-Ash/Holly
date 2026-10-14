@@ -71,8 +71,8 @@ Every setting Holly reads. Names are environment variable names. Secret values a
 
 | Setting | Purpose | Default | Required |
 |---------|---------|---------|----------|
-| `DATABASE_URL` | PostgreSQL connection URL with a host; `postgres://`, `postgresql://` and `postgresql+asyncpg://` are accepted. An `sslmode` query parameter, as PostgreSQL's own clients write it, is passed to asyncpg as `ssl`, which takes the same values. Wins over the `POSTGRES_*` parts. On the App Store this is the assumed name of the POSTGRESQL add-on's variable: `TBC, re-verify`. Secret, because it carries the password. | none | Yes, unless the `POSTGRES_*` parts are set |
-| `POSTGRES_HOST` | Database host, used when `DATABASE_URL` is not set. | none | Yes, without `DATABASE_URL` |
+| `DATABASE_URL` | PostgreSQL connection URL with a host; `postgres://`, `postgresql://` and `postgresql+asyncpg://` are accepted. SQLAlchemy's parser reads it once, as the connection does: punctuation in the password may stay unencoded except `@`, which reads as part of the host and stops the start, and `%` before two hexadecimal digits, which reads as an escape; write them as `%40` and `%25`. An `sslmode` query parameter, as PostgreSQL's own clients write it, is passed to asyncpg as `ssl`, which takes the same values. Wins over the `POSTGRES_*` parts. On the App Store this is the assumed name of the POSTGRESQL add-on's variable: `TBC, re-verify`. Secret, because it carries the password. | none | Yes, unless the `POSTGRES_*` parts are set |
+| `POSTGRES_HOST` | Database host name or IP address, used when `DATABASE_URL` is not set. | none | Yes, without `DATABASE_URL` |
 | `POSTGRES_PORT` | Database port, 1 to 65535. | `5432` | No |
 | `POSTGRES_DB` | Database name. | none | Yes, without `DATABASE_URL` |
 | `POSTGRES_USER` | Database user. | none | Yes, without `DATABASE_URL` |

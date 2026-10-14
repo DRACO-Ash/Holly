@@ -104,6 +104,7 @@ Holly writes one JSON object per line to standard output. Named events (`boot`, 
 ● `Notification ingest complete (window: last 120h)` and `Maneuver ingest complete (window: last 48h)`: a background pull succeeded.
 ● `Notification ingest skipped: UDL auth failed (...)` or `Notification ingest failed: ...`: see section 10.
 ● `Skipping UDL record <id>: <column> <problem>`, for example `status is longer than 20 characters`, `description holds a character PostgreSQL cannot store` (a NUL or a lone surrogate) or `raw holds a number PostgreSQL JSON cannot store` (NaN or an infinity): a record its table cannot store, skipped and counted in `skipped`; the rest of the pull is stored. The line names the column, never the value.
+● `Skipping a UDL record that is not a JSON object`: an element of UDL's answer that is not a record, skipped and counted in `skipped`.
 ● `Stopping auto-evaluate cycle early: ...`: a persistent assistant failure; see section 10.
 ● `Auto-evaluate of notification <id> failed; stopping`, followed by a traceback: evaluating that notice, storing its evaluation or writing its audit row failed once the notice may have been sent, so no further notice was sent for evaluation in that cycle.
 ● `Event summary for <event key> failed; stopping`, followed by a traceback: the narrative, its audit row or the commit that stores both failed once the event's publications may have been sent, so no further event was sent in that cycle.
@@ -193,7 +194,7 @@ Rotate `APP_SECRET_KEY` (at least 32 characters) and apply the settings. Every a
 Read the start of its log (section 04). The causes Holly names itself:
 
 ● `PORT must be a whole number ...`: fix or remove the `PORT` variable.
-● `Error: Holly cannot start: ...`: a setting failed validation. Fix each setting the line names; it never repeats a value. A missing or short `APP_SECRET_KEY`, missing database settings, a `*` origin, an http UDL or Mattermost URL, `UDL_VERIFY_SSL=false` or a relative procedure path each stops the start.
+● `Error: Holly cannot start: ...`: a setting failed validation. Fix each setting the line names; it never repeats a value. A missing or short `APP_SECRET_KEY`, missing database settings, a `DATABASE_URL` that does not read as a postgres URL with a host (an unencoded `@` in the password does this: write it as `%40`), a `*` origin, an http UDL or Mattermost URL, `UDL_VERIFY_SSL=false` or a relative procedure path each stops the start.
 ● An Alembic error: a migration failed. If it reads `Can't locate revision identified by ...`, the package is older than the database (section 03). Escalate any other migration failure to engineering.
 ● `"storage_writable": false`: the procedure store refused a write. The `errno` and `error` say why; check the FILE_STORAGE add-on and `PROCEDURE_STORAGE_PATH`.
 
