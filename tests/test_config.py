@@ -5,6 +5,7 @@ Expected values are literals, never the module's own constants, so a changed bou
 """
 
 import runpy
+import traceback
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,16 @@ from app.factory import create_app
 # str.isdigit() is true for both, so the ASCII check is what must refuse them.
 FULL_WIDTH_8080 = "".join(chr(code) for code in (0xFF18, 0xFF10, 0xFF18, 0xFF10))
 SUPERSCRIPT_TWO = chr(0x00B2)
+# NFKC normalisation turns it into @, so Python's URL parser refuses a netloc holding it and
+# quotes that netloc, user and password included, in its own message.
+FULL_WIDTH_AT = chr(0xFF20)
+REFUSED_CREDENTIAL = f"Zq7x{FULL_WIDTH_AT}SYNTHpw9X"
+
+
+def fragments_in(text: str, *secrets: str) -> list[str]:
+    """Each five-character piece of the secrets that appears in `text`."""
+    pieces = {secret[start : start + 5] for secret in secrets for start in range(len(secret) - 4)}
+    return sorted(piece for piece in pieces if piece in text)
 
 
 def test_port_defaults_to_8080_when_absent() -> None:
@@ -105,6 +116,16 @@ class TestDatabaseUrl:
         with pytest.raises(ValueError, match="DATABASE_URL") as raised:
             asyncpg_url("mysql://holly:pw-in-url@db.example/holly")
         assert "pw-in-url" not in str(raised.value)
+
+    def test_a_url_the_parser_refuses_is_named_without_repeating_it(self) -> None:
+        url = f"postgresql://holly:{REFUSED_CREDENTIAL}@pg:5432/holly"
+        with pytest.raises(ValueError, match="DATABASE_URL must be a postgres") as raised:
+            asyncpg_url(url)
+        assert raised.value.__context__ is None, "the parser's own error is not chained"
+        assert (
+            fragments_in("".join(traceback.format_exception(raised.value)), REFUSED_CREDENTIAL)
+            == []
+        )
 
 
 @pytest.fixture
@@ -229,14 +250,19 @@ class TestABadEnvironmentStopsTheBootClearly:
         monkeypatch.setenv("DATABASE_URL", self.CONNECTION_URL)
         get_settings.cache_clear()
 
-    def refusal(self) -> str:
+    def refused(self) -> InvalidSettingsError:
         with pytest.raises(InvalidSettingsError) as raised:
             get_settings()
-        assert raised.value.__suppress_context__, "the pydantic error, with its input, is dropped"
-        message = str(raised.value)
-        assert "unused-in-tests" not in message
-        assert "db.invalid" not in message
-        return message
+        error = raised.value
+        assert error.__cause__ is None
+        assert error.__suppress_context__, "the pydantic error, with its input, is dropped"
+        printed = "".join(traceback.format_exception(error))
+        assert "unused-in-tests" not in printed
+        assert "db.invalid" not in printed
+        return error
+
+    def refusal(self) -> str:
+        return str(self.refused())
 
     def test_a_missing_variable_is_named(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("APP_SECRET_KEY")
@@ -268,30 +294,39 @@ class TestABadEnvironmentStopsTheBootClearly:
         [
             ({"POSTGRES_PORT": "abc"}, "POSTGRES_PORT: Input should be a valid integer"),
             ({"UDL_BASE_URL": "http://udl.example"}, "UDL_BASE_URL must use https"),
+            (
+                {"DATABASE_URL": f"postgresql://holly:{REFUSED_CREDENTIAL}@pg:5432/holly"},
+                "DATABASE_URL must be a postgres",
+            ),
         ],
-        ids=["a field of the wrong type", "a setting the boot check refuses"],
+        ids=[
+            "a field of the wrong type",
+            "a setting the boot check refuses",
+            "a URL the parser refuses",
+        ],
     )
     def test_no_fragment_of_any_secret_reaches_the_message(
         self, monkeypatch: pytest.MonkeyPatch, problem: dict[str, str], named: str
     ) -> None:
-        # Synthetic secrets, each distinctive, set beside one problem on each error path.
+        # Synthetic secrets, each distinctive, set beside one problem on each error path. Only
+        # the credential in the URL is scanned for: its scheme, host and database name are not
+        # secret, and a printed file path may well hold them.
+        url_credential = "Zq7xSYNTHETICpw9X"
         secrets = {
-            "DATABASE_URL": "postgresql://holly:Zq7xSYNTHETICpw9X@pg:5432/holly",
-            "APP_SECRET_KEY": "synthetic-signing-key-ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-            "ANTHROPIC_API_KEY": "synthetic-anthropic-key-0123456789abcdef",
-            "UDL_PASSWORD": "synthetic-udl-pass-XYZ987",
-            "MATTERMOST_BOT_TOKEN": "synthetic-bot-token-QRS654",
+            "APP_SECRET_KEY": "SYNTHk3yQm8vXr2nWz6pLb9sYc4jFd7gNa5u",
+            "ANTHROPIC_API_KEY": "SYNTHapiRt5wKp8zMx2nQv7cJh4b",
+            "UDL_PASSWORD": "SYNTHudlUb7kWe3rPz9m",
+            "MATTERMOST_BOT_TOKEN": "SYNTHbotMb4tNc8xQr2w",
         }
-        for name, value in (secrets | problem).items():
+        environment = secrets | {
+            "DATABASE_URL": f"postgresql://holly:{url_credential}@pg:5432/holly"
+        }
+        for name, value in (environment | problem).items():
             monkeypatch.setenv(name, value)
-        message = self.refusal()
-        assert named in message
-        fragments = {
-            value[start : start + 5]
-            for value in secrets.values()
-            for start in range(len(value) - 4)
-        }
-        assert sorted(each for each in fragments if each in message) == []
+        error = self.refused()
+        assert named in str(error)
+        printed = "".join(traceback.format_exception(error))
+        assert fragments_in(printed, url_credential, REFUSED_CREDENTIAL, *secrets.values()) == []
 
     def test_the_worker_refuses_as_the_master_does(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("APP_SECRET_KEY")

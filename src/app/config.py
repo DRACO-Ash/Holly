@@ -49,6 +49,9 @@ def resolve_port(environ: Mapping[str, str]) -> int:
     raise ValueError(msg)
 
 
+_BAD_DATABASE_URL = "DATABASE_URL must be a postgres:// or postgresql:// URL with a host"
+
+
 def asyncpg_url(url: str) -> str:
     """Return a PostgreSQL URL with the asyncpg driver, whichever postgres scheme it arrived with.
 
@@ -57,9 +60,13 @@ def asyncpg_url(url: str) -> str:
     fails closed. The URL carries a password, so no message ever repeats it.
     """
     scheme, separator, rest = url.partition("://")
-    if not separator or scheme.lower() not in _POSTGRES_SCHEMES or not urlsplit(url).hostname:
-        msg = "DATABASE_URL must be a postgres:// or postgresql:// URL with a host"
-        raise ValueError(msg)
+    try:
+        hostname = urlsplit(url).hostname
+    except ValueError:
+        # The parser's own message quotes the URL's user and password part.
+        hostname = None
+    if not separator or scheme.lower() not in _POSTGRES_SCHEMES or not hostname:
+        raise ValueError(_BAD_DATABASE_URL)
     return f"{ASYNCPG_SCHEME}://{_asyncpg_options(rest)}"
 
 
@@ -175,8 +182,9 @@ class Settings(BaseSettings):
         if self.database_url is not None:
             try:
                 asyncpg_url(self.database_url.get_secret_value())
-            except ValueError as exc:
-                return [str(exc)]
+            except ValueError:
+                # The fixed message, never the error's own text, which could quote the URL.
+                return [_BAD_DATABASE_URL]
             return []
         if None in (self.postgres_host, self.postgres_db, self.postgres_user):
             return [
