@@ -43,6 +43,9 @@ _BAD_REQUEST = "The assistant rejected the request."
 _UNAVAILABLE = "The assistant could not be reached or failed; try again."
 # A rough count of characters per token, low so that a call's hold is never too small.
 _CHARS_PER_TOKEN = 3
+# A reply is one JSON object, perhaps after a little prose, so the decoder tries only this many
+# opening braces: a crafted reply full of them cannot hold the event loop.
+_MAX_JSON_STARTS = 20
 
 
 class AssistantError(Exception):
@@ -70,28 +73,30 @@ class DailyTokenBudget:
     day: date | None = None
     spent: int = 0
 
-    def _roll(self) -> None:
+    def _roll(self) -> date:
+        """Start a new count when the day (UTC) has turned; returns the day counted."""
         today = datetime.now(UTC).date()
         if self.day != today:
             self.day = today
             self.spent = 0
+        return today
 
     def reserve(self, cap: int, tokens: int) -> date:
         """Hold `tokens` of today's cap for a call about to be sent, or refuse when the cap
         cannot cover them. Nothing awaits between the check and the hold, so calls made at the
         same moment cannot all pass the same check. Returns the day the hold counts against."""
-        self._roll()
+        day = self._roll()
         if self.spent + tokens > cap:
             msg = "The daily assistant token cap is spent; assistant calls resume tomorrow (UTC)."
             raise AssistantError(msg, persistent=True)
         self.spent += tokens
-        return datetime.now(UTC).date()
+        return day
 
     def settle(self, day: date, held: int, used: int) -> None:
         """Replace a call's hold with what it used. A hold from an earlier day was cleared when
         the day turned, so only the use counts then."""
-        self._roll()
-        self.spent += used - (held if day == self.day else 0)
+        today = self._roll()
+        self.spent += used - (held if day == today else 0)
 
 
 BUDGET = DailyTokenBudget()
@@ -177,12 +182,15 @@ async def call_claude(
 def extract_json_object(text: str) -> dict[str, Any]:
     """The first JSON object in a reply, ignoring any prose or code fence around it.
 
-    The standard JSON decoder reads from each opening brace in turn, so braces inside strings
-    never confuse it. Raises AssistantError when the reply holds no JSON object.
+    The standard JSON decoder reads from each opening brace in turn, up to _MAX_JSON_STARTS of
+    them, so braces inside strings never confuse it. Raises AssistantError when no JSON object
+    starts at any of them.
     """
     decoder = json.JSONDecoder()
     start = text.find("{")
-    while start != -1:
+    for _attempt in range(_MAX_JSON_STARTS):
+        if start == -1:
+            break
         try:
             value, _end = decoder.raw_decode(text, start)
         except json.JSONDecodeError:

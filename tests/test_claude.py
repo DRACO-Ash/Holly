@@ -5,7 +5,7 @@ the error classes and the reply parsing are the SDK's own, and nothing leaves th
 import asyncio
 import json
 from collections.abc import Callable
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import Any
 
 import anthropic
@@ -205,6 +205,42 @@ async def test_calls_made_together_cannot_overrun_the_cap(api: AnthropicRecorder
     assert claude.BUDGET.spent == 30
 
 
+async def test_the_hold_counts_the_prompt_at_three_characters_a_token(
+    api: AnthropicRecorder,
+) -> None:
+    # 400 output tokens held on a 1,000-token day leave 600 for the prompt: 1,800 characters
+    # at three a token. A 2,100-character prompt is refused before it is sent.
+    with pytest.raises(AssistantError, match="daily assistant token cap"):
+        await call_claude("s", "u" * 2099, max_tokens=400, purpose="test")
+    assert api.requests == []
+    api.answer(200, reply())
+    await call_claude("s", "u" * 1799, max_tokens=400, purpose="test")
+    assert len(api.requests) == 1
+
+
+class _Clock:
+    """Stands in for datetime in the claude module: each now() is the next of `times`."""
+
+    def __init__(self, *times: datetime) -> None:
+        self._times = iter(times)
+
+    def now(self, _tz: object = None) -> datetime:
+        return next(self._times)
+
+
+def test_a_call_that_crosses_midnight_counts_only_its_use_on_the_new_day(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    before = datetime(2026, 6, 1, 23, 59, 59, 999_999, tzinfo=UTC)
+    after = datetime(2026, 6, 2, tzinfo=UTC)
+    monkeypatch.setattr(claude, "datetime", _Clock(before, after, after))
+    budget = DailyTokenBudget()
+    day = budget.reserve(1000, 400)
+    assert day == date(2026, 6, 1)
+    budget.settle(day, held=400, used=10)
+    assert (budget.day, budget.spent) == (date(2026, 6, 2), 10)
+
+
 def test_a_hold_from_an_earlier_day_does_not_reduce_todays_count() -> None:
     budget = DailyTokenBudget()
     budget.reserve(1000, 40)
@@ -242,6 +278,15 @@ class TestExtractJsonObject:
     def test_no_object_is_an_error(self, text: str) -> None:
         with pytest.raises(AssistantError, match="no JSON object"):
             extract_json_object(text)
+
+    @pytest.mark.parametrize(("stray", "found"), [(19, True), (20, False)])
+    def test_only_the_first_20_opening_braces_are_tried(self, stray: int, found: bool) -> None:
+        text = "{x} " * stray + '{"ok": true}'
+        if found:
+            assert extract_json_object(text) == {"ok": True}
+        else:
+            with pytest.raises(AssistantError, match="no JSON object"):
+                extract_json_object(text)
 
     def test_nesting_too_deep_to_decode_is_an_error_not_a_crash(self) -> None:
         text = '{"a":' * 20_000 + "1" + "}" * 20_000
