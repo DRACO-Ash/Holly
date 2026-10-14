@@ -4,10 +4,12 @@ Every assistant feature (notification evaluations, event narratives, shift-note 
 end-of-shift summary) goes through call_claude, which:
 
 ● reads the API key server-side at call time and fails closed without it;
-● refuses once the day's token cap is spent, across every caller (LLM_DAILY_TOKEN_CAP);
+● holds each call's largest possible cost against the day's token cap before it is sent, and
+  refuses a call the cap cannot cover, across every caller (LLM_DAILY_TOKEN_CAP);
 ● marks the fixed system prompt for prompt caching;
 ● classifies a failure by exception type, so the background loops can tell a persistent fault
-  (a bad key, no permission, rate limiting, no credit) from a transient one;
+  (a bad key, no permission, rate limiting, no credit) from a transient one, and reports it
+  in a fixed message: the API's own text stays in the server log;
 ● writes one structured log line per call with its token usage.
 
 The calls are short and use no tools, so they are not streamed and never pause mid-turn.
@@ -15,6 +17,7 @@ Model output is untrusted: each caller validates what it keeps before storing it
 """
 
 import json
+import logging
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from typing import Any
@@ -24,14 +27,22 @@ import anthropic
 from app.config import get_settings
 from app.core.logging import log_event
 
+logger = logging.getLogger(__name__)
+
 # Failures that will recur on every call until someone changes the key, the model setting,
-# the plan or the account, so a background loop should stop its cycle rather than retry.
-_PERSISTENT_ERRORS = (
-    anthropic.AuthenticationError,
-    anthropic.PermissionDeniedError,
-    anthropic.NotFoundError,
-    anthropic.RateLimitError,
-)
+# the plan or the account, so a background loop should stop its cycle rather than retry. Each
+# is reported to analysts in a fixed message.
+_PERSISTENT_ERRORS: dict[type[anthropic.APIStatusError], str] = {
+    anthropic.AuthenticationError: "The assistant rejected Holly's API key.",
+    anthropic.PermissionDeniedError: "The assistant refused this request for Holly's API key.",
+    anthropic.NotFoundError: "The assistant does not offer the model Holly is set to use.",
+    anthropic.RateLimitError: "The assistant is limiting Holly's requests; try again later.",
+}
+_NO_CREDIT = "The assistant account has no credit left."
+_BAD_REQUEST = "The assistant rejected the request."
+_UNAVAILABLE = "The assistant could not be reached or failed; try again."
+# A rough count of characters per token, low so that a call's hold is never too small.
+_CHARS_PER_TOKEN = 3
 
 
 class AssistantError(Exception):
@@ -65,15 +76,22 @@ class DailyTokenBudget:
             self.day = today
             self.spent = 0
 
-    def ensure_available(self, cap: int) -> None:
+    def reserve(self, cap: int, tokens: int) -> date:
+        """Hold `tokens` of today's cap for a call about to be sent, or refuse when the cap
+        cannot cover them. Nothing awaits between the check and the hold, so calls made at the
+        same moment cannot all pass the same check. Returns the day the hold counts against."""
         self._roll()
-        if self.spent >= cap:
+        if self.spent + tokens > cap:
             msg = "The daily assistant token cap is spent; assistant calls resume tomorrow (UTC)."
             raise AssistantError(msg, persistent=True)
-
-    def charge(self, tokens: int) -> None:
-        self._roll()
         self.spent += tokens
+        return datetime.now(UTC).date()
+
+    def settle(self, day: date, held: int, used: int) -> None:
+        """Replace a call's hold with what it used. A hold from an earlier day was cleared when
+        the day turned, so only the use counts then."""
+        self._roll()
+        self.spent += used - (held if day == self.day else 0)
 
 
 BUDGET = DailyTokenBudget()
@@ -103,14 +121,20 @@ async def _create_message(
                 ],
                 messages=[{"role": "user", "content": user_message}],
             )
-    except _PERSISTENT_ERRORS as exc:
-        raise AssistantError(f"Anthropic API error: {exc}", persistent=True) from exc
-    except anthropic.BadRequestError as exc:
-        raise AssistantError(
-            f"Anthropic API error: {exc}", persistent=_is_credit_error(exc)
-        ) from exc
     except anthropic.APIError as exc:
-        raise AssistantError(f"Anthropic API error: {exc}") from exc
+        logger.warning("Anthropic API error (%s): %s", type(exc).__name__, exc)
+        raise _failure(exc) from exc
+
+
+def _failure(exc: anthropic.APIError) -> AssistantError:
+    for error_type, message in _PERSISTENT_ERRORS.items():
+        if isinstance(exc, error_type):
+            return AssistantError(message, persistent=True)
+    if isinstance(exc, anthropic.BadRequestError):
+        if _is_credit_error(exc):
+            return AssistantError(_NO_CREDIT, persistent=True)
+        return AssistantError(_BAD_REQUEST)
+    return AssistantError(_UNAVAILABLE)
 
 
 async def call_claude(
@@ -121,12 +145,18 @@ async def call_claude(
     api_key = settings.anthropic_api_key.get_secret_value()
     if not api_key:
         raise AssistantError("ANTHROPIC_API_KEY is not configured", persistent=True)
-    BUDGET.ensure_available(settings.llm_daily_token_cap)
-    response = await _create_message(
-        api_key, settings.anthropic_model, system_prompt, user_message, max_tokens
-    )
+    # The most this call can cost: its whole output allowance and a generous input estimate.
+    held = max_tokens + (len(system_prompt) + len(user_message)) // _CHARS_PER_TOKEN
+    day = BUDGET.reserve(settings.llm_daily_token_cap, held)
+    try:
+        response = await _create_message(
+            api_key, settings.anthropic_model, system_prompt, user_message, max_tokens
+        )
+    except BaseException:
+        BUDGET.settle(day, held, 0)
+        raise
     tokens = _tokens_used(response.usage)
-    BUDGET.charge(tokens)
+    BUDGET.settle(day, held, tokens)
     log_event(
         "llm.call",
         purpose=purpose,
@@ -157,6 +187,11 @@ def extract_json_object(text: str) -> dict[str, Any]:
             value, _end = decoder.raw_decode(text, start)
         except json.JSONDecodeError:
             value = None
+        except RecursionError:
+            # Nesting deeper than Python can decode is no evaluation; retrying from each inner
+            # brace would only repeat the work.
+            msg = "Model response nested too deeply to read"
+            raise AssistantError(msg) from None
         if isinstance(value, dict):
             return value
         start = text.find("{", start + 1)

@@ -2,6 +2,7 @@
 token cap, and how each failure is classified. The real SDK runs against a mock transport, so
 the error classes and the reply parsing are the SDK's own, and nothing leaves the process."""
 
+import asyncio
 import json
 from collections.abc import Callable
 from datetime import date
@@ -12,7 +13,7 @@ import httpx2
 import pytest
 
 from app.services import claude
-from app.services.claude import AssistantError, call_claude, extract_json_object
+from app.services.claude import AssistantError, DailyTokenBudget, call_claude, extract_json_object
 
 Handler = Callable[[httpx2.Request], httpx2.Response]
 
@@ -129,7 +130,7 @@ async def test_once_the_cap_is_spent_calls_stop_until_the_next_day(
     api: AnthropicRecorder,
 ) -> None:
     api.answer(200, reply())
-    claude.BUDGET.charge(1000)
+    claude.BUDGET.reserve(1000, 1000)
     with pytest.raises(AssistantError, match="daily assistant token cap") as raised:
         await call_claude("s", "u", max_tokens=256, purpose="test")
     assert raised.value.persistent is True
@@ -154,26 +155,61 @@ async def test_a_reply_without_text_is_an_error(api: AnthropicRecorder, text: st
 
 
 @pytest.mark.parametrize(
-    ("status", "kind", "message", "persistent"),
+    ("status", "kind", "message", "persistent", "shown"),
     [
-        (401, "authentication_error", "invalid x-api-key", True),
-        (403, "permission_error", "no access to this model", True),
-        (404, "not_found_error", "model not found", True),
-        (429, "rate_limit_error", "rate limited", True),
-        (400, "invalid_request_error", "Your credit balance is too low", True),
-        (400, "invalid_request_error", "messages: field required", False),
-        (500, "api_error", "internal error", False),
-        (529, "overloaded_error", "overloaded", False),
+        (401, "authentication_error", "invalid x-api-key", True, "rejected Holly's API key"),
+        (403, "permission_error", "no access to model", True, "refused this request for Holly"),
+        (404, "not_found_error", "model not found", True, "does not offer the model"),
+        (429, "rate_limit_error", "rate limited", True, "limiting Holly's requests"),
+        (400, "invalid_request_error", "Your credit balance is too low", True, "no credit left"),
+        (400, "invalid_request_error", "messages: field required", False, "rejected the request"),
+        (500, "api_error", "internal error", False, "could not be reached or failed"),
+        (529, "overloaded_error", "overloaded", False, "could not be reached or failed"),
     ],
 )
-async def test_each_failure_is_classified_by_its_type(
-    api: AnthropicRecorder, status: int, kind: str, message: str, persistent: bool
+async def test_each_failure_is_classified_and_reported_in_a_fixed_message(
+    api: AnthropicRecorder,
+    caplog: pytest.LogCaptureFixture,
+    status: int,
+    kind: str,
+    message: str,
+    persistent: bool,
+    shown: str,
 ) -> None:
     api.answer(status, error_body(kind, message))
-    with pytest.raises(AssistantError, match="Anthropic API error") as raised:
+    with pytest.raises(AssistantError) as raised:
         await call_claude("s", "u", max_tokens=256, purpose="test")
     assert raised.value.persistent is persistent
-    assert claude.BUDGET.spent == 0
+    # Analysts see the fixed message; the API's own text stays in the server log.
+    assert shown in str(raised.value)
+    assert message not in str(raised.value)
+    assert any(message in record.getMessage() for record in caplog.records)
+    assert claude.BUDGET.spent == 0, "a failed call gives its hold back"
+
+
+async def test_calls_made_together_cannot_overrun_the_cap(api: AnthropicRecorder) -> None:
+    # Each call holds its whole output allowance before it is sent, so with a 1,000-token day
+    # only two 400-token calls fit, however many start at once.
+    for _ in range(2):
+        api.answer(200, reply())
+    results = await asyncio.gather(
+        *(call_claude("s", "u", max_tokens=400, purpose="test") for _ in range(3)),
+        return_exceptions=True,
+    )
+    assert [type(result).__name__ for result in results] == [
+        "ClaudeReply",
+        "ClaudeReply",
+        "AssistantError",
+    ]
+    assert len(api.requests) == 2
+    assert claude.BUDGET.spent == 30
+
+
+def test_a_hold_from_an_earlier_day_does_not_reduce_todays_count() -> None:
+    budget = DailyTokenBudget()
+    budget.reserve(1000, 40)
+    budget.settle(date(2000, 1, 1), held=400, used=10)
+    assert budget.spent == 50
 
 
 async def test_a_connection_failure_is_transient(api: AnthropicRecorder) -> None:
@@ -205,4 +241,9 @@ class TestExtractJsonObject:
     @pytest.mark.parametrize("text", ["", "no json here", "{not json}", '{"open": '])
     def test_no_object_is_an_error(self, text: str) -> None:
         with pytest.raises(AssistantError, match="no JSON object"):
+            extract_json_object(text)
+
+    def test_nesting_too_deep_to_decode_is_an_error_not_a_crash(self) -> None:
+        text = '{"a":' * 20_000 + "1" + "}" * 20_000
+        with pytest.raises(AssistantError, match="nested too deeply"):
             extract_json_object(text)
