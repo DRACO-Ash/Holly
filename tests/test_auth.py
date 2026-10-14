@@ -522,9 +522,10 @@ class TestSignInUnderLoad:
         assert (await first).status_code == 401
         # The held check gave its slot back when it ended.
         assert auth._PASSWORD_CHECK_SLOTS.acquire(blocking=False)
-        # The attempt refused for want of a slot does not count against its username.
+        # The attempt refused for want of a slot does not count against its username, nor
+        # take a place among the usernames the limiter remembers.
         assert len(LOGIN_LIMIT._hits["a"]) == 1
-        assert not LOGIN_LIMIT._hits.get("b")
+        assert "b" not in LOGIN_LIMIT._hits
 
     async def test_four_checks_run_at_once_and_a_fifth_is_refused(
         self, api: httpx2.AsyncClient, use_session: UseSession, monkeypatch: pytest.MonkeyPatch

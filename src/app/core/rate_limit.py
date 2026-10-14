@@ -47,9 +47,16 @@ class RateLimiter:
         return hits
 
     def wait_time(self, key: str) -> int:
-        """0 when `key` is under the limit, else the seconds until it will be. Records nothing."""
+        """0 when `key` is under the limit, else the seconds until it will be. Records nothing,
+        and remembers no key it holds no hits for: only recorded hits take a place, so asking
+        about other keys can never push out a key that is over its limit."""
+        if key not in self._hits:
+            return 0
         now = self._clock()
         hits = self._current(key, now)
+        if not hits:
+            del self._hits[key]
+            return 0
         if len(hits) >= self.limit:
             return max(1, math.ceil(hits[0] + self.window_seconds - now))
         return 0

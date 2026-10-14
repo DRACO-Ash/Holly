@@ -79,6 +79,21 @@ class TestRateLimiter:
     def test_a_limiter_remembers_at_most_10000_keys(self) -> None:
         assert rate_limit.MAX_TRACKED_KEYS == 10_000
 
+    def test_asking_about_keys_never_pushes_out_one_over_its_limit(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(rate_limit, "MAX_TRACKED_KEYS", 2)
+        clock = FakeClock()
+        limiter = RateLimiter(limit=1, window_seconds=60, clock=clock)
+        limiter.record("locked")
+        for key in ("a", "b", "c"):
+            assert limiter.wait_time(key) == 0
+        assert limiter.wait_time("locked") == 60
+        assert list(limiter._hits) == ["locked"], "only recorded hits take a place"
+        clock.now += 60
+        assert limiter.wait_time("locked") == 0
+        assert limiter._hits == {}, "a key whose hits have all expired is forgotten"
+
     def test_forget_and_reset_clear_the_counts(self) -> None:
         limiter = RateLimiter(limit=1, window_seconds=60, clock=FakeClock())
         limiter.record("a")
