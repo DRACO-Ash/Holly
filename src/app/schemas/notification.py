@@ -3,7 +3,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from app.schemas.common import UDLEnvelopeRead
+from app.schemas.common import StorableText, UDLEnvelopeRead
 
 
 class NotificationRead(UDLEnvelopeRead):
@@ -46,10 +46,10 @@ class NotificationPage(BaseModel):
 
 
 class NotificationIngestRequest(BaseModel):
-    msg_type: str | None = "TACREP_NOTSO"
+    msg_type: StorableText | None = "TACREP_NOTSO"
     created_at_gte: datetime | None = None
-    data_mode: str | None = None
-    source: str | None = None
+    data_mode: StorableText | None = None
+    source: StorableText | None = None
     # Holly's own cap on what one manual pull may ask for. A request that names no limit asks
     # for none, and UDL applies its own default page size (TBC, re-verify: its value).
     max_results: int | None = Field(default=None, ge=1, le=10_000)

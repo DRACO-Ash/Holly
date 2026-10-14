@@ -4,6 +4,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.schemas.common import StorableText
+
 Recurrence = Literal["none", "daily", "weekly", "monthly"]
 
 # The years a timer may target. Far outside them a recurrence could overflow the calendar or
@@ -14,9 +16,9 @@ LATEST_TARGET = datetime(2100, 1, 1, tzinfo=UTC)
 
 class EventTimerCreate(BaseModel):
     # At least one character that is not whitespace: the label is stored stripped.
-    label: str = Field(min_length=1, max_length=200, pattern=r"\S")
+    label: StorableText = Field(min_length=1, max_length=200, pattern=r"\S")
     target_time: datetime
-    event_key: str | None = Field(default=None, max_length=200)
+    event_key: StorableText | None = Field(default=None, max_length=200)
     pre_alert_minutes: int = Field(default=5, ge=0, le=720)
     recurrence: Recurrence = "none"
     shift_date: date | None = None

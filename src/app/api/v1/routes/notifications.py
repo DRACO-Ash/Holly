@@ -21,6 +21,7 @@ from app.core.net import client_ip
 from app.core.rate_limit import ASSISTANT_LIMIT
 from app.dependencies import CurrentUser, DbSession
 from app.models.notification import Notification
+from app.schemas.common import StorableText
 from app.schemas.notification import (
     NotificationDetail,
     NotificationIngestRequest,
@@ -53,9 +54,9 @@ NotificationSortColumn = Literal[
 async def list_notifications(
     db: DbSession,
     _current_user: CurrentUser,
-    msg_type: str | None = None,
-    event_type: str | None = None,
-    status: str | None = None,
+    msg_type: StorableText | None = None,
+    event_type: StorableText | None = None,
+    status: StorableText | None = None,
     sat_no: int | None = None,
     effective_from_gte: datetime | None = None,
     effective_from_lte: datetime | None = None,

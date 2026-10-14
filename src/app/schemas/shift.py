@@ -3,14 +3,16 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.common import StorableText
+
 
 class ShiftNoteCreate(BaseModel):
-    raw_text: str = Field(min_length=1, max_length=10_000)
+    raw_text: StorableText = Field(min_length=1, max_length=10_000)
     shift_date: date | None = None
 
 
 class ShiftNoteUpdate(BaseModel):
-    polished_text: str | None = Field(default=None, max_length=10_000)
+    polished_text: StorableText | None = Field(default=None, max_length=10_000)
 
 
 class ShiftNoteRead(BaseModel):

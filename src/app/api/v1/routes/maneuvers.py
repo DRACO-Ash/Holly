@@ -17,6 +17,7 @@ from app.api.v1.common import (
 )
 from app.dependencies import CurrentUser, DbSession
 from app.models.maneuver import Maneuver
+from app.schemas.common import StorableText
 from app.schemas.maneuver import ManeuverDetail, ManeuverPage, ManeuverRead
 
 router = APIRouter(prefix="/maneuvers", tags=["maneuvers"])
@@ -36,7 +37,7 @@ async def list_maneuvers(
     db: DbSession,
     _current_user: CurrentUser,
     sat_no: int | None = None,
-    mnvr_type: str | None = None,
+    mnvr_type: StorableText | None = None,
     event_start_time_gte: datetime | None = None,
     event_start_time_lte: datetime | None = None,
     limit: Limit = 50,

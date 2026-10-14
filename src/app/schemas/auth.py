@@ -4,6 +4,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.user import UserRole
+from app.schemas.common import StorableText
 
 # Bounds on what a caller may send. bcrypt reads only the first 72 bytes of a password and a
 # Holly token is a few hundred characters, so anything longer is refused before any work.
@@ -12,8 +13,8 @@ MAX_TOKEN_LENGTH = 4096
 
 
 class LoginRequest(BaseModel):
-    username: str = Field(..., min_length=1, max_length=50)
-    password: str = Field(..., min_length=1, max_length=MAX_PASSWORD_LENGTH)
+    username: StorableText = Field(..., min_length=1, max_length=50)
+    password: StorableText = Field(..., min_length=1, max_length=MAX_PASSWORD_LENGTH)
 
 
 class TokenResponse(BaseModel):

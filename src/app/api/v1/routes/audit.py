@@ -11,6 +11,7 @@ from app.dependencies import DbSession, require_role
 from app.models.audit import AuditLog
 from app.models.user import User, UserRole
 from app.schemas.audit import AuditLogPage, AuditLogRead
+from app.schemas.common import StorableText
 
 router = APIRouter(prefix="/audit", tags=["audit"])
 
@@ -21,7 +22,7 @@ OperatorOrAdmin = Annotated[User, Depends(require_role(UserRole.OPERATOR, UserRo
 async def list_audit_log(
     db: DbSession,
     _current_user: OperatorOrAdmin,
-    action_type: str | None = None,
+    action_type: StorableText | None = None,
     user_id: UUID | None = None,
     since: datetime | None = None,
     until: datetime | None = None,

@@ -27,9 +27,11 @@ from starlette.datastructures import UploadFile
 
 from app.api.v1.common import get_or_404
 from app.core.net import client_ip
+from app.db.storable import storable_text
 from app.dependencies import CurrentUser, DbSession
 from app.models.procedure import Procedure
 from app.models.user import User
+from app.schemas.common import StorableText
 from app.schemas.procedure import ProcedureContent, ProcedurePage, ProcedureRead
 from app.services.audit import write_audit
 from app.services.procedure_storage import (
@@ -100,8 +102,8 @@ async def download_procedure(
 
 class _UploadFields(BaseModel):
     # At least one character that is not whitespace: the name is stored stripped.
-    name: str = Field(min_length=1, max_length=200, pattern=r"\S")
-    description: str | None = Field(default=None, max_length=4000)
+    name: StorableText = Field(min_length=1, max_length=200, pattern=r"\S")
+    description: StorableText | None = Field(default=None, max_length=4000)
 
 
 @dataclass(frozen=True)
@@ -133,13 +135,16 @@ async def _read_upload(request: Request) -> _Upload:
             )
         except ValidationError as exc:
             raise _form_error(exc.errors(include_url=False)) from None
+        filename = (file.filename or "procedure")[:_MAX_FILENAME_CHARS]
+        content_type = (file.content_type or "application/octet-stream")[:_MAX_CONTENT_TYPE_CHARS]
+        if not (storable_text(filename) and storable_text(content_type)):
+            unstorable = "holds a character Holly cannot store"
+            raise _form_error([{"type": "value_error", "loc": ("file",), "msg": unstorable}])
         return _Upload(
             fields=fields,
             data=await file.read(MAX_UPLOAD_BYTES + 1),
-            filename=(file.filename or "procedure")[:_MAX_FILENAME_CHARS],
-            content_type=(file.content_type or "application/octet-stream")[
-                :_MAX_CONTENT_TYPE_CHARS
-            ],
+            filename=filename,
+            content_type=content_type,
         )
 
 
