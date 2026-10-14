@@ -2,16 +2,23 @@
 
 A declared Content-Length over the cap is refused at once; a body without one (chunked) is
 counted as it arrives and refused the moment it passes the cap. Either way the answer is 413,
-and an oversized upload never fills memory or disk. The largest legitimate body is a 10 MB
-procedure upload plus its multipart framing.
+and an oversized upload never fills memory or disk. Most routes take small JSON, whose largest
+field is a 10,000-character shift note; only the procedure upload takes a 10 MB file plus its
+multipart framing, and it reads that only once the caller is signed in.
 """
 
 import json
+from collections.abc import Mapping
 
 from starlette.exceptions import HTTPException
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-MAX_BODY_BYTES = 11 * 1024 * 1024
+MAX_BODY_BYTES = 256 * 1024
+MAX_UPLOAD_BODY_BYTES = 11 * 1024 * 1024
+# The routes allowed a larger body than the default, by method and path.
+LARGE_BODY_ROUTES: Mapping[tuple[str, str], int] = {
+    ("POST", "/api/v1/procedures"): MAX_UPLOAD_BODY_BYTES,
+}
 _TOO_LARGE = "Request body too large"
 
 
@@ -35,16 +42,23 @@ def _declared_length(scope: Scope) -> int | None:
 
 
 class BodySizeLimitMiddleware:
-    def __init__(self, app: ASGIApp, max_bytes: int = MAX_BODY_BYTES) -> None:
+    def __init__(
+        self,
+        app: ASGIApp,
+        max_bytes: int = MAX_BODY_BYTES,
+        large_bodies: Mapping[tuple[str, str], int] = LARGE_BODY_ROUTES,
+    ) -> None:
         self.app = app
         self.max_bytes = max_bytes
+        self.large_bodies = large_bodies
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
+        limit = self.large_bodies.get((scope["method"], scope["path"]), self.max_bytes)
         declared = _declared_length(scope)
-        if declared is not None and declared > self.max_bytes:
+        if declared is not None and declared > limit:
             await _send_413(send)
             return
 
@@ -56,7 +70,7 @@ class BodySizeLimitMiddleware:
             message = await receive()
             if message["type"] == "http.request":
                 received += len(message.get("body", b""))
-                if received > self.max_bytes:
+                if received > limit:
                     raise _BodyTooLargeError
             return message
 

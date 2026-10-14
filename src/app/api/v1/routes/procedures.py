@@ -1,23 +1,29 @@
 """Operator-uploaded procedures: stored on the procedure volume, indexed in the database, and
 read by the assistant when it evaluates a notification.
 
-Uploads are capped at 10 MB (and the whole request body at core/body_limit.py's limit). Every
-download is an attachment of type application/octet-stream, whatever type the uploader
-claimed, so a stored file can never render as a page in Holly's origin.
+Uploads are capped at 10 MB (and the whole request body at core/body_limit.py's limit), and
+the upload's form is read only once the caller is signed in. Every download is an attachment
+of type application/octet-stream, whatever type the uploader claimed, so a stored file can
+never render as a page in Holly's origin.
 """
 
 import hashlib
 import logging
 import re
 import uuid
-from typing import Annotated
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from typing import Any
 from urllib.parse import quote
 from uuid import UUID
 
-from fastapi import APIRouter, File, Form, HTTPException, Request, Response, UploadFile, status
+from fastapi import APIRouter, HTTPException, Request, Response, status
+from fastapi.exceptions import RequestValidationError
+from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.datastructures import UploadFile
 
 from app.api.v1.common import get_or_404
 from app.core.net import client_ip
@@ -92,6 +98,51 @@ async def download_procedure(
     )
 
 
+class _UploadFields(BaseModel):
+    # At least one character that is not whitespace: the name is stored stripped.
+    name: str = Field(min_length=1, max_length=200, pattern=r"\S")
+    description: str | None = Field(default=None, max_length=4000)
+
+
+@dataclass(frozen=True)
+class _Upload:
+    fields: _UploadFields
+    data: bytes
+    filename: str
+    content_type: str
+
+
+def _form_error(errors: Sequence[Mapping[str, Any]]) -> RequestValidationError:
+    """A 422 shaped as FastAPI shapes one for a form it validated itself."""
+    return RequestValidationError([{**error, "loc": ("body", *error["loc"])} for error in errors])
+
+
+async def _read_upload(request: Request) -> _Upload:
+    """The upload's form, read only now the caller is signed in. FastAPI reads a form declared
+    as parameters before any dependency runs, which would let an anonymous caller make Holly
+    parse and spool a 10 MB body before its 401."""
+    async with request.form(max_files=1, max_fields=2) as form:
+        file = form.get("file")
+        if not isinstance(file, UploadFile):
+            raise _form_error(
+                [{"type": "missing", "loc": ("file",), "msg": "Field required", "input": None}]
+            )
+        try:
+            fields = _UploadFields.model_validate(
+                {"name": form.get("name"), "description": form.get("description")}
+            )
+        except ValidationError as exc:
+            raise _form_error(exc.errors(include_url=False)) from None
+        return _Upload(
+            fields=fields,
+            data=await file.read(MAX_UPLOAD_BYTES + 1),
+            filename=(file.filename or "procedure")[:_MAX_FILENAME_CHARS],
+            content_type=(file.content_type or "application/octet-stream")[
+                :_MAX_CONTENT_TYPE_CHARS
+            ],
+        )
+
+
 async def _store(
     db: AsyncSession, procedure: Procedure, user: User, ip_address: str | None
 ) -> None:
@@ -123,15 +174,11 @@ async def _store(
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def upload_procedure(
-    request: Request,
-    db: DbSession,
-    current_user: CurrentUser,
-    # At least one character that is not whitespace: the name is stored stripped.
-    name: Annotated[str, Form(min_length=1, max_length=200, pattern=r"\S")],
-    file: Annotated[UploadFile, File()],
-    description: Annotated[str | None, Form(max_length=4000)] = None,
+    request: Request, db: DbSession, current_user: CurrentUser
 ) -> ProcedureRead:
-    data = await file.read(MAX_UPLOAD_BYTES + 1)
+    upload = await _read_upload(request)
+    data, filename = upload.data, upload.filename
+    description = upload.fields.description
     if not data:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file is empty"
@@ -141,26 +188,25 @@ async def upload_procedure(
             status_code=status.HTTP_413_CONTENT_TOO_LARGE,
             detail=f"File exceeds {MAX_UPLOAD_BYTES // (1024 * 1024)}MB limit",
         )
-    filename = (file.filename or "procedure")[:_MAX_FILENAME_CHARS]
-    content_type = (file.content_type or "application/octet-stream")[:_MAX_CONTENT_TYPE_CHARS]
 
     # The id is set here, not left to the INSERT, because the stored file is named after it:
     # without it every upload was written to the same "None" file.
     procedure = Procedure(
         id=uuid.uuid4(),
-        name=name.strip(),
+        name=upload.fields.name.strip(),
         description=(description.strip() or None) if description else None,
         filename=filename,
-        content_type=content_type,
+        content_type=upload.content_type,
         size_bytes=len(data),
         file_hash=hashlib.sha256(data).hexdigest(),
         uploaded_by=current_user.id,
     )
-    write_file(procedure.id, filename, data)
     try:
+        write_file(procedure.id, filename, data)
         await _store(db, procedure, current_user, client_ip(request))
-    except Exception:
-        # Whatever stopped the row being stored, a duplicate included, its file goes too.
+    except BaseException:
+        # Whatever stopped the row being stored, a duplicate, a part-written file or a
+        # cancelled request included, its file goes too.
         delete_file(procedure.id, filename)
         raise
     await db.refresh(procedure)

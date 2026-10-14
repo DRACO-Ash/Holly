@@ -19,6 +19,7 @@ from fastapi.routing import iter_route_contexts
 from fastapi.testclient import TestClient
 
 from app import __version__, factory
+from app.core.body_limit import LARGE_BODY_ROUTES
 from app.core.rate_limit import GLOBAL_LIMIT
 from app.dependencies import get_current_user
 from app.factory import create_app
@@ -385,6 +386,16 @@ class TestTheBodyCap:
     def test_a_body_under_the_cap_reaches_the_route(self, client: TestClient) -> None:
         response = client.post("/api/v1/auth/login", json={"username": "a"})
         assert response.status_code == 422
+
+    def test_a_json_route_takes_no_more_than_256_kib(self, client: TestClient) -> None:
+        response = client.post(
+            "/api/v1/auth/login", json={"username": "a", "password": "p" * 256 * 1024}
+        )
+        assert response.status_code == 413
+        assert response.json() == {"detail": "Request body too large"}
+
+    def test_only_the_procedure_upload_takes_a_large_body(self) -> None:
+        assert LARGE_BODY_ROUTES == {("POST", "/api/v1/procedures"): 11 * 1024 * 1024}
 
 
 class TestTheCoarseRateLimit:

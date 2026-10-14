@@ -8,9 +8,10 @@ exactly what the route asked for. The caps are written as literals on purpose: a
 read them from the module would move with them and could never see them drift.
 """
 
+import asyncio
 import hashlib
 import uuid
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock
@@ -21,6 +22,7 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.sql import ClauseElement
 
+from app.api.v1.routes import procedures
 from app.config import get_settings
 from app.models.procedure import Procedure
 from app.models.user import User
@@ -216,6 +218,49 @@ class TestUpload:
         assert stored_files(store) == []
         assert session.added == []
         assert audit_calls == []
+
+    async def test_an_anonymous_upload_is_refused_before_its_body_is_read(
+        self, api: httpx2.AsyncClient, store: Path
+    ) -> None:
+        pulled = 0
+
+        async def ten_mib() -> AsyncIterator[bytes]:
+            nonlocal pulled
+            for _ in range(10):
+                await asyncio.sleep(0)  # a network body arrives a chunk at a time
+                pulled += 1
+                yield b"x" * (1024 * 1024)
+
+        response = await api.post(
+            "/api/v1/procedures",
+            content=ten_mib(),
+            headers={"content-type": "multipart/form-data; boundary=example"},
+        )
+        assert response.status_code == 401
+        assert pulled <= 1, f"{pulled} MiB of an anonymous upload were read"
+        assert stored_files(store) == []
+
+    async def test_a_write_that_fails_part_way_leaves_no_file(
+        self,
+        api: httpx2.AsyncClient,
+        use_session: UseSession,
+        sign_in: SignIn,
+        store: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        sign_in(make_user())
+        session = use_session(FakeSession())
+
+        def disk_full(procedure_id: uuid.UUID, filename: str, data: bytes) -> None:
+            write_file(procedure_id, filename, data[:3])
+            msg = "No space left on device"
+            raise OSError(msg)
+
+        monkeypatch.setattr(procedures, "write_file", disk_full)
+        with pytest.raises(OSError, match="No space left on device"):
+            await upload(api)
+        assert stored_files(store) == []
+        assert session.added == []
 
     async def test_an_empty_file_is_refused_with_400(
         self, api: httpx2.AsyncClient, use_session: UseSession, sign_in: SignIn, store: Path
