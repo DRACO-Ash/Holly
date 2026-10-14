@@ -24,7 +24,7 @@ All notable changes to Holly are recorded here, newest first. Holly V0.2 is the 
 ### Changed
 
 ● **Renamed to Holly**: the page title and header, the browser storage keys (`holly.*`, so every analyst signs in once more), the service name in the logs and the package names.
-● **Settings are validated at boot and fail closed**: a signing key of at least 32 characters, no `*` origin, https for UDL and Mattermost outside development, and an absolute, writable procedure store (proved with a real write at boot).
+● **Settings are validated at boot and fail closed**: a signing key of at least 32 characters, no `*` origin, https for UDL and Mattermost outside development, and an absolute, writable procedure store (proved with a real write at boot). A refusal is one line that names each variable at fault and repeats no value.
 ● **Sign-in tokens use PyJWT** in place of python-jose, whose ecdsa dependency carries an advisory with no fixed release. Decoding accepts the configured algorithm only and requires every claim.
 ● **The audit chain hashes each row's stored timestamp and stored detail**, so every row Holly writes can be recomputed. Rows the Daily Operations Dashboard wrote hashed a timestamp it never stored and cannot be verified.
 ● **The admin command takes its password** from `ADMIN_PASSWORD` or a hidden prompt; the `--password` flag is gone, so a password never lands in shell history or the process list.

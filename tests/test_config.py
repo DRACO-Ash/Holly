@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 from pydantic import SecretStr, ValidationError
 
-from app.config import Settings, asyncpg_url, get_settings, resolve_port
+from app.config import InvalidSettingsError, Settings, asyncpg_url, get_settings, resolve_port
 
 # Non-ASCII digits, built from code points so the source stays plain ASCII.
 # str.isdigit() is true for both, so the ASCII check is what must refuse them.
@@ -198,3 +198,49 @@ class TestResolvedValues:
 
     def test_get_settings_reads_once_and_caches(self) -> None:
         assert get_settings() is get_settings()
+
+
+class TestABadEnvironmentStopsTheBootClearly:
+    """get_settings() runs first in the gunicorn master, where the migrations need the database
+    settings. A failure there must name the variable and repeat no value."""
+
+    CONNECTION_URL = "postgresql://holly:unused-in-tests@db.invalid:5432/holly"
+
+    @pytest.fixture(autouse=True)
+    def _empty_cwd(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setenv("DATABASE_URL", self.CONNECTION_URL)
+        get_settings.cache_clear()
+
+    def refusal(self) -> str:
+        with pytest.raises(InvalidSettingsError) as raised:
+            get_settings()
+        assert raised.value.__suppress_context__, "the pydantic error, with its input, is dropped"
+        message = str(raised.value)
+        assert "unused-in-tests" not in message
+        assert "db.invalid" not in message
+        return message
+
+    def test_a_missing_variable_is_named(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("APP_SECRET_KEY")
+        assert self.refusal() == "Holly cannot start: APP_SECRET_KEY: Field required"
+
+    def test_an_unsafe_value_is_named_without_repeating_it(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("APP_SECRET_KEY", "k" * 31)
+        message = self.refusal()
+        assert message.startswith("Holly cannot start: APP_SECRET_KEY must be at least 32")
+        assert "k" * 31 not in message
+
+    def test_a_value_that_cannot_be_parsed_is_named(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("APP_ALLOWED_ORIGINS", "not-a-json-list")
+        message = self.refusal()
+        assert message.startswith("Holly cannot start: ")
+        assert "app_allowed_origins" in message
+        assert "not-a-json-list" not in message
+
+    def test_gunicorn_prints_the_refusal_as_one_line(self) -> None:
+        # gunicorn's BaseApplication.run catches RuntimeError around the master's start, where
+        # on_starting runs the migrations, and prints "Error: <message>" with no traceback.
+        assert issubclass(InvalidSettingsError, RuntimeError)

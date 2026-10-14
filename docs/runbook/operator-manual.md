@@ -83,7 +83,7 @@ Leave `STORAGE_MOUNT_PATH` to the FILE_STORAGE add-on, which injects it; do not 
 ## What happens at start
 
 1. gunicorn reads its configuration. A malformed `PORT` stops it with `PORT must be a whole number from 1 to 65535, got '<value>'`.
-2. The master applies pending migrations under a PostgreSQL advisory lock, logging `{"event": "migrations", "status": "starting"}` and then `"applied"`. Reading the database URL here validates every setting, so a misconfiguration stops the container at this step with each problem named, for example `APP_SECRET_KEY must be at least 32 characters` or `UDL_BASE_URL must use https outside development`. A failed migration stops it here too, with Alembic's error.
+2. The master applies pending migrations under a PostgreSQL advisory lock, logging `{"event": "migrations", "status": "starting"}` and then `"applied"`. Reading the database URL here validates every setting, so a misconfiguration stops the container at this step with one line that names each problem and repeats no value, for example `Error: Holly cannot start: APP_SECRET_KEY: Field required` or `Error: Holly cannot start: UDL_BASE_URL must use https outside development`. A failed migration stops it here too, with Alembic's error.
 3. The worker starts and proves the procedure store accepts a write. On success it logs `{"event": "boot", "version": "<version>", "storage": "/data/procedures", "storage_writable": true, "background_refresh": true, ...}`. On failure it logs `"storage_writable": false` with the `errno` and `error`, and the container stops.
 4. The background loops start, each logging a line such as `Background notifications loop enabled: every 3600s`.
 

@@ -13,8 +13,8 @@ from pathlib import PurePosixPath
 from typing import Literal, Self
 from urllib.parse import quote, urlsplit
 
-from pydantic import Field, SecretStr, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, SecretStr, ValidationError, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict, SettingsError
 
 DEFAULT_PORT = 8080
 MAX_PORT = 65535
@@ -207,7 +207,32 @@ class Settings(BaseSettings):
         )
 
 
+class InvalidSettingsError(RuntimeError):
+    """Holly's settings are missing or unsafe. It is a RuntimeError because gunicorn prints a
+    RuntimeError raised at start as one line and exits 1, with no traceback. The message names
+    each variable at fault and never repeats a value: pydantic's own message echoes the raw
+    input, which can hold part of a password."""
+
+
+def _problems(exc: ValidationError) -> str:
+    problems = []
+    for error in exc.errors(include_url=False, include_context=False, include_input=False):
+        message = error["msg"].removeprefix("Value error, ")
+        location = error["loc"]
+        problems.append(f"{str(location[0]).upper()}: {message}" if location else message)
+    return "; ".join(problems)
+
+
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
-    """The validated settings, read from the environment once per process."""
-    return Settings()  # type: ignore[call-arg]  # pydantic-settings fills the fields from the environment
+    """The validated settings, read from the environment once per process. Settings that fail
+    validation stop the process with InvalidSettingsError."""
+    try:
+        return Settings()  # type: ignore[call-arg]  # pydantic-settings fills the fields from the environment
+    except ValidationError as exc:
+        msg = f"Holly cannot start: {_problems(exc)}"
+        raise InvalidSettingsError(msg) from None
+    except SettingsError as exc:
+        # A value that could not be parsed at all, such as origins that are not a JSON list.
+        msg = f"Holly cannot start: {exc}"
+        raise InvalidSettingsError(msg) from None
