@@ -19,7 +19,7 @@ All notable changes to Holly are recorded here, newest first. Holly V0.2 is the 
 ● **`ASSISTANT_CLEARED_MARKINGS`**: the UDL classification markings whose notifications, and the manoeuvre records sent with them, may be sent to the assistant, `["U"]` by default. Any other marking, or none, never leaves Holly; the dashboard says which notices were not sent. Each background evaluation and event narrative is written to the audit chain; once a sending may have gone, any failure to store it or its row stops that phase for the cycle.
 ● **`python -m app.cli.verify_audit`**, which recomputes the audit chain and names the first broken link. Migration 0017 refuses every UPDATE, DELETE and TRUNCATE on the audit log, the insert-only rule ADR-005 recorded but no migration enforced.
 ● **Recurrence anchor for event timers** (migration 0016): a monthly timer set for the 31st now returns to the 31st after a shorter month.
-● **Unit tests for the dashboard's logic** (Vitest), and a server suite of 1,019 tests at 99% line coverage.
+● **Unit tests for the dashboard's logic** (Vitest), and a server suite of 1,048 tests at 99% line coverage.
 ● **`scripts/dev.sh`**, the local run: PostgreSQL from `infra/docker-compose.yml`, migrations, the API on 8080 and the dashboard on 3000.
 
 ### Changed
@@ -50,6 +50,7 @@ All notable changes to Holly are recorded here, newest first. Holly V0.2 is the 
 ● A manual UDL ingest may ask for at most 10,000 records in one pull. The element-set ingest's audit entry now records the data mode it asked for.
 ● One UDL record that its table cannot store, such as text longer than its column, a NUL or lone surrogate in any text, NaN in its raw JSON, a number or time beyond its column's type, or an element that is not a record, no longer fails the whole pull: it is skipped, counted and logged by column.
 ● A model reply holding a character PostgreSQL cannot store is refused like any unusable reply, instead of failing the write after the call.
+● Text holding a NUL is refused with 422 in every request body, upload and free-text query parameter. A shift note holding one was sent to the assistant before its write failed with a 500, and a NUL in a query or a sign-in answered 500.
 ● Each refused request built a new traceback onto one shared exception, so memory grew with every 401; each refusal is now a new exception.
 ● An upload whose file write fails part-way, or whose request is cancelled, no longer leaves a file behind.
 ● An assistant reply nested too deeply to read is an assistant error, not a crash that re-billed the notice every cycle; the parser tries at most 20 opening braces, so a crafted reply cannot hold the worker.
