@@ -11,7 +11,7 @@ Holly's deliberate security positions and accepted risks, recorded rather than l
 | No Cross-Origin Resource Sharing (CORS) middleware | With no allow-origin header, browsers refuse every cross-origin read: the fail-closed default. | The first cross-origin client arrives with an explicit `ALLOWED_ORIGIN`, and the app refuses to start on a wildcard. |
 | No rate limiting | Every route is constant-time and touches nothing, and the health paths must never be throttled for the platform's probes. | The first expensive route lands with both limiter tiers, the health paths exempt, and the key taken from a trusted forwarded client address, not the ingress address. |
 | `apt` and `dpkg` stay in the image | They need root, the image runs as uid 10001, and the platform's reference recipe keeps the OS package manager. | Remove them if the image policy scan flags them. |
-| CI actions pinned by tag, not commit SHA | The workflow holds a read-only token and no secrets, and never deploys. | Pin full commit SHAs before the workflow gains any secret or any write permission. |
+| CI actions pinned by tag, not commit SHA | The workflow holds a read-only token and no secrets, and never deploys. | Pin full commit SHAs, each confirmed against the action's GitHub release page, before the workflow gains any secret or any write permission. |
 
 ## Relied on from the platform ingress
 

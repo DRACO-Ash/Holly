@@ -2,6 +2,7 @@
 
 import importlib
 import runpy
+from types import ModuleType
 from typing import Any
 
 import pytest
@@ -38,11 +39,18 @@ def test_control_socket_is_off_and_the_worker_is_uvicorn(monkeypatch: pytest.Mon
     assert settings["worker_class"] == "uvicorn_worker.UvicornWorker"
 
 
-def test_gunicorn_knows_every_setting_and_the_worker_class_exists(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_gunicorn_knows_every_setting_the_module_defines(monkeypatch: pytest.MonkeyPatch) -> None:
     # gunicorn ignores a name it does not know, so a misspelt setting would do nothing silently.
-    settings = load_settings(monkeypatch, None)
-    assert {"bind", "worker_class", "control_socket_disable"} <= set(Config().settings)
-    module_name, _, class_name = settings["worker_class"].rpartition(".")
+    # Every public, non-callable, non-module name in the module counts as a setting.
+    defined = {
+        name
+        for name, value in load_settings(monkeypatch, None).items()
+        if not name.startswith("_") and not callable(value) and not isinstance(value, ModuleType)
+    }
+    assert defined == {"bind", "worker_class", "control_socket_disable"}
+    assert defined <= set(Config().settings)
+
+
+def test_the_worker_class_exists(monkeypatch: pytest.MonkeyPatch) -> None:
+    module_name, _, class_name = load_settings(monkeypatch, None)["worker_class"].rpartition(".")
     assert hasattr(importlib.import_module(module_name), class_name)

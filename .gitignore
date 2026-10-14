@@ -1,6 +1,7 @@
-# Secrets and local environment. Only the placeholder file is tracked.
-.env
-.env.*
+# Secrets and local environment: any environment file (.env, .env.*, .env-*, .envrc, *.env).
+# Only the placeholder file is tracked.
+.env*
+*.env
 !.env.example
 
 # Local data

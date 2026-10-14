@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-> Adoption note (delete when the open items are resolved): this file is inherited from the Bluestaq Foundations baseline and was filled at scaffold. Still open: the App Store slug (`TBC, re-verify`); the platform's exact stage commands for the python template, install, test, check and build (`TBC, re-verify`; rehearse the confirmed ones with `INSTALL_CMD='...' TEST_CMD='...' sh scripts/simulate-pipeline.sh`); the upload baseline record and the rung that refuses without it, due before the first upload (appstore-gate-compliance section 3); and `.env.example` (`PORT=`), which this project's `Read(./.env.*)` deny rule stops Claude from creating. Keep this file short; procedures live in `skills/`, not here.
+> Adoption note (delete when the open items are resolved): this file is inherited from the Bluestaq Foundations baseline and was filled at scaffold. Still open: the App Store slug (`TBC, re-verify`); the platform's exact stage commands for the python template, install, test, check and build (`TBC, re-verify`; rehearse the confirmed ones with `INSTALL_CMD='...' TEST_CMD='...' sh scripts/simulate-pipeline.sh`); the upload baseline record and the rung that refuses without it, due before the first upload (appstore-gate-compliance section 3); and `.env.example` (`PORT=`), needed before the first secret-bearing variable, which Claude's Write tool refuses under this project's `Read(./.env.*)` deny rule. Keep this file short; procedures live in `skills/`, not here.
 
 Always-true conventions for this project. Procedures live in `.claude/skills/`. The house voice is in `.claude/output-styles/house-voice.md`. When a rule here and a skill disagree, this file wins for conventions and the skill wins for procedure.
 
@@ -38,7 +38,7 @@ sh scripts/simulate-pipeline.sh          # before every upload: package, check o
 sh scripts/smoke-container.sh            # before every upload: build the image from the upload, run it, probe the contract
 ```
 
-Relock after any dependency change with the `uv pip compile` command in the header of `requirements.in`, then `requirements-dev.in`; never edit a lockfile by hand.
+Relock after any dependency change with the `uv pip compile` command in the header of `requirements.in`, then `requirements-dev.in`; never edit a lockfile by hand. Packaging scans every packaged file's content with the secret-scan hook's rules, so it needs `node`.
 
 Every change runs the verification loop, then passes the `engineering-reviewer` and `security-reviewer` gates before it is done. Anything that deploys, publishes, or mutates external state requires the `deploy-gate` verdict and an explicit human confirmation.
 

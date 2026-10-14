@@ -8,7 +8,9 @@
 # Requires Docker and curl. Behind a TLS-intercepting proxy, point DOCKERFILE at a copy whose
 # pip step trusts the proxy's certificate authority, and pass the build flags it needs:
 #   DOCKERFILE=/path/to/copy DOCKER_BUILD_FLAGS='--network host --secret id=...' sh scripts/smoke-container.sh
-# Green means necessary conditions met; the platform's build, scan and deploy are binding.
+# Its containers and build context are removed afterwards, also on Ctrl-C; KEEP_SMOKE=1 keeps
+# the context. Green means necessary conditions met; the platform's build, scan and deploy are
+# binding.
 set -eu
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -19,8 +21,12 @@ CIDS=""
 
 cleanup() {
   if [ -n "$CIDS" ]; then docker rm -f $CIDS >/dev/null 2>&1 || true; fi
+  if [ "${KEEP_SMOKE:-0}" != 1 ]; then rm -rf -- "$CTX"; else echo "kept $CTX"; fi
 }
 trap cleanup EXIT
+# dash runs the EXIT trap on a normal exit or a set -e failure, not on a signal: exit first.
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 fail() {
   echo "SMOKE: FAIL: $1"

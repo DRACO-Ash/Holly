@@ -1,7 +1,7 @@
 # Audit log
 
-One row per change, newest first. CLAUDE.md requires the version stamp bump and the row in the same change.
+One row per change, newest first. CLAUDE.md requires the version stamp bump and the row in the same change. Record only checks that have actually run, and each gate verdict with the commit it judged.
 
 | Version | Date | Change | Verified by |
 |---|---|---|---|
-| V0.1 | 2026-10-14 | Scaffold: Python 3.12 FastAPI server on the App Store python template, with hash-pinned lockfiles, a hardened single-layer image, the verification loop, the pipeline simulation and the container smoke rung. | `sh scripts/verify.sh`, `sh scripts/simulate-pipeline.sh` (all three documented coverage commands), `sh scripts/smoke-container.sh`, and the engineering-reviewer and security-reviewer gates. |
+| V0.1 | 2026-10-14 | Scaffold: Python 3.12 FastAPI server on the App Store python template, with hash-pinned lockfiles, a hardened single-layer image, the verification loop, the pipeline simulation and the container smoke rung. | Loop: `sh scripts/verify.sh`. Pipeline simulation with all three documented coverage commands. Container smoke rung. GitHub CI `verify` green on 9616c41 and c0a25dc. Gates: engineering-reviewer and security-reviewer FAIL on 9616c41, then PASS on c0a25dc. Their remaining minor findings are fixed in the following commit, which goes back through both gates. |

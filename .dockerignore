@@ -6,8 +6,9 @@
 *
 !requirements.txt
 !src/
-# `!src/` re-admits the whole subtree, so these are excluded again inside it.
-**/.env
-**/.env.*
+# `!src/` re-admits the whole subtree, so these are excluded again inside it, including any
+# environment file (.env, .env.*, .env-*, .envrc, *.env).
+**/.env*
+**/*.env
 **/__pycache__
 **/*.py[cod]
