@@ -18,8 +18,9 @@ from unittest.mock import AsyncMock
 
 import httpx2
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import BigInteger, DateTime, Float, Integer, String, Text, func, select
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import ClauseElement
 
@@ -247,6 +248,52 @@ class TestUpsert:
             result = await run_ingest("maneuver", session, client)
         assert result == IngestResult(pulled=4, inserted=1, updated=0, skipped=3)
         assert [row["udl_id"] for row in upserted_rows(session)] == ["TEST-MNVR-A"]
+
+    async def test_a_record_its_table_cannot_store_is_skipped_named_and_not_quoted(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        session = upsert_session()
+        records = [
+            maneuver("TEST-MNVR-A", mnvrType="T" * 101),
+            maneuver("TEST-MNVR-B", source=12345),
+            maneuver("TEST-MNVR-C", satNo=2**40),
+            maneuver("TEST-MNVR-D"),
+        ]
+        with caplog.at_level(logging.WARNING, logger="app.services.udl_records"):
+            async with udl_serving(records, []) as client:
+                result = await run_ingest("maneuver", session, client)
+        assert result == IngestResult(pulled=4, inserted=1, updated=0, skipped=3)
+        assert [row["udl_id"] for row in upserted_rows(session)] == ["TEST-MNVR-D"]
+        assert caplog.messages == [
+            "Skipping UDL record TEST-MNVR-A: mnvr_type is longer than 100 characters",
+            "Skipping UDL record TEST-MNVR-B: source is not text",
+            "Skipping UDL record TEST-MNVR-C: sat_no is out of range",
+        ]
+
+    @pytest.mark.parametrize(
+        ("column_type", "value", "problem"),
+        [
+            (String(5), "12345", None),
+            (String(5), "123456", "is longer than 5 characters"),
+            (Text(), "x" * 10_000, None),
+            (String(5), 7, "is not text"),
+            (Integer(), 7, None),
+            (Integer(), 2**31, "is out of range"),
+            (Integer(), 1.5, "is not a whole number"),
+            (Integer(), True, "is not a whole number"),
+            (BigInteger(), 2**40, None),
+            (Float(), 1, None),
+            (Float(), "1.5", "is not a number"),
+            (Float(), False, "is not a number"),
+            (DateTime(timezone=True), NOW, None),
+            (DateTime(timezone=True), "2026-06-01", "is not a time"),
+            (JSONB(), {"any": ["shape"]}, None),
+        ],
+    )
+    def test_each_column_type_takes_only_what_postgresql_can_store(
+        self, column_type: Any, value: Any, problem: str | None
+    ) -> None:
+        assert udl_records._unfit(column_type, value) == problem
 
     @pytest.mark.parametrize("records", [[], [{"satNo": 99999}]], ids=["empty", "all-skipped"])
     async def test_a_pull_with_nothing_to_write_touches_no_table_but_is_still_audited(

@@ -2,23 +2,30 @@
 
 Each UDL-sourced table keeps the fields analysts query as typed columns and the whole UDL
 payload in `raw` (ADR-007). The mappers are tolerant: a missing, empty or unparseable value
-leaves its column out rather than failing the record.
+leaves its column out rather than failing the record. A mapped row its table cannot store, such
+as text longer than its column, is skipped and counted, so one bad record never fails the pull.
 """
 
+import logging
 import uuid
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import BigInteger, DateTime, Float, Integer, Numeric, String, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.audit import write_audit
 
+logger = logging.getLogger(__name__)
+
 Record = dict[str, Any]
 Row = dict[str, Any]
+
+# PostgreSQL's integer column holds 32 bits.
+_INT_RANGE = range(-(2**31), 2**31)
 
 # The UDL envelope fields that several record types carry, as (UDL field, column) pairs.
 ENVELOPE_FIELDS = (
@@ -102,16 +109,66 @@ def shared_filters(
     return {"sat_no": sat_no, "data_mode": data_mode, "max_results": max_results}
 
 
+def _is_number(value: Any) -> bool:
+    return isinstance(value, int | float) and not isinstance(value, bool)
+
+
+def _text_problem(column_type: String, value: Any) -> str | None:
+    if not isinstance(value, str):
+        return "is not text"
+    if column_type.length is not None and len(value) > column_type.length:
+        return f"is longer than {column_type.length} characters"
+    return None
+
+
+def _whole_number_problem(column_type: Integer, value: Any) -> str | None:
+    if not _is_number(value) or isinstance(value, float):
+        return "is not a whole number"
+    if not isinstance(column_type, BigInteger) and value not in _INT_RANGE:
+        return "is out of range"
+    return None
+
+
+def _unfit(column_type: Any, value: Any) -> str | None:
+    """Why `value` cannot be stored in a column of `column_type`, or None when it can."""
+    if isinstance(column_type, String):
+        return _text_problem(column_type, value)
+    if isinstance(column_type, Integer):
+        return _whole_number_problem(column_type, value)
+    # Float is not a subclass of Numeric in SQLAlchemy 2.1.
+    if isinstance(column_type, Float | Numeric):
+        return None if _is_number(value) else "is not a number"
+    if isinstance(column_type, DateTime) and not isinstance(value, datetime):
+        return "is not a time"
+    return None
+
+
+def row_problem(model: Any, row: Row) -> str | None:
+    """The first value in `row` that its table cannot store, naming the column but never the
+    value; None when the whole row fits."""
+    columns = model.__table__.columns
+    for key, value in row.items():
+        if value is not None and (reason := _unfit(columns[key].type, value)):
+            return f"{key} {reason}"
+    return None
+
+
 def map_records(
-    records: Sequence[Record], mapper: Callable[[Record], Row | None]
+    records: Sequence[Record], mapper: Callable[[Record], Row | None], model: Any
 ) -> tuple[list[Row], int]:
     """The mapped rows, one per UDL id (the latest wins), and how many records were skipped:
-    those the mapper refused, and repeats of an id already in the same pull."""
+    those the mapper refused, those the table cannot store, and repeats of an id already in
+    the same pull."""
     by_udl_id: dict[str, Row] = {}
     for record in records:
         row = mapper(record)
-        if row is not None:
-            by_udl_id[row["udl_id"]] = row
+        if row is None:
+            continue
+        problem = row_problem(model, row)
+        if problem is not None:
+            logger.warning("Skipping UDL record %.64s: %s", row["udl_id"], problem)
+            continue
+        by_udl_id[row["udl_id"]] = row
     return list(by_udl_id.values()), len(records) - len(by_udl_id)
 
 
@@ -158,7 +215,7 @@ async def ingest_records(
     updatable: Sequence[str],
 ) -> IngestResult:
     """Map and upsert one UDL pull. The caller audits and commits."""
-    rows, skipped = map_records(records, mapper)
+    rows, skipped = map_records(records, mapper, model)
     inserted, updated = await upsert_rows(
         db, model, rows, constraint=constraint, updatable=updatable
     )
