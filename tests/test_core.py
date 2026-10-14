@@ -86,13 +86,14 @@ class TestRateLimiter:
         clock = FakeClock()
         limiter = RateLimiter(limit=1, window_seconds=60, clock=clock)
         limiter.record("locked")
+        limiter.record("other")  # the limiter is full, the locked key its stalest
         for key in ("a", "b", "c"):
             assert limiter.wait_time(key) == 0
         assert limiter.wait_time("locked") == 60
-        assert list(limiter._hits) == ["locked"], "only recorded hits take a place"
+        assert set(limiter._hits) == {"locked", "other"}, "only recorded hits take a place"
         clock.now += 60
         assert limiter.wait_time("locked") == 0
-        assert limiter._hits == {}, "a key whose hits have all expired is forgotten"
+        assert "locked" not in limiter._hits, "a key whose hits have all expired is forgotten"
 
     def test_forget_and_reset_clear_the_counts(self) -> None:
         limiter = RateLimiter(limit=1, window_seconds=60, clock=FakeClock())
