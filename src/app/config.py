@@ -54,8 +54,9 @@ def resolve_port(environ: Mapping[str, str]) -> int:
 
 
 _BAD_DATABASE_URL = "DATABASE_URL must be a postgres:// or postgresql:// URL with a host"
-# A host name or an IPv4 address; an IPv6 address is checked by the ipaddress module.
-_HOST_NAME = re.compile(r"[A-Za-z0-9.\-]+")
+# A host name or an IPv4 address; an IPv6 address is checked by the ipaddress module. The
+# underscore is allowed because container platforms name services with it, as in holly_db.
+_HOST_NAME = re.compile(r"[A-Za-z0-9._\-]+")
 
 
 def _is_host(host: str | None) -> bool:

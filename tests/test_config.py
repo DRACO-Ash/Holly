@@ -138,7 +138,7 @@ class TestDatabaseUrl:
         assert (url.host, url.port, url.database) == ("db.example", 5432, "holly")
         assert dict(url.query) == expected
 
-    @pytest.mark.parametrize("host", ["db.example", "10.0.0.7", "::1", "fd00::5"])
+    @pytest.mark.parametrize("host", ["db.example", "holly_db", "10.0.0.7", "::1", "fd00::5"])
     def test_a_host_name_or_any_ip_address_is_a_host(self, host: str) -> None:
         bracketed = f"[{host}]" if ":" in host else host
         assert asyncpg_url(f"postgresql://holly@{bracketed}:5432/holly").host == host
@@ -230,6 +230,15 @@ class TestSettingsFailClosed:
     def test_the_postgres_parts_need_a_password(self, build: Build) -> None:
         with pytest.raises(ValidationError, match="POSTGRES_PASSWORD is required"):
             build(postgres_host="db", postgres_db="holly", postgres_user="holly")
+
+    def test_a_service_name_with_an_underscore_is_a_host(self, build: Build) -> None:
+        settings = build(
+            postgres_host="holly_db",
+            postgres_db="holly",
+            postgres_user="holly",
+            postgres_password=SecretStr("unused-in-tests"),
+        )
+        assert settings.sqlalchemy_url().host == "holly_db"
 
     @pytest.mark.parametrize(
         ("part", "problem"),
