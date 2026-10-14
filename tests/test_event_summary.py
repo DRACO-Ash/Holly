@@ -15,6 +15,7 @@ from app.models.event_summary import EventSummary
 from app.models.notification import Notification
 from app.services import event_summary
 from app.services.claude import AssistantError, ClaudeReply
+from app.services.disclosure import NOT_CLEARED
 from app.services.event_summary import SummaryOutcome, compute_event_key, generate_event_summary
 from fakes import NOW, FakeSession, scalar_result
 
@@ -32,8 +33,10 @@ def synthetic_id(number: int) -> uuid.UUID:
 
 
 def publication(number: int, **fields: Any) -> Notification:
-    """Synthetic publication `number`, as the database would return it."""
+    """Synthetic publication `number`, as the database would return it, with a marking cleared
+    for the assistant unless one is given."""
     fields.setdefault("created_at", NOW)
+    fields.setdefault("classification_marking", "U")
     return Notification(id=synthetic_id(number), raw={}, **fields)
 
 
@@ -302,6 +305,34 @@ class TestTheStoredSummary:
         )
         session.execute.assert_not_awaited()
         assert f"Event summary failed for {EVENT}: Example assistant failure" in caplog.messages
+
+    async def test_only_publications_cleared_for_the_assistant_are_shown_or_listed(
+        self, claude: ClaudeStub
+    ) -> None:
+        cleared = publication(1, udl_created_at=NOW, description="Cleared.")
+        withheld = publication(
+            2,
+            udl_created_at=NOW + timedelta(hours=1),
+            description="Withheld.",
+            classification_marking="U//TEST-NOT-CLEARED",
+        )
+        run = await summarise([withheld, cleared])
+        message = claude.requests[0]["user_message"]
+        assert "Cleared." in message
+        assert "Withheld." not in message
+        values = stored_values(run.session)
+        assert values["source_notification_ids"] == [str(cleared.id)]
+        assert values["publication_count"] == 1
+
+    async def test_an_event_with_nothing_cleared_sends_and_writes_nothing(
+        self, claude: ClaudeStub
+    ) -> None:
+        session = FakeSession()
+        withheld = [publication(1, udl_created_at=NOW, classification_marking=None)]
+        outcome = await generate_event_summary(session, EVENT, withheld)  # type: ignore[arg-type]
+        assert outcome == SummaryOutcome(summary=None, error=NOT_CLEARED)
+        assert claude.requests == []
+        session.execute.assert_not_awaited()
 
     async def test_an_empty_publication_list_is_refused_before_claude_is_asked(
         self, claude: ClaudeStub

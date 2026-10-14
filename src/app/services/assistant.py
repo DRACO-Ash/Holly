@@ -27,6 +27,7 @@ from app.models.notification import Notification
 from app.models.procedure import Procedure
 from app.schemas.assistant import AssistantEvaluationRead, StructuredEvaluation
 from app.services.claude import AssistantError, call_claude, extract_json_object
+from app.services.disclosure import NOT_CLEARED, is_cleared
 from app.services.procedure_storage import read_preview
 
 logger = logging.getLogger(__name__)
@@ -339,6 +340,20 @@ async def evaluate_notification(db: AsyncSession, notification_id: uuid.UUID) ->
     ).scalar_one_or_none()
     if notification is None:
         raise NotificationNotFoundError(str(notification_id))
+    if not is_cleared(notification):
+        # Nothing about this notice goes to the assistant; the row says why.
+        logger.warning("Notification %s not evaluated: marking not cleared", notification_id)
+        row = AssistantEvaluation(
+            notification_id=notification.id,
+            summary="Not evaluated.",
+            structured=_empty_evaluation(),
+            procedures_used=[],
+            model=get_settings().anthropic_model,
+            error=NOT_CLEARED,
+        )
+        db.add(row)
+        await db.flush()
+        return EvaluationOutcome(evaluation=row, persistent_failure=False)
 
     procedures = list(
         (await db.execute(select(Procedure).order_by(Procedure.created_at))).scalars().all()

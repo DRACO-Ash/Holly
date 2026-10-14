@@ -23,6 +23,7 @@ from app.models.event_summary import EventSummary
 from app.models.notification import Notification
 from app.services.assistant import display_value
 from app.services.claude import AssistantError, call_claude
+from app.services.disclosure import NOT_CLEARED, is_cleared
 
 logger = logging.getLogger(__name__)
 
@@ -155,7 +156,10 @@ async def generate_event_summary(
     if not publications:
         msg = "Cannot summarise an empty publication list"
         raise AssistantError(msg)
-    publications = sorted(publications, key=publication_order)
+    # The background cycle selects only cleared notices; this keeps any other caller to that.
+    publications = sorted(filter(is_cleared, publications), key=publication_order)
+    if not publications:
+        return SummaryOutcome(summary=None, error=NOT_CLEARED)
 
     try:
         narrative, model = await _narrate(publications)

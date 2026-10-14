@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, fields
 from datetime import UTC, datetime, timedelta
 from typing import Any, Self
-from unittest.mock import create_autospec
+from unittest.mock import AsyncMock, create_autospec
 
 import pytest
 from sqlalchemy.dialects import postgresql
@@ -53,6 +53,7 @@ def publication(number: int, event_key: str, hours_ago: int) -> Notification:
     return Notification(
         id=synthetic_id(number),
         event_id=event_key,
+        classification_marking="U",
         udl_created_at=published,
         created_at=published,
         raw={},
@@ -148,6 +149,18 @@ class SessionFactory:
             yield session
         finally:
             self.closed.append(session)
+
+
+@pytest.fixture(autouse=True)
+def audits(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
+    """write_audit, replaced with a recorder of each row and the session it was written in."""
+    rows: list[dict[str, Any]] = []
+
+    def record(db: FakeSession, **row: Any) -> None:
+        rows.append({"db": db, **row})
+
+    monkeypatch.setattr(background_refresh, "write_audit", AsyncMock(side_effect=record))
+    return rows
 
 
 @pytest.fixture(autouse=True)
@@ -383,6 +396,9 @@ class TestAutoEvaluation:
         ) in sql
         assert "FROM notification WHERE notification.udl_created_at >= " in sql
         assert_window_start(params["udl_created_at_1"], hours=9, span=span)
+        # ...whose marking is cleared for the assistant...
+        assert "AND notification.classification_marking IN (" in sql
+        assert params["classification_marking_1_1"] == "U"
         # ...that has no evaluation yet, newest first, at most the configured number of them.
         assert (
             "LEFT OUTER JOIN assistant_evaluation "
@@ -394,7 +410,11 @@ class TestAutoEvaluation:
         services.evaluate_once.assert_not_awaited()
 
     async def test_each_is_evaluated_in_turn_and_a_crash_skips_only_that_one(
-        self, sessions: SessionFactory, services: Services, caplog: pytest.LogCaptureFixture
+        self,
+        sessions: SessionFactory,
+        services: Services,
+        audits: list[dict[str, Any]],
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         ids = [synthetic_id(number) for number in (1, 2, 3)]
         sessions.script(FakeSession([rows_result([(each,) for each in ids])]))
@@ -407,6 +427,35 @@ class TestAutoEvaluation:
         [record] = logged(caplog, logging.ERROR)
         assert record.getMessage() == f"Auto-evaluate failed for notification {ids[1]}"
         assert raised(record) is crash
+        # Each notice the assistant was shown is audited, in a session of its own.
+        assert [row["entity_id"] for row in audits] == [str(ids[0]), str(ids[2])]
+        first = audits[0]
+        assert first["action_type"] == "assistant.evaluate"
+        assert first["entity_type"] == "notification"
+        assert first["detail"] == {
+            "trigger": "background",
+            "evaluation_id": str(evaluation_run().evaluation.id),
+            "model": "claude-test",
+            "had_error": False,
+        }
+        first["db"].commit.assert_awaited_once()
+
+    async def test_when_a_sending_cannot_be_audited_no_further_notice_is_sent(
+        self,
+        sessions: SessionFactory,
+        services: Services,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        ids = [synthetic_id(number) for number in (1, 2)]
+        sessions.script(FakeSession([rows_result([(each,) for each in ids])]))
+        broken = RuntimeError("Example audit failure")
+        monkeypatch.setattr(background_refresh, "write_audit", AsyncMock(side_effect=broken))
+        await background_refresh._auto_evaluate_phase()
+        assert [call.args for call in services.evaluate_once.await_args_list] == [(ids[0],)]
+        [record] = logged(caplog, logging.ERROR)
+        assert record.getMessage() == f"Could not audit the evaluation of {ids[0]}; stopping"
+        assert raised(record) is broken
 
     async def test_a_persistent_failure_stops_the_cycle_early(
         self, sessions: SessionFactory, services: Services, caplog: pytest.LogCaptureFixture
@@ -436,6 +485,8 @@ class TestEventSummaries:
         span = await timed(background_refresh._event_summary_phase())
         sql, params = compiled(session)
         assert "FROM notification WHERE notification.udl_created_at >= " in sql
+        assert "AND notification.classification_marking IN (" in sql
+        assert params["classification_marking_1_1"] == "U"
         assert sql.endswith("ORDER BY notification.udl_created_at ASC, notification.id ASC")
         assert_window_start(params["udl_created_at_1"], hours=9, span=span)
 
@@ -502,10 +553,12 @@ class TestEventSummaries:
             "FROM notification WHERE coalesce(notification.event_id, "
             "notification.notso_identifier, notification.udl_id) = "
         ) in sql
-        assert params == {"coalesce_1": EVENT}
+        # Only the publications whose marking is cleared for the assistant.
+        assert "AND notification.classification_marking IN (" in sql
+        assert params == {"coalesce_1": EVENT, "classification_marking_1_1": "U"}
 
     async def test_each_stale_event_is_regenerated_in_a_session_of_its_own(
-        self, sessions: SessionFactory, services: Services
+        self, sessions: SessionFactory, services: Services, audits: list[dict[str, Any]]
     ) -> None:
         first = [publication(1, "TEST-EVENT-1", 6), publication(2, "TEST-EVENT-1", 3)]
         second = [publication(3, "TEST-EVENT-2", 5), publication(4, "TEST-EVENT-2", 4)]
@@ -525,6 +578,23 @@ class TestEventSummaries:
         for session in per_event:
             session.commit.assert_awaited_once()
         assert sessions.opened == [window, lookup, *per_event]
+        # Each event's sending is audited in the same transaction as its narrative.
+        assert audits == [
+            {
+                "db": per_event[0],
+                "action_type": "assistant.event_summary",
+                "entity_type": "event",
+                "entity_id": "TEST-EVENT-1",
+                "detail": {"trigger": "background", "publications": 2, "had_error": False},
+            },
+            {
+                "db": per_event[1],
+                "action_type": "assistant.event_summary",
+                "entity_type": "event",
+                "entity_id": "TEST-EVENT-2",
+                "detail": {"trigger": "background", "publications": 2, "had_error": False},
+            },
+        ]
         # The stored summaries were looked up for exactly the events in the window.
         sql, params = compiled(lookup)
         assert "FROM event_summary WHERE event_summary.event_key IN (" in sql
@@ -608,7 +678,11 @@ class TestEventSummaries:
         assert raised(record) is error
 
     async def test_a_persistent_failure_stops_the_cycle(
-        self, sessions: SessionFactory, services: Services, caplog: pytest.LogCaptureFixture
+        self,
+        sessions: SessionFactory,
+        services: Services,
+        audits: list[dict[str, Any]],
+        caplog: pytest.LogCaptureFixture,
     ) -> None:
         # TEST-EVENT-1 is the newer event, so it is regenerated first.
         in_window = [publication(1, "TEST-EVENT-2", 2), publication(2, EVENT, 1)]
@@ -624,6 +698,8 @@ class TestEventSummaries:
         first.commit.assert_awaited_once()
         assert keys_summarised(services) == [EVENT]
         assert len(sessions.opened) == 3
+        # The attempt is audited, marked as failed.
+        assert [(row["entity_id"], row["detail"]["had_error"]) for row in audits] == [(EVENT, True)]
         assert messages(caplog, logging.WARNING) == [
             "Stopping event summary cycle early: Example persistent failure"
         ]
@@ -654,13 +730,14 @@ class TestTheNotificationCycle:
         sessions.script(
             FakeSession(),
             FakeSession([rows_result([(synthetic_id(1),)])]),
+            FakeSession(),  # the evaluation's audit row
             FakeSession([rows_result([published])]),
             FakeSession([rows_result([])]),
             history_session([published]),
         )
         await background_refresh.run_pull_notifications_now()
         assert steps == ["pull", "evaluate", "summarise"]
-        assert len(sessions.opened) == 5
+        assert len(sessions.opened) == 6
 
     async def test_a_refresh_during_a_running_cycle_joins_it(
         self,

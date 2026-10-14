@@ -41,6 +41,8 @@ export interface AssistantFeedItem {
   event_summary: string | null;
   event_publication_count: number | null;
   event_key: string | null;
+  // False when the notice's classification marking keeps it from the assistant.
+  assistant_cleared: boolean;
 }
 
 export interface AssistantFeed {

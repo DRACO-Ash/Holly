@@ -4,7 +4,8 @@ Three independent asyncio tasks, each owning one external surface on its own cad
 
 ● notifications: hourly, a 5-day window from UDL. After each pull, Claude evaluates the
   notifications that have no evaluation yet, and the three-sentence event narratives are
-  refreshed.
+  refreshed. Only notices whose classification marking is cleared for the assistant are sent
+  (services/disclosure.py), and each sending is written to the audit chain.
 ● maneuvers: every 10 minutes, a 48-hour window from UDL. Pull only.
 ● mattermost: every 60 seconds from the configured chat channels. Pull only; the messages
   reach the assistant's prompt at evaluation time.
@@ -23,6 +24,7 @@ import uuid
 from collections import defaultdict
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,7 +35,9 @@ from app.db.session import get_session_factory
 from app.models.assistant_evaluation import AssistantEvaluation
 from app.models.event_summary import EventSummary
 from app.models.notification import Notification
-from app.services.assistant import evaluate_once
+from app.services.assistant import EvaluationRun, evaluate_once
+from app.services.audit import write_audit
+from app.services.disclosure import cleared_condition
 from app.services.event_summary import (
     compute_event_key,
     generate_event_summary,
@@ -83,7 +87,7 @@ async def _unevaluated_notification_ids(window_start: datetime, limit: int) -> l
     # duplicate is not worth an assistant call.
     async with get_session_factory()() as db:
         notif_alias, _dedup_subq = aliased_deduped_notifications(
-            [Notification.udl_created_at >= window_start]
+            [Notification.udl_created_at >= window_start, cleared_condition()]
         )
         stmt = (
             select(notif_alias.id)
@@ -117,9 +121,34 @@ async def _auto_evaluate_phase() -> None:
         except Exception:
             logger.exception("Auto-evaluate failed for notification %s", notification_id)
             continue
+        try:
+            await _audit_background_evaluation(notification_id, run)
+        except Exception:
+            # Fail closed: no further notice is sent while sendings cannot be recorded.
+            logger.exception("Could not audit the evaluation of %s; stopping", notification_id)
+            return
         if run.persistent_failure:
             logger.warning("Stopping auto-evaluate cycle early: %s", run.evaluation.error)
             return
+
+
+async def _audit_background_evaluation(notification_id: uuid.UUID, run: EvaluationRun) -> None:
+    """The background cycle's counterpart of the evaluate route's audit row: which notice the
+    assistant was shown, by no user."""
+    async with get_session_factory()() as db:
+        await write_audit(
+            db,
+            action_type="assistant.evaluate",
+            entity_type="notification",
+            entity_id=str(notification_id),
+            detail={
+                "trigger": "background",
+                "evaluation_id": str(run.evaluation.id),
+                "model": run.evaluation.model,
+                "had_error": run.evaluation.error is not None,
+            },
+        )
+        await db.commit()
 
 
 async def _publications_by_event(window_start: datetime) -> dict[str, list[Notification]]:
@@ -128,7 +157,7 @@ async def _publications_by_event(window_start: datetime) -> dict[str, list[Notif
     async with get_session_factory()() as db:
         stmt = (
             select(Notification)
-            .where(Notification.udl_created_at >= window_start)
+            .where(Notification.udl_created_at >= window_start, cleared_condition())
             .order_by(Notification.udl_created_at.asc(), Notification.id.asc())
         )
         publications = list((await db.execute(stmt)).scalars().all())
@@ -150,8 +179,9 @@ def _summary_is_stale(existing: EventSummary | None, publications: list[Notifica
 
 
 async def _event_history(db: AsyncSession, event_key: str) -> list[Notification]:
-    """Every stored publication of one logical event, the ones older than the window too."""
-    stmt = select(Notification).where(notification_group_key() == event_key)
+    """Every stored publication of one logical event that may be sent to the assistant, the
+    ones older than the window too."""
+    stmt = select(Notification).where(notification_group_key() == event_key, cleared_condition())
     return list((await db.execute(stmt)).scalars().all())
 
 
@@ -191,6 +221,7 @@ async def _event_summary_phase() -> None:
             try:
                 history = await _event_history(db, key)
                 outcome = await generate_event_summary(db, key, history)
+                await write_audit(db, **_summary_audit(key, history, outcome.summary is None))
                 await db.commit()
             except Exception:
                 logger.exception("Event summary failed for %s", key)
@@ -199,6 +230,17 @@ async def _event_summary_phase() -> None:
         if outcome.persistent_failure:
             logger.warning("Stopping event summary cycle early: %s", outcome.error)
             return
+
+
+def _summary_audit(event_key: str, history: list[Notification], failed: bool) -> dict[str, Any]:
+    """The audit row for one event's publications shown to the assistant, written in the same
+    transaction as the narrative."""
+    return {
+        "action_type": "assistant.event_summary",
+        "entity_type": "event",
+        "entity_id": event_key,
+        "detail": {"trigger": "background", "publications": len(history), "had_error": failed},
+    }
 
 
 async def _notification_cycle() -> None:

@@ -36,6 +36,7 @@ from app.services.assistant import (
     parse_evaluation,
 )
 from app.services.claude import AssistantError, ClaudeReply
+from app.services.disclosure import NOT_CLEARED
 from app.services.procedure_storage import write_file
 from fakes import NOW, FakeSession, rows_result, scalar_result
 
@@ -76,7 +77,9 @@ def assistant_settings(settings_env: SettingsEnv) -> None:
 
 
 def make_notification(**fields: Any) -> Notification:
-    """A notification row as the database returns it, with only the given fields set."""
+    """A notification row as the database returns it, with only the given fields set and a
+    marking cleared for the assistant unless one is given."""
+    fields.setdefault("classification_marking", "U")
     return Notification(id=synthetic_id(), raw={}, created_at=NOW, updated_at=NOW, **fields)
 
 
@@ -774,6 +777,42 @@ class TestEvaluateNotification:
         assert outcome.persistent_failure is True
         assert outcome.evaluation.error == "ANTHROPIC_API_KEY is not configured"
         assert outcome.evaluation.model == CONFIGURED_MODEL
+
+
+class TestTheMarkingGate:
+    @pytest.mark.parametrize("marking", ["U//TEST-NOT-CLEARED", None, "", "u", " U"])
+    async def test_a_notice_whose_marking_is_not_cleared_is_never_sent(
+        self, monkeypatch: pytest.MonkeyPatch, marking: str | None
+    ) -> None:
+        def never_sent(*_args: object) -> NoReturn:
+            raise AssertionError("a notice that is not cleared reached the Anthropic API")
+
+        monkeypatch.setattr(claude, "_create_message", never_sent)
+        notification = make_notification(notso_identifier="TEST-NOTSO-1")
+        notification.classification_marking = marking
+        session = FakeSession([scalar_result(notification)])
+        outcome = await evaluate(session, notification.id)
+        row = outcome.evaluation
+        # Only the notice was read: no procedures, maneuvers or chat were gathered for it.
+        assert session.execute.await_count == 1
+        assert session.added == [row]
+        assert row.error == NOT_CLEARED
+        assert (row.summary, row.structured, row.procedures_used) == (
+            "Not evaluated.",
+            EMPTY_EVALUATION,
+            [],
+        )
+        assert outcome.persistent_failure is False
+
+    async def test_a_marking_the_data_owner_has_cleared_is_sent(
+        self, monkeypatch: pytest.MonkeyPatch, settings_env: SettingsEnv
+    ) -> None:
+        settings_env(ASSISTANT_CLEARED_MARKINGS='["U", "U//TEST-CLEARED"]')
+        notification = make_notification(classification_marking="U//TEST-CLEARED")
+        fake = use_claude(monkeypatch, FakeClaude(valid_reply()))
+        outcome = await evaluate(evaluation_session(notification), notification.id)
+        assert len(fake.calls) == 1
+        assert outcome.evaluation.error is None
 
 
 class TestEvaluateOnce:

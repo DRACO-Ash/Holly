@@ -31,6 +31,7 @@ from app.services.assistant import (
     get_latest_evaluation,
 )
 from app.services.audit import write_audit
+from app.services.disclosure import is_cleared
 from app.services.event_summary import compute_event_key
 from app.services.notification_query import aliased_deduped_notifications
 
@@ -86,6 +87,7 @@ def _feed_item(
         event_summary=summary.narrative if summary and not summary.error else None,
         event_publication_count=summary.publication_count if summary else None,
         event_key=event_key,
+        assistant_cleared=is_cleared(notification),
     )
 
 

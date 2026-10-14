@@ -470,6 +470,16 @@ class TestFeed:
         [item] = (await api.get(FEED)).json()["items"]
         assert (item["urgency"], item["top_action"]) == ("pending", None)
         assert (item["evaluation"] is not None) is evaluated
+        assert item["assistant_cleared"] is True
+
+    async def test_a_notice_kept_from_the_assistant_says_so(
+        self, api: httpx2.AsyncClient, use_session: UseSession, sign_in: SignIn
+    ) -> None:
+        analyst(sign_in)
+        notification = make_notification(classification_marking="U//TEST-NOT-CLEARED")
+        use_session(feed_session([notification], []))
+        [item] = (await api.get(FEED)).json()["items"]
+        assert (item["urgency"], item["assistant_cleared"]) == ("pending", False)
 
 
 class TestGetEvaluation:

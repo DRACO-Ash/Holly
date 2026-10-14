@@ -116,6 +116,10 @@ class Settings(BaseSettings):
     # Hard cap on assistant tokens (input plus output) per UTC day, across every caller. Once
     # it is reached, every assistant call fails closed until the next UTC day.
     llm_daily_token_cap: int = Field(default=2_000_000, ge=0)
+    # The UDL classification markings whose notifications may be sent to the assistant, matched
+    # exactly as UDL writes them. A notice with any other marking, or none, never leaves Holly.
+    # Clearing a further marking is the data owner's decision; until then only U is cleared.
+    assistant_cleared_markings: list[str] = Field(default_factory=lambda: ["U"])
 
     # Where uploaded procedures are stored: PROCEDURE_STORAGE_PATH when set, otherwise the
     # FILE_STORAGE add-on's STORAGE_MOUNT_PATH plus /procedures, otherwise /data/procedures.

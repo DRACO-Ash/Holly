@@ -63,6 +63,8 @@ class AssistantFeedItem(BaseModel):
     event_summary: str | None = None
     event_publication_count: int | None = None
     event_key: str | None = None
+    # False when the notice's classification marking keeps it from the assistant.
+    assistant_cleared: bool = True
 
 
 class AssistantFeed(BaseModel):

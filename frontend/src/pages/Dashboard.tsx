@@ -200,7 +200,11 @@ export default function Dashboard() {
                           </div>
                         )}
                         {bucket === "pending" && (
-                          <div className="muted">Awaiting assistant analysis...</div>
+                          <div className="muted">
+                            {it.assistant_cleared
+                              ? "Awaiting assistant analysis..."
+                              : "Not sent to the assistant: its classification marking is not cleared."}
+                          </div>
                         )}
                       </li>
                     );
