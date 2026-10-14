@@ -81,6 +81,9 @@ def read_preview(
     path = _path_for(procedure_id, filename)
     if not path.exists():
         return None, False
-    raw = path.read_bytes()
+    # Only the preview and one byte more, to tell whether the file goes on: never the whole
+    # 10 MB file, which every evaluation would otherwise read for each procedure.
+    with path.open("rb") as handle:
+        raw = handle.read(_PREVIEW_MAX_BYTES + 1)
     truncated = len(raw) > _PREVIEW_MAX_BYTES
     return raw[:_PREVIEW_MAX_BYTES].decode("utf-8", errors="replace"), truncated
