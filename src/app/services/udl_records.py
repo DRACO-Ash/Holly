@@ -8,7 +8,6 @@ one bad record does not fail the pull.
 """
 
 import logging
-import math
 import uuid
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass
@@ -29,6 +28,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.storable import UNSTORABLE_TEXT, json_problem, storable_text
 from app.services.audit import write_audit
 
 logger = logging.getLogger(__name__)
@@ -125,46 +125,13 @@ def _is_number(value: Any) -> bool:
     return isinstance(value, int | float) and not isinstance(value, bool)
 
 
-# PostgreSQL text and JSON hold no NUL character, and only text that encodes as UTF-8.
-_UNSTORABLE_TEXT = "holds a character PostgreSQL cannot store"
-
-
-def _storable(text: str) -> bool:
-    if "\x00" in text:
-        return False
-    try:
-        text.encode("utf-8")
-    except UnicodeEncodeError:  # a lone surrogate
-        return False
-    return True
-
-
 def _text_problem(column_type: String, value: Any) -> str | None:
     if not isinstance(value, str):
         return "is not text"
-    if not _storable(value):
-        return _UNSTORABLE_TEXT
+    if not storable_text(value):
+        return UNSTORABLE_TEXT
     if column_type.length is not None and len(value) > column_type.length:
         return f"is longer than {column_type.length} characters"
-    return None
-
-
-def _json_problem(value: Any) -> str | None:
-    """Every string in a JSON value, keys included, must be storable, and every number finite
-    (json.dumps writes NaN as a token PostgreSQL refuses); walked without recursion, so no depth
-    of nesting can raise."""
-    pending = [value]
-    while pending:
-        item = pending.pop()
-        if isinstance(item, str) and not _storable(item):
-            return _UNSTORABLE_TEXT
-        if isinstance(item, float) and not math.isfinite(item):
-            return "holds a number PostgreSQL JSON cannot store"
-        if isinstance(item, dict):
-            pending.extend(item.keys())
-            pending.extend(item.values())
-        elif isinstance(item, list):
-            pending.extend(item)
     return None
 
 
@@ -188,7 +155,7 @@ def _unfit(column_type: Any, value: Any) -> str | None:
     if isinstance(column_type, DateTime) and not isinstance(value, datetime):
         return "is not a time"
     if isinstance(column_type, JSON):
-        return _json_problem(value)
+        return json_problem(value)
     return None
 
 

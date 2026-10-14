@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.core.single_flight import SingleFlight
 from app.db.session import get_session_factory
+from app.db.storable import json_problem
 from app.models.assistant_evaluation import AssistantEvaluation
 from app.models.maneuver import Maneuver
 from app.models.mattermost_message import MattermostMessage
@@ -27,7 +28,12 @@ from app.models.notification import Notification
 from app.models.procedure import Procedure
 from app.schemas.assistant import AssistantEvaluationRead, StructuredEvaluation
 from app.services.audit import write_audit
-from app.services.claude import AssistantError, call_claude, extract_json_object
+from app.services.claude import (
+    UNSTORABLE_REPLY,
+    AssistantError,
+    call_claude,
+    extract_json_object,
+)
 from app.services.disclosure import NOT_CLEARED, cleared_markings, is_cleared
 from app.services.procedure_storage import read_preview
 
@@ -304,6 +310,9 @@ def parse_evaluation(text: str, procedure_ids: set[str]) -> StructuredEvaluation
     except ValidationError as exc:
         msg = f"Model response did not match the evaluation schema ({exc.error_count()} errors)"
         raise AssistantError(msg) from exc
+    # A JSON escape such as \u0000 decodes to a character the text check could not see.
+    if json_problem(evaluation.model_dump()) is not None:
+        raise AssistantError(UNSTORABLE_REPLY)
     # The model may cite only the procedures it was given; any other id is dropped.
     for procedure in evaluation.applicable_procedures:
         if procedure.procedure_id not in procedure_ids:

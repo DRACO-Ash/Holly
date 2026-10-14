@@ -248,6 +248,24 @@ def test_a_hold_from_an_earlier_day_does_not_reduce_todays_count() -> None:
     assert budget.spent == 50
 
 
+@pytest.mark.parametrize("text", ["nul \x00 inside", "half \ud800 pair"], ids=["nul", "surrogate"])
+async def test_a_reply_holding_a_character_postgresql_cannot_store_is_refused(
+    api: AnthropicRecorder, text: str
+) -> None:
+    # Escaped as the API sends them; the client decodes each back into the character.
+    body = json.dumps(reply(text))
+    api.answers.append(
+        lambda _request: httpx2.Response(
+            200, content=body, headers={"content-type": "application/json"}
+        )
+    )
+    with pytest.raises(AssistantError) as raised:
+        await call_claude("s", "u", max_tokens=256, purpose="test")
+    assert str(raised.value) == "Model response held a character Holly cannot store"
+    assert raised.value.persistent is False
+    assert claude.BUDGET.spent == 15, "the call's tokens still count against the day"
+
+
 async def test_a_connection_failure_is_transient(api: AnthropicRecorder) -> None:
     def refuse(request: httpx2.Request) -> httpx2.Response:
         msg = "connection refused"

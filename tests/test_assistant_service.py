@@ -341,6 +341,29 @@ class TestParseEvaluation:
         assert raised.value.persistent is False
         assert isinstance(raised.value.__cause__, ValidationError)
 
+    @pytest.mark.parametrize(
+        "body",
+        [
+            pytest.param(reply_body(summary="nul \u0000 inside"), id="summary"),
+            pytest.param(
+                reply_body(
+                    next_actions=[{"action": "Hold \u0000", "urgency": "low", "rationale": ""}]
+                ),
+                id="an-action",
+            ),
+            pytest.param(reply_body(open_questions=["Why \u0000?"]), id="an-open-question"),
+        ],
+    )
+    def test_a_reply_holding_a_character_postgresql_cannot_store_is_refused_as_retryable(
+        self, body: dict[str, Any]
+    ) -> None:
+        text = json.dumps(body)
+        assert "\\u0000" in text, "the model writes the NUL as an escape of six plain characters"
+        with pytest.raises(AssistantError) as raised:
+            parse_evaluation(text, set())
+        assert str(raised.value) == "Model response held a character Holly cannot store"
+        assert raised.value.persistent is False
+
     def test_a_reply_without_a_json_object_is_refused(self) -> None:
         with pytest.raises(AssistantError, match=r"^Model response contained no JSON object$"):
             parse_evaluation("Notify the duty officer, then release a NOTSO.", set())
@@ -704,6 +727,10 @@ class TestEvaluateNotification:
             (
                 '{"next_actions": []}',
                 "Model response did not match the evaluation schema (1 errors)",
+            ),
+            (
+                '{"summary": "nul \\u0000 inside"}',
+                "Model response held a character Holly cannot store",
             ),
         ],
     )

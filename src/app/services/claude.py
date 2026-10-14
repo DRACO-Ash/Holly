@@ -10,7 +10,9 @@ end-of-shift summary) goes through call_claude, which:
 ● classifies a failure by exception type, so the background loops can tell a persistent fault
   (a bad key, no permission, rate limiting, no credit) from a transient one, and reports it
   in a fixed message: the API's own text stays in the server log;
-● writes one structured log line per call with its token usage.
+● writes one structured log line per call with its token usage;
+● refuses a reply holding a character PostgreSQL cannot store, so every caller can store
+  what it keeps.
 
 The calls are short and use no tools, so they are not streamed and never pause mid-turn.
 Model output is untrusted: each caller validates what it keeps before storing it.
@@ -26,6 +28,7 @@ import anthropic
 
 from app.config import get_settings
 from app.core.logging import log_event
+from app.db.storable import storable_text
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +44,9 @@ _PERSISTENT_ERRORS: dict[type[anthropic.APIStatusError], str] = {
 _NO_CREDIT = "The assistant account has no credit left."
 _BAD_REQUEST = "The assistant rejected the request."
 _UNAVAILABLE = "The assistant could not be reached or failed; try again."
+# A reply, or a value decoded from one, that PostgreSQL cannot store: refused like any reply
+# that cannot be used, so it is retried or recorded as an error instead of failing the write.
+UNSTORABLE_REPLY = "Model response held a character Holly cannot store"
 # A rough count of characters per token, low so that a call's hold is never too small.
 _CHARS_PER_TOKEN = 3
 # A reply is one JSON object, perhaps after a little prose, so the decoder tries only this many
@@ -172,6 +178,8 @@ async def call_claude(
     if response.stop_reason == "refusal":
         raise AssistantError("The model declined to answer this request.")
     text = "\n".join(block.text for block in response.content if block.type == "text").strip()
+    if not storable_text(text):
+        raise AssistantError(UNSTORABLE_REPLY)
     if not text:
         raise AssistantError("Model response contained no text")
     return ClaudeReply(
