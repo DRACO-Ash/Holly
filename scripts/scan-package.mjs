@@ -10,10 +10,10 @@
 // behind a UTF-16 byte-order mark decodes into meaningless characters the rules cannot read),
 // unless the binary allowlist names it.
 // The allowlist is read from HEAD by check-package.sh. An entry waives only the text
-// requirement: it pins the file's SHA-256, so a changed file refuses; a file that is text, or
-// an entry that names no packaged file, refuses; and the binary's readable runs still go to the
-// hook. Allowlisted files are named on every run. Known archive and compression signatures only
-// sharpen the message for a file already refused as not text.
+// requirement: it pins the file's SHA-256, so a changed file refuses; a file that is text, an
+// entry that names no packaged file, or a path listed twice refuses; and the binary's readable
+// runs still go to the hook. Allowlisted files are named on every run. Known archive and
+// compression signatures only sharpen the message for a file already refused as not text.
 // It fails closed, and reports a match apart from a failure to scan: the hook's block status
 // (2) is "rules matched"; anything else that stops a file being judged is "could not scan".
 // Either refuses the package.
@@ -81,7 +81,8 @@ function walk(dir) {
 }
 
 // One entry per line: `<path in the upload> <sha256> # <reason>`. Blank lines and lines
-// starting with # are comments. A malformed entry is an error, so nothing is allowed silently.
+// starting with # are comments. A malformed entry, or a second entry for the same path, is an
+// error, so nothing is allowed silently.
 function readAllowlist(file) {
   const allowed = new Map();
   for (const raw of readFileSync(file, 'utf8').split('\n')) {
@@ -92,6 +93,9 @@ function readAllowlist(file) {
     const [path, sha256, extra] = line.slice(0, at).trim().split(/\s+/);
     if (!path || !SHA256.test(sha256 ?? '') || extra !== undefined) {
       throw new Error(`the allowlist entry ${JSON.stringify(line)} is not "<path> <sha256> # <reason>"`);
+    }
+    if (allowed.has(path)) {
+      throw new Error(`the allowlist lists ${JSON.stringify(path)} more than once`);
     }
     allowed.set(path, { sha256, reason: line.slice(at + 3).trim() });
   }

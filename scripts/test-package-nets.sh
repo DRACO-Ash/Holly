@@ -5,8 +5,9 @@
 # unlisted name; compressed streams with or without a signature (zlib, raw deflate, LZMA-alone,
 # brotli, a zipapp); and ASCII behind a stray UTF-16 byte-order mark. Direct runs of the scanner
 # prove that a hook which crashes, floods or hangs refuses, and that the binary allowlist waives
-# only the text requirement for a pinned, unchanged binary. A last case packages HEAD for real
-# in a throwaway clone. Run by verify.sh; needs git, python3, unzip and node.
+# only the text requirement for a pinned, unchanged binary listed once. The last cases package
+# HEAD for real in a throwaway clone, and prove that only a committed allowlist entry counts.
+# Run by verify.sh; needs git, python3, unzip and node.
 set -eu
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -243,6 +244,11 @@ printf 'logo.png # the brand mark\n' > "$WORK/allow-no-hash.txt"
 scan refuse "is not text" "a binary not on the allowlist" "$WORK/binary" 1 "$HOOK" "$EMPTY"
 scan pass "Allowlisted binaries, scanned only for readable runs: logo.png (the brand mark, a PNG image)" \
   "a pinned binary passes and is named" "$WORK/binary" 1 "$HOOK" "$WORK/allow-logo.txt"
+mkdir "$WORK/mixed"
+cp "$WORK/binary/logo.png" "$WORK/mixed/logo.png"
+printf '%s\n' "$LINE" > "$WORK/mixed/leak.py"
+scan refuse "secret-scan rules matched" "a key in a text file beside a pinned binary" \
+  "$WORK/mixed" 2 "$HOOK" "$WORK/allow-logo.txt"
 scan refuse "changed" "an allowlisted binary whose content changed" "$WORK/keyed" 1 "$HOOK" "$WORK/allow-logo.txt"
 scan refuse "rules matched in the readable runs" "a key in an allowlisted binary's readable runs" \
   "$WORK/keyed" 1 "$HOOK" "$WORK/allow-keyed.txt"
@@ -251,6 +257,10 @@ scan refuse "does not carry" "an allowlist entry for a file the upload lacks" \
   "$WORK/binary" 1 "$HOOK" "$WORK/allow-missing.txt"
 scan refuse "gives no reason" "an allowlist entry without a reason" "$WORK/binary" 1 "$HOOK" "$WORK/allow-no-reason.txt"
 scan refuse "is not" "an allowlist entry without a hash" "$WORK/binary" 1 "$HOOK" "$WORK/allow-no-hash.txt"
+# A path listed twice refuses, even though its last entry pins the right hash and would pass alone.
+printf 'logo.png %s # the brand mark\nlogo.png %s # the brand mark, listed again\n' \
+  "$(sha256_of "$WORK/keyed/logo.png")" "$LOGO" > "$WORK/allow-twice.txt"
+scan refuse "more than once" "an allowlist that lists a path twice" "$WORK/binary" 1 "$HOOK" "$WORK/allow-twice.txt"
 
 # The real package from HEAD, in a throwaway clone carrying this working tree's nets, so the
 # loop never rewrites this repository's dist/appstore.zip.
@@ -262,5 +272,27 @@ expect pass "wrote dist/appstore.zip" "the real package from HEAD" "$status" "$o
 mode="$(ls -l "$WORK/repo/dist/appstore.zip" | cut -c1-10)"
 [ "$mode" = "-rw-r--r--" ] || { echo "FAIL: the upload zip has mode $mode, not -rw-r--r--"; exit 1; }
 echo "ok: the upload zip is mode 0644"
+
+# Only a committed allowlist entry counts: the same entry refuses while it sits in the working
+# tree alone, and passes once committed.
+mkdir -p "$WORK/repo/tests/fixtures"
+python3 -c 'import random, sys; open(sys.argv[1], "wb").write(random.Random(4).randbytes(128))' \
+  "$WORK/repo/tests/fixtures/logo.dat"
+commit_in_clone() {  # $1: path to commit, $2: message
+  git -C "$WORK/repo" add -- "$1"
+  git -C "$WORK/repo" -c user.name=test -c user.email=test@localhost -c commit.gpgsign=false \
+    commit -q -m "$2"
+}
+commit_in_clone tests/fixtures/logo.dat "a binary fixture"
+printf 'tests/fixtures/logo.dat %s # a fixture image\n' "$(sha256_of "$WORK/repo/tests/fixtures/logo.dat")" \
+  >> "$WORK/repo/scripts/upload-binaries.txt"
+status=0
+out="$(sh "$WORK/repo/scripts/package-appstore.sh" 2>&1)" || status=$?
+expect refuse "is not text" "an allowlist entry that is not committed" "$status" "$out"
+commit_in_clone scripts/upload-binaries.txt "allowlist the fixture"
+status=0
+out="$(sh "$WORK/repo/scripts/package-appstore.sh" 2>&1)" || status=$?
+expect pass "Allowlisted binaries, scanned only for readable runs: tests/fixtures/logo.dat (a fixture image)" \
+  "the same entry once committed" "$status" "$out"
 
 echo "upload nets: all $n cases behaved"

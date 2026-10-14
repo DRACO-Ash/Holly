@@ -2,8 +2,9 @@
 # The content net scans only strict UTF-8 text and refuses every other file unless this list
 # pins it. One entry per line: `<path in the upload> <sha256> # <reason>`. The list is read
 # from HEAD, so only a committed entry counts. An entry waives only the text requirement: a
-# changed file (a different SHA-256), a file that is text, an entry naming no packaged file, or
-# an entry without a reason all fail the package, and the binary's readable runs are still
-# scanned. Every run names the allowlisted files. Review every change here as a security change.
+# changed file (a different SHA-256), a file that is text, an entry naming no packaged file, a
+# path listed twice, or an entry without a reason all fail the package, and the binary's
+# readable runs are still scanned. Every run names the allowlisted files. Review every change
+# here as a security change.
 #
 # Empty: Holly's upload carries no binary files today.
