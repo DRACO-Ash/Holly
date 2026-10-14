@@ -12,49 +12,33 @@
 # Adapted for Holly (Python): POSIX sh rather than bash (the platform's shell may be BusyBox),
 # the archive is an ALLOWLIST of tracked paths rather than the whole tree (packaging: the
 # archive is the analysed surface, so .claude/, CLAUDE.md, scripts/ and the bundle zip stay
-# out), and every packaged file's CONTENT is scanned for secrets, which needs node.
+# out), and every package must pass the upload nets in scripts/check-package.sh (required
+# members, banned names, and a content scan for secrets) before it reaches the upload path.
 set -eu
 cd "$(dirname "$0")/.."
 
 OUT="dist/appstore.zip"
-HOOK=".claude/hooks/secret-scan.mjs"
 mkdir -p dist
+# Build under a temporary name and move it into place only when every net passes, so a refused
+# or unscanned package never sits at the upload path. Any failure removes the temporary zip and
+# a stale upload zip from an earlier run.
+TMP="$(mktemp dist/.appstore.XXXXXX)"
+packaged=0
+finish() {
+  if [ "$packaged" != 1 ]; then rm -f -- "$TMP" "$OUT"; fi
+}
+trap finish EXIT
+# dash runs the EXIT trap on a normal exit or a set -e failure, not on a signal: exit first.
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
-# git archive -o replaces any previous zip, so nothing needs deleting first.
-git archive --format=zip -o "$OUT" HEAD -- \
+git archive --format=zip -o "$TMP" HEAD -- \
   Dockerfile .dockerignore .python-version pyproject.toml README.md \
   requirements.in requirements.txt requirements-dev.in requirements-dev.txt \
   sonar-project.properties src tests
 
-# Verify the contracts that most often fail on upload, before a human ever uploads.
-# Read member NAMES only (unzip -Z1), so the pattern anchors on the real path and is not
-# defeated by the size and date columns of a plain `unzip -l` listing.
-names="$(unzip -Z1 "$OUT")"
-for required in requirements.txt Dockerfile pyproject.toml; do
-  # pyproject.toml carries the pytest configuration the platform's test stage depends on.
-  printf '%s\n' "$names" | grep -qx "$required" || { echo "package is missing $required"; exit 1; }
-done
-# Name net: anchor each banned component at the start of a name or just after a slash, so a
-# root-level file is caught, not only a nested one. Banned: a virtualenv, a tool cache, coverage
-# output, and any environment file (.env, .env.*, .env-*, .envrc, *.env). git archive already
-# omits gitignored files; this catches one tracked by mistake.
-if printf '%s\n' "$names" | grep -qE '(^|/)(\.venv|venv|__pycache__|\.pytest_cache|\.mypy_cache|\.ruff_cache|\.complexipy_cache|coverage|htmlcov)/|(^|/)(\.env[^/]*|[^/]+\.env)$|(^|/)(coverage\.xml|\.coverage(\..+)?)$'; then
-  echo "package contains a banned path (a virtualenv, a tool cache, coverage output, or an environment file). Fix .gitignore and untrack it."; exit 1
-fi
+sh scripts/check-package.sh "$TMP"
 
-# Content net: a secret in an unexpected file escapes every name pattern, so each packaged file
-# is scanned with the secret-scan hook's rules, the one list that also guards every write.
-command -v node >/dev/null 2>&1 || { echo "node is required for the package secret scan"; exit 1; }
-hits="$(printf '%s\n' "$names" | while IFS= read -r member; do
-  case "$member" in */) continue ;; esac
-  unzip -p "$OUT" "$member" \
-    | node -e 'let s = ""; process.stdin.setEncoding("utf8");
-        process.stdin.on("data", (d) => { s += d; }).on("end", () => process.stdout.write(
-          JSON.stringify({ tool_name: "Write", tool_input: { file_path: process.argv[1], content: s } })));' "$member" \
-    | node "$HOOK" >/dev/null 2>&1 || printf '%s\n' "$member"
-done)"
-if [ -n "$hits" ]; then
-  echo "secret-scan rules matched in: $hits"; exit 1
-fi
-
+mv -f -- "$TMP" "$OUT"
+packaged=1
 echo "wrote $OUT"

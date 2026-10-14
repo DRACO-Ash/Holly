@@ -36,6 +36,9 @@ step "Tests with coverage (pytest --cov; writes coverage.xml and fails under 80%
 "$BIN/pytest" --cov --cov-report=xml --cov-report=term-missing
 test -s coverage.xml || { echo "FAIL: coverage.xml is missing or empty; the gate would read 0%"; exit 1; }
 
+step "Upload nets self-test (every planted problem refused, a clean upload accepted)"
+sh scripts/test-package-nets.sh
+
 step "Dependency audit (pip-audit: the runtime lock, then the tooling lock)"
 "$BIN/pip-audit" --strict --require-hashes --disable-pip --progress-spinner off -r requirements.txt
 "$BIN/pip-audit" --strict --require-hashes --disable-pip --progress-spinner off -r requirements-dev.txt

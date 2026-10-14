@@ -2,7 +2,6 @@
 
 import importlib
 import runpy
-from types import ModuleType
 from typing import Any
 
 import pytest
@@ -40,12 +39,14 @@ def test_control_socket_is_off_and_the_worker_is_uvicorn(monkeypatch: pytest.Mon
 
 
 def test_gunicorn_knows_every_setting_the_module_defines(monkeypatch: pytest.MonkeyPatch) -> None:
-    # gunicorn ignores a name it does not know, so a misspelt setting would do nothing silently.
-    # Every public, non-callable, non-module name in the module counts as a setting.
+    # gunicorn ignores a name it does not know, so a misspelt setting or server hook would do
+    # nothing silently. Every public name except the module's own imports counts, functions
+    # included, because gunicorn's server hooks (post_fork and the like) are functions.
+    imports = {"os", "resolve_port"}
     defined = {
         name
-        for name, value in load_settings(monkeypatch, None).items()
-        if not name.startswith("_") and not callable(value) and not isinstance(value, ModuleType)
+        for name in load_settings(monkeypatch, None)
+        if not name.startswith("_") and name not in imports
     }
     assert defined == {"bind", "worker_class", "control_socket_disable"}
     assert defined <= set(Config().settings)
