@@ -10,22 +10,26 @@ read them from the module would move with them and could never see them drift.
 
 import asyncio
 import hashlib
+import io
 import uuid
 from collections.abc import AsyncIterator, Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import httpx2
 import pytest
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.exc import IntegrityError, OperationalError
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import ClauseElement
+from starlette.requests import Request
 
 from app.api.v1.routes import procedures
 from app.config import get_settings
 from app.models.procedure import Procedure
 from app.models.user import User
+from app.services import procedure_storage
 from app.services.procedure_storage import delete_file, prepare_storage, write_file
 from fakes import NOW, FakeSession, make_user, rows_result, scalar_result
 
@@ -303,6 +307,39 @@ class TestUpload:
         assert stored_files(store) == []
         assert session.added == []
 
+    @pytest.mark.parametrize(
+        ("form", "files"),
+        [
+            (
+                {"name": "Handover checklist", "description": "Steps", "extra": "x"},
+                [("file", ("handover.txt", STEPS, "text/plain"))],
+            ),
+            (
+                {"name": "Handover checklist"},
+                [
+                    ("file", ("handover.txt", STEPS, "text/plain")),
+                    ("file", ("second.txt", STEPS, "text/plain")),
+                ],
+            ),
+        ],
+        ids=["a third field", "a second file"],
+    )
+    async def test_a_form_beyond_one_file_and_two_fields_is_refused_with_400(
+        self,
+        api: httpx2.AsyncClient,
+        use_session: UseSession,
+        sign_in: SignIn,
+        store: Path,
+        form: dict[str, str],
+        files: list[tuple[str, tuple[str, bytes, str]]],
+    ) -> None:
+        sign_in(make_user())
+        session = use_session(FakeSession())
+        response = await api.post("/api/v1/procedures", data=form, files=files)
+        assert response.status_code == 400
+        assert stored_files(store) == []
+        assert session.added == []
+
     async def test_the_longest_allowed_name_and_description_are_accepted(
         self, api: httpx2.AsyncClient, use_session: UseSession, sign_in: SignIn
     ) -> None:
@@ -442,6 +479,26 @@ class TestUploadHygiene:
         assert stored_files(store) == []
         assert len(audit_calls) == 1
 
+    async def test_a_cancelled_upload_leaves_no_file(
+        self, store: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Cancellation is not an Exception, so only a clean-up on BaseException removes the
+        # file. The route is driven directly: the middleware reports a cancelled request in
+        # its own way, after the clean-up has run.
+        form = procedures._Upload(
+            fields=procedures._UploadFields(name="Handover checklist"),
+            data=STEPS,
+            filename="handover.txt",
+            content_type="text/plain",
+        )
+        monkeypatch.setattr(procedures, "_read_upload", AsyncMock(return_value=form))
+        monkeypatch.setattr(procedures, "_store", AsyncMock(side_effect=asyncio.CancelledError))
+        request = Request({"type": "http", "headers": [], "client": ("127.0.0.1", 50000)})
+        db = cast("AsyncSession", FakeSession())
+        with pytest.raises(asyncio.CancelledError):
+            await procedures.upload_procedure(request, db, make_user())
+        assert stored_files(store) == []
+
 
 class TestStorage:
     @pytest.mark.parametrize(
@@ -568,6 +625,28 @@ class TestReading:
         assert body["content"] == "a" * PREVIEW_BYTES
         assert body["content_truncated"] is truncated
         assert body["size_bytes"] == size
+
+    def test_the_preview_reads_64_kib_and_one_byte_never_the_whole_file(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        reads: list[int | None] = []
+
+        class CountingFile(io.BytesIO):
+            def read(self, size: int | None = -1) -> bytes:
+                reads.append(size)
+                return super().read(size)
+
+        class StoredFile:
+            def exists(self) -> bool:
+                return True
+
+            def open(self, _mode: str) -> CountingFile:
+                return CountingFile(b"a" * TEN_MIB)
+
+        monkeypatch.setattr(procedure_storage, "_path_for", lambda *_args: StoredFile())
+        text, truncated = procedure_storage.read_preview(uuid.uuid4(), "big.txt", "text/plain")
+        assert (text, truncated) == ("a" * PREVIEW_BYTES, True)
+        assert reads == [PREVIEW_BYTES + 1]
 
     async def test_bytes_that_are_not_utf8_are_replaced_in_the_preview(
         self, api: httpx2.AsyncClient, use_session: UseSession, sign_in: SignIn

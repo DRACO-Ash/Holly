@@ -17,6 +17,8 @@ import pytest
 from fastapi.dependencies.models import Dependant
 from fastapi.routing import iter_route_contexts
 from fastapi.testclient import TestClient
+from starlette.requests import Request
+from starlette.responses import Response
 
 from app import __version__, factory
 from app.core.body_limit import LARGE_BODY_ROUTES
@@ -128,6 +130,19 @@ def test_a_server_error_is_generic_and_keeps_the_security_headers(tmp_path: Path
     assert response.text == "Internal Server Error"
     assert_security_headers(response)
     assert response.headers["x-request-id"] == "trace-500"
+
+
+def test_a_server_error_before_the_request_id_is_set_still_answers_generically(
+    tmp_path: Path,
+) -> None:
+    # A failure outside the request-id middleware reaches the handler with no id to echo.
+    handler = create_app(static_dir=tmp_path / "not-built").exception_handlers[500]
+    response = handler(Request({"type": "http", "headers": []}), RuntimeError("detail"))
+    assert isinstance(response, Response)
+    assert (response.status_code, response.body) == (500, b"Internal Server Error")
+    assert "x-request-id" not in response.headers
+    for name, value in {**COMMON_HEADERS, "content-security-policy": API_CSP}.items():
+        assert response.headers.get(name) == value, name
 
 
 def test_a_trailing_slash_is_not_redirected(client: TestClient) -> None:
