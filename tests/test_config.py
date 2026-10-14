@@ -107,6 +107,7 @@ class TestDatabaseUrl:
             "postgresql://holly@db.example:port/holly",
             "postgresql://holly@db example/holly",
             "postgresql://holly@[db:5432]/holly",
+            "postgresql://holly:Kx7p@SYNTHqW/m2v9@pg:5432/holly",
         ],
     )
     def test_anything_else_fails_closed(self, url: str) -> None:
@@ -481,10 +482,16 @@ class TestEveryPasswordCharacterReachesTheEngineExactly:
         printed = capsys.readouterr().out + "".join(traceback.format_exception(raised.value))
         assert fragments_in(printed, secret) == []
 
+    @pytest.mark.parametrize(
+        "secret",
+        # Alone, SQLAlchemy reads the rest as a host it refuses; followed by / or ?, it would
+        # read a plain host name out of the password and look it up.
+        [PUNCTUATED["@"], "Kx7p@SYNTHqW/m2v9", "Kx7p@SYNTHqW?m2v9"],
+        ids=["at", "at-then-slash", "at-then-question-mark"],
+    )
     def test_an_unencoded_at_stops_the_boot_with_the_fixed_message(
-        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], secret: str
     ) -> None:
-        secret = PUNCTUATED["@"]
         handed: list[URL] = []
         with pytest.raises(InvalidSettingsError) as raised:
             self.start_master(monkeypatch, secret, handed)

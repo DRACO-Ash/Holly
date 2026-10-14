@@ -86,6 +86,10 @@ def asyncpg_url(url: str) -> URL:
 
 
 def _postgres_url(url: str) -> URL | None:
+    # A second @ is inside the password, unencoded. SQLAlchemy could read part of the password
+    # as a plain host name, which the connection would then look up in DNS.
+    if url.count("@") > 1:
+        return None
     try:
         parsed = make_url(url)
     except (ArgumentError, ValueError, TypeError):
