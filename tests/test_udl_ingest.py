@@ -9,6 +9,7 @@ cases here are only the ones those files do not reach, plus the maneuver mapper,
 file of its own.
 """
 
+import json
 import logging
 import re
 import uuid
@@ -141,11 +142,14 @@ def as_db(session: FakeSession) -> AsyncSession:
 def udl_serving(
     records: list[dict[str, Any]], requests: list[httpx2.Request], status: int = 200
 ) -> UDLClient:
-    """A UDL client whose every query answers with `records`, noting each request it makes."""
+    """A UDL client whose every query answers with `records`, noting each request it makes. The
+    body escapes every non-ASCII character, as a server must to send a lone surrogate."""
 
     def handler(request: httpx2.Request) -> httpx2.Response:
         requests.append(request)
-        return httpx2.Response(status, json=records)
+        return httpx2.Response(
+            status, content=json.dumps(records), headers={"content-type": "application/json"}
+        )
 
     return UDLClient(
         base_url="https://udl.example/udl",
@@ -270,6 +274,30 @@ class TestUpsert:
             "Skipping UDL record TEST-MNVR-C: sat_no is out of range",
         ]
 
+    async def test_a_character_postgresql_cannot_hold_skips_only_its_record(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        # A NUL in a text field, a lone surrogate, and a NUL in a field only the raw JSON keeps:
+        # PostgreSQL refuses each, which would fail the whole multi-row upsert.
+        session = upsert_session()
+        records = [
+            maneuver("TEST-MNVR-A", mnvrType="burn\x00"),
+            maneuver("TEST-MNVR-B", description="half \ud800 pair"),
+            maneuver("TEST-MNVR-C", unmappedNote="kept in raw\x00"),
+            maneuver("TEST-MNVR-D"),
+        ]
+        with caplog.at_level(logging.WARNING, logger="app.services.udl_records"):
+            async with udl_serving(records, []) as client:
+                result = await run_ingest("maneuver", session, client)
+        assert result == IngestResult(pulled=4, inserted=1, updated=0, skipped=3)
+        assert [row["udl_id"] for row in upserted_rows(session)] == ["TEST-MNVR-D"]
+        unstorable = "holds a character PostgreSQL cannot store"
+        assert caplog.messages == [
+            f"Skipping UDL record TEST-MNVR-A: mnvr_type {unstorable}",
+            f"Skipping UDL record TEST-MNVR-B: description {unstorable}",
+            f"Skipping UDL record TEST-MNVR-C: raw {unstorable}",
+        ]
+
     @pytest.mark.parametrize(
         ("column_type", "value", "problem"),
         [
@@ -288,6 +316,17 @@ class TestUpsert:
             (DateTime(timezone=True), NOW, None),
             (DateTime(timezone=True), "2026-06-01", "is not a time"),
             (JSONB(), {"any": ["shape"]}, None),
+            (String(50), "nul \x00 inside", "holds a character PostgreSQL cannot store"),
+            (Text(), "lone \ud800 surrogate", "holds a character PostgreSQL cannot store"),
+            (
+                JSONB(),
+                {"key": ["deep", {"x": "nul \x00"}]},
+                "holds a character PostgreSQL cannot store",
+            ),
+            (JSONB(), {"key \x00": 1}, "holds a character PostgreSQL cannot store"),
+            (JSONB(), {"x": [1.5, float("nan")]}, "holds a number PostgreSQL JSON cannot store"),
+            (JSONB(), -float("inf"), "holds a number PostgreSQL JSON cannot store"),
+            (Float(), float("nan"), None),
         ],
     )
     def test_each_column_type_takes_only_what_postgresql_can_store(
