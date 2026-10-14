@@ -38,6 +38,8 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         request_id = choose_request_id(request.headers.get(self._header_name))
+        # Kept on the request too, for the 500 response Starlette builds outside this layer.
+        request.state.request_id = request_id
         token = request_id_var.set(request_id)
         try:
             response = await call_next(request)

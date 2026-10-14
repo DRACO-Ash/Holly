@@ -49,7 +49,8 @@ class ElsetPage(BaseModel):
 class ElsetIngestRequest(BaseModel):
     epoch_gte: datetime
     sat_no: int | None = None
-    # Holly's own cap on one manual pull, so a request cannot ask UDL for an unbounded page.
+    # Holly's own cap on what one manual pull may ask for. A request that names no limit asks
+    # for none, and UDL applies its own default page size (TBC, re-verify: its value).
     max_results: int | None = Field(default=None, ge=1, le=10_000)
 
 

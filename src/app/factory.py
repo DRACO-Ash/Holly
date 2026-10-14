@@ -200,14 +200,14 @@ def create_app(static_dir: Path = STATIC_DIR) -> FastAPI:
     app.middleware("http")(_security_headers)
 
     @app.exception_handler(500)
-    def _server_error(_request: Request, _exc: Exception) -> PlainTextResponse:
+    def _server_error(request: Request, _exc: Exception) -> PlainTextResponse:
         # A generic body; the traceback stays in the server log. Starlette builds this response
-        # outside the header middleware, so the security headers are added here too.
-        return PlainTextResponse(
-            "Internal Server Error",
-            status_code=500,
-            headers={**SECURITY_HEADERS, "Content-Security-Policy": API_CSP},
-        )
+        # outside the header and request-id middleware, so their headers are added here too.
+        headers = {**SECURITY_HEADERS, "Content-Security-Policy": API_CSP}
+        request_id = getattr(request.state, "request_id", None)
+        if request_id is not None:
+            headers[REQUEST_ID_HEADER] = request_id
+        return PlainTextResponse("Internal Server Error", status_code=500, headers=headers)
 
     for path in HEALTH_PATHS:
         app.add_api_route(path, _health, methods=["GET", "HEAD"])

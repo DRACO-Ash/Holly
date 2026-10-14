@@ -6,8 +6,9 @@
 # and fails on:
 #   1. a non-200 from / or a health path, with PORT unset (8080) and with PORT injected
 #   2. an error line or a traceback in the boot log
-#   3. migrations that did not reach the newest revision, an audit log that accepts an UPDATE,
-#      or a dashboard that is not served
+#   3. migrations that did not reach the newest revision, migrations that run while another
+#      session holds their advisory lock, an audit log that accepts an UPDATE, or a dashboard
+#      that is not served
 #   4. a malformed PORT, a store that refuses writes, or a missing signing key that does not
 #      stop the container with a clear message
 # Requires Docker and curl. Behind a TLS-intercepting proxy, point DOCKERFILE at a copy whose
@@ -146,6 +147,40 @@ if docker exec "$db" psql -U holly -d holly -qtAc 'UPDATE audit.audit_log SET ac
   fail "the audit log accepted an UPDATE"
 fi
 echo "the schema is at $head and the audit log refuses an UPDATE"
+
+# 3b. Two containers starting together must not migrate at once. While a psql session holds the
+#     migration lock, a starting container must not report its migrations applied, and once the
+#     session ends and frees it, it must.
+lock_key="$(sed -n 's/^MIGRATION_ADVISORY_LOCK_KEY = //p' "$CTX/src/app/migrations/env.py")"
+[ -n "$lock_key" ] || fail "the packaged migrations name no MIGRATION_ADVISORY_LOCK_KEY"
+lock_key=$(( $lock_key ))
+docker exec -d "$db" psql -U holly -d holly -qtAc "SELECT pg_advisory_lock($lock_key), pg_sleep(20)"
+tries=0
+until [ "$(docker exec "$db" psql -U holly -d holly -qtAc \
+  "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND granted")" = 1 ]; do
+  tries=$((tries + 1))
+  [ "$tries" -lt 20 ] || fail "could not hold the migration lock for the check"
+  sleep 1
+done
+cid="$(run_holly "" "$WRITABLE")"
+CIDS="$CIDS $cid"
+tries=0
+until docker logs "$cid" 2>&1 | grep -q '"event": "migrations", .*"status": "starting"'; do
+  tries=$((tries + 1))
+  [ "$tries" -lt 15 ] || fail "the container did not start its migrations"
+  sleep 1
+done
+sleep 3
+if docker logs "$cid" 2>&1 | grep -q '"event": "migrations", .*"status": "applied"'; then
+  fail "migrations ran while another session held the migration lock"
+fi
+tries=0
+until docker logs "$cid" 2>&1 | grep -q '"event": "migrations", .*"status": "applied"'; do
+  tries=$((tries + 1))
+  [ "$tries" -lt 60 ] || fail "migrations did not run once the migration lock was freed"
+  sleep 1
+done
+echo "migrations wait while another session holds the migration lock, then run"
 
 # 4. Each of these must stop the container at boot, never run in a degraded state.
 for bad in 0 "8080 --check-config"; do

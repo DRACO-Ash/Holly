@@ -123,10 +123,11 @@ def test_a_server_error_is_generic_and_keeps_the_security_headers(tmp_path: Path
 
     app.add_api_route("/fail", probe_only_failure, methods=["GET"])
     with TestClient(app, raise_server_exceptions=False) as client:
-        response = client.get("/fail")
+        response = client.get("/fail", headers={"X-Request-ID": "trace-500"})
     assert response.status_code == 500
     assert response.text == "Internal Server Error"
     assert_security_headers(response)
+    assert response.headers["x-request-id"] == "trace-500"
 
 
 def test_a_trailing_slash_is_not_redirected(client: TestClient) -> None:
