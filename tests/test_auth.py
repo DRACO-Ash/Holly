@@ -577,6 +577,34 @@ class TestSignInUnderLoad:
         assert (await tenth).status_code == 401
         assert len(checked) == 1
 
+    async def test_attempts_sent_together_at_the_last_place_get_one_check_between_them(
+        self, api: httpx2.AsyncClient, use_session: UseSession, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Nothing awaits between the limit test and the count, so of five attempts that all
+        # arrive while one place is left, one is checked and four are refused.
+        for _ in range(9):
+            LOGIN_LIMIT.record("alice")
+        entered, release = threading.Event(), threading.Event()
+        checked: list[str] = []
+
+        def held_check(_plain: str, hashed: str) -> bool:
+            checked.append(hashed)
+            entered.set()
+            release.wait(5)
+            return False
+
+        monkeypatch.setattr(auth, "verify_password", held_check)
+        use_session(user_lookup(make_user(password=KNOWN)))
+        body = {"username": "alice", "password": WRONG}
+        attempts = [
+            asyncio.create_task(api.post("/api/v1/auth/login", json=body)) for _ in range(5)
+        ]
+        assert await asyncio.to_thread(entered.wait, 5)
+        release.set()
+        statuses = sorted(response.status_code for response in await asyncio.gather(*attempts))
+        assert statuses == [401, 429, 429, 429, 429]
+        assert len(checked) == 1
+
     async def test_a_check_cancelled_before_it_reaches_a_thread_still_gives_its_slot_back(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
