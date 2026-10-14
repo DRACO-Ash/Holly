@@ -37,7 +37,7 @@ Holly's address is `https://<slug>.apps.bluestaq.com`; the slug is `TBC, re-veri
 | Database and UDL credentials | `curl https://<host>/api/v1/health/detailed` | `"status": "ok"`, `"database": "ok"`, `"udl_credentials": "configured"` |
 | Notifications current | **Audit log** page, action type `udl.notification.ingest` | A row within the last hour, with `pulled` greater than 0 when UDL has new notices |
 | Manoeuvres current | **Audit log** page, action type `udl.maneuver.ingest` | A row within the last 10 minutes |
-| Assistant working | The Dashboard page's **Pending** count | Not growing from one hourly cycle to the next |
+| Assistant working | The Dashboard page's **Pending** count | Not growing from one hourly cycle to the next, apart from notices marked `Not sent to the assistant` (section 10) |
 | Platform state | The App Store's view of the app | `TBC, re-verify` where and what it shows |
 
 What the read-outs return:
@@ -72,7 +72,7 @@ sh scripts/smoke-container.sh     # build the image from the upload, run it with
 ● `UDL_USERNAME` and `UDL_PASSWORD` for UDL data, and `ANTHROPIC_API_KEY` for the assistant.
 ● `MATTERMOST_URL`, `MATTERMOST_BOT_TOKEN` and `MATTERMOST_CHANNEL_IDS` if the Comms page is used.
 
-Leave `STORAGE_MOUNT_PATH` to the FILE_STORAGE add-on, which injects it; do not set it by hand. Leave `APP_ENV` at its default, `production`.
+Leave `STORAGE_MOUNT_PATH` to the FILE_STORAGE add-on, which injects it; do not set it by hand. Leave `APP_ENV` at its default, `production`. Leave `ASSISTANT_CLEARED_MARKINGS` at its default, `["U"]`, unless the data owner clears a further UDL classification marking for the assistant; who that is, and whether the `JCO` source's own marking may be cleared, is `TBC, re-verify`.
 
 **Starting, stopping and restarting** the app are platform operations: `TBC, re-verify` how. Rate-limit counters and the daily assistant token count start again from zero at every restart.
 
@@ -100,9 +100,14 @@ Holly writes one JSON object per line to standard output. Named events (`boot`, 
 **Lines worth knowing:**
 
 ● `llm.call`: one per assistant call, with `purpose` (`assistant.evaluate`, `assistant.event_summary`, `shift_log.polish` or `shift_log.summary`), `model`, `tokens` and `stop_reason`.
+● `Anthropic API error (<type>): ...`: the Anthropic API's own error text. Analysts see only a fixed message for its class (section 10).
 ● `Notification ingest complete (window: last 120h)` and `Maneuver ingest complete (window: last 48h)`: a background pull succeeded.
 ● `Notification ingest skipped: UDL auth failed (...)` or `Notification ingest failed: ...`: see section 10.
+● `Skipping UDL record <id>: <column> <problem>`, for example `status is longer than 20 characters`: a record its table cannot store, skipped and counted in `skipped`; the rest of the pull is stored. The line names the column, never the value.
 ● `Stopping auto-evaluate cycle early: ...`: a persistent assistant failure; see section 10.
+● `Could not audit the evaluation of <id>; stopping`: a background evaluation's audit row could not be written, so no further notice was sent for evaluation in that cycle.
+● `Could not record the narrative of <event key>; stopping`: a background narrative's audit row, or the commit that stores it with the narrative, failed, so no further event was sent in that cycle.
+● `Sign-in refused: too many attempts from <address>` or `Sign-in refused: 4 password checks already running`: see section 10.
 ● `Mattermost channel <id> skipped: ...`: the bot cannot read that channel.
 
 **SECTION 06**
@@ -127,7 +132,7 @@ curl -s -X POST https://<host>/api/v1/notifications/ingest \
   -d '{"msg_type": "TACREP_NOTSO", "created_at_gte": "<ISO 8601 time>", "data_mode": "REAL", "source": "JCO", "max_results": 100}'
 ```
 
-The answer is `{"pulled": <n>, "inserted": <n>, "updated": <n>, "skipped": <n>}`, and the audit row records your user id and address. `POST /api/v1/elsets/ingest` takes `{"epoch_gte": "<ISO 8601 time>", "sat_no": <number>, "max_results": <number>}` and answers the same way; it is the only way element sets arrive. Manoeuvres and Mattermost chat are pulled only by the background loops.
+The answer is `{"pulled": <n>, "inserted": <n>, "updated": <n>, "skipped": <n>}`, and the audit row records your user id and address. `max_results` may be at most 10,000; a pull that names none, as the background pulls do, gets UDL's own default page size (`TBC, re-verify` its value). `POST /api/v1/elsets/ingest` takes `{"epoch_gte": "<ISO 8601 time>", "sat_no": <number>, "max_results": <number>}` and answers the same way; it is the only way element sets arrive. Manoeuvres and Mattermost chat are pulled only by the background loops.
 
 **SECTION 07**
 
@@ -187,7 +192,7 @@ Rotate `APP_SECRET_KEY` (at least 32 characters) and apply the settings. Every a
 Read the start of its log (section 04). The causes Holly names itself:
 
 ● `PORT must be a whole number ...`: fix or remove the `PORT` variable.
-● A settings validation error: fix each named setting. A missing or short `APP_SECRET_KEY`, missing database settings, a `*` origin, an http UDL or Mattermost URL, `UDL_VERIFY_SSL=false` or a relative procedure path each stops the start.
+● `Error: Holly cannot start: ...`: a setting failed validation. Fix each setting the line names; it never repeats a value. A missing or short `APP_SECRET_KEY`, missing database settings, a `*` origin, an http UDL or Mattermost URL, `UDL_VERIFY_SSL=false` or a relative procedure path each stops the start.
 ● An Alembic error: a migration failed. If it reads `Can't locate revision identified by ...`, the package is older than the database (section 03). Escalate any other migration failure to engineering.
 ● `"storage_writable": false`: the procedure store refused a write. The `errno` and `error` say why; check the FILE_STORAGE add-on and `PROCEDURE_STORAGE_PATH`.
 
@@ -199,22 +204,27 @@ Holly cannot reach its database. Check the POSTGRESQL add-on's state and the dat
 
 `APP_SECRET_KEY` changed, which invalidates every token: expected after a rotation, and users sign in again. Otherwise the user's access token expired and the refresh failed; the same answer applies.
 
-### Symptom: HTTP 429 `Too many requests` or `Too many failed sign-ins`
+### Symptom: HTTP 429 `Too many requests`, `Too many sign-in attempts from this address` or `Too many failed sign-ins`
 
 Holly's limits, all counted in the one worker and reset when the container restarts ([src/app/core/rate_limit.py](../../src/app/core/rate_limit.py)):
 
 | Limit | Applies to | Allowance |
 |-------|------------|-----------|
 | Coarse | Every request under `/api/` and `/status`, per client address | 600 in any 60 seconds |
+| Sign-in attempts | Every sign-in attempt, per client address, counted before any password check | 30 in any 60 seconds |
 | Sign-in | Failed sign-ins, per username; a success clears the count | 10 in any 15 minutes |
 | Assistant | Evaluations, **Pull from UDL**, new shift-log entries, re-polish and the end-of-shift narrative, per user | 30 in any 10 minutes |
 | Daily tokens | Every assistant call, across all users, per UTC day | `LLM_DAILY_TOKEN_CAP`, 2,000,000 by default |
 
-The first three answer 429 with `Retry-After`, with one exception: a new shift-log entry made after the assistant allowance is spent is still saved, unpolished, with `Not polished: the assistant limit is reached. Re-polish in <n> seconds.` The daily token cap refuses nothing at the door: once it is spent, each assistant call fails and its error is stored, until the next UTC day. The probes and the dashboard's static files are never limited. Behind the platform ingress, the client address may be the ingress's own for every caller (see the [security overview](../security/overview.md)); if so, all users share one coarse allowance.
+The first four answer 429 with `Retry-After`, with one exception: a new shift-log entry made after the assistant allowance is spent is still saved, unpolished, with `Not polished: the assistant limit is reached. Re-polish in <n> seconds.` The daily token cap refuses nothing at the door: each assistant call holds its output allowance and an estimate of its input against the cap before it is sent, and a call the rest of the day's cap cannot cover fails. An evaluation, polish or end-of-shift narrative then stores the error; an event narrative keeps its earlier text. The probes and the dashboard's static files are never limited. Behind the platform ingress, the client address may be the ingress's own for every caller (see the [security overview](../security/overview.md)); if so, all users share one coarse allowance and one allowance of sign-in attempts.
+
+### Symptom: sign-in answers HTTP 503 `Sign-in is busy. Try again in a moment.`
+
+At most 4 password checks run at once, each on a worker thread, so a burst of sign-ins cannot stall the one worker. A sign-in beyond them is refused at once, with `Retry-After: 1`, logged as `Sign-in refused: 4 password checks already running` and not audited. It clears as the running checks finish.
 
 ### Symptom: HTTP 413 `Request body too large`
 
-A request body over 11 MiB is refused before it is read. A procedure upload over 10 MiB is refused with `File exceeds 10MB limit`.
+A request body over 256 KiB is refused before it is read, except a procedure upload (`POST /api/v1/procedures`), whose limit is 11 MiB. A procedure file over 10 MiB is refused with `File exceeds 10MB limit`.
 
 ### Symptom: UDL pulls fail
 
@@ -235,9 +245,14 @@ A pull through the API (`/api/v1/notifications/ingest` or `/api/v1/elsets/ingest
 A notice stays **Awaiting analysis** until it has a successful evaluation. The background cycle evaluates only notices that have no evaluation at all, so a notice whose evaluation failed is not retried automatically: open it and select **Re-evaluate**. The panel shows the stored error. Common causes:
 
 ● `ANTHROPIC_API_KEY is not configured`: set the key and apply.
-● `The daily assistant token cap is spent; assistant calls resume tomorrow (UTC).`: wait, or raise `LLM_DAILY_TOKEN_CAP` and apply.
-● `Anthropic API error: ...`: a rejected key, missing permission, rate limiting or exhausted credit stops the background phase early, logged as `Stopping auto-evaluate cycle early`.
+● `The daily assistant token cap is spent; assistant calls resume tomorrow (UTC).`: what is left of the day's cap cannot cover the call. Wait, or raise `LLM_DAILY_TOKEN_CAP` and apply.
+● `The assistant rejected Holly's API key.`, `The assistant refused this request for Holly's API key.`, `The assistant does not offer the model Holly is set to use.`, `The assistant is limiting Holly's requests; try again later.` or `The assistant account has no credit left.`: a persistent fault in the key, its permissions, `ANTHROPIC_MODEL`, Anthropic's rate limit or the account's credit. It stops the background phase early, logged as `Stopping auto-evaluate cycle early`.
+● `The assistant rejected the request.` or `The assistant could not be reached or failed; try again.`: not persistent, so the background phase moves on to the next notice. Re-evaluate later.
 ● `Model response was truncated at <n> tokens ... Raise ANTHROPIC_MAX_TOKENS.`: raise it and re-evaluate.
+
+The Anthropic API's own error text never reaches the panel; it is in the server log as `Anthropic API error (<type>): ...`.
+
+A notice the Dashboard marks `Not sent to the assistant: its classification marking is not cleared.` stays there: its UDL classification marking is not in `ASSISTANT_CLEARED_MARKINGS`, so the background cycle never selects it, and **Run assistant** or **Re-evaluate** stores `Not sent to the assistant: this notice's classification marking is not cleared for it (ASSISTANT_CLEARED_MARKINGS).` without calling the assistant. Clearing a further marking is the data owner's decision (section 03); once the setting lists the notice's marking, select **Run assistant** or **Re-evaluate**.
 
 ### Symptom: the Comms page stays empty
 

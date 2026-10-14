@@ -61,6 +61,7 @@
 ## Data Classification Confirmed Unclassified
 
 **Date:** Sprint 1
+**Status:** Amended by the assistant's classification-marking control (Holly V0.2). A UDL notification reaches the assistant only when its classification marking is listed in `ASSISTANT_CLEARED_MARKINGS`, `["U"]` by default and matched exactly; a notice with any other marking, or none, never leaves Holly ([src/app/services/disclosure.py](../../src/app/services/disclosure.py)). Clearing a further marking is the data owner's decision; who that is, and whether the `JCO` source's own marking may be cleared, is `TBC, re-verify`.
 **Decision:** All data processed by this system, including UDL TACREP_NOTSOs, elset records, Mattermost content, ClickUp exports, procedure documents, and analyst inputs, is confirmed Unclassified.
 **Rationale:** No handling restrictions apply. Commercial AI APIs (Anthropic Claude) and all major cloud providers are permissible for Phase 2.
 

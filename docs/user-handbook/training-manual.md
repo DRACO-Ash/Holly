@@ -11,13 +11,13 @@
 
 > **BLUF**
 >
-> Holly pulls UDL notifications and manoeuvre records and the team's Mattermost chat in the background, has an assistant evaluate each new notice against your uploaded procedures, and shows what needs your attention first. This manual walks the trainee through signing in, the Dashboard, Notifications, Maneuvers, Comms and Procedures pages, the shift log and event timers, common workflows, and what to do when something goes wrong.
+> Holly pulls UDL notifications and manoeuvre records and the team's Mattermost chat in the background, has an assistant evaluate each new notice cleared for it against your uploaded procedures, and shows what needs your attention first. This manual walks the trainee through signing in, the Dashboard, Notifications, Maneuvers, Comms and Procedures pages, the shift log and event timers, common workflows, and what to do when something goes wrong.
 
 **SECTION 01**
 
 ## What Holly is for
 
-Holly is your watch-stand surface. It pulls Tactical Reports and Notices to Space Operators and manoeuvre records from the Unified Data Library (UDL), and recent chat from the team's Mattermost channels, and puts them in one browser tab. An assistant reads each new notice against the procedures your team has uploaded and suggests next actions, most urgent first. You keep the shift log and your event timers in the same place. Holly was built from the Daily Operations Dashboard.
+Holly is your watch-stand surface. It pulls Tactical Reports and Notices to Space Operators and manoeuvre records from the Unified Data Library (UDL), and recent chat from the team's Mattermost channels, and puts them in one browser tab. An assistant reads each new notice cleared for it against the procedures your team has uploaded and suggests next actions, most urgent first. You keep the shift log and your event timers in the same place. Holly was built from the Daily Operations Dashboard.
 
 **Why care?** Time on task during a watch is the metric. Every minute you save stitching context together is a minute back on analysis.
 
@@ -35,7 +35,7 @@ Holly is your watch-stand surface. It pulls Tactical Reports and Notices to Spac
 | **Publication** | One version of a notice as UDL published it. UDL republishes a notice as it evolves; Holly shows the latest publication of each and keeps every one. |
 | **NORAD catalogue number / sat number** | The persistent integer identifier for a tracked object. The ISS is `25544`. |
 | **Manoeuvre record** | A UDL record of a satellite manoeuvre, published by fusion providers. Holly's page for them is labelled **Maneuvers**. |
-| **Assistant** | Anthropic's Claude, called by Holly to evaluate notices, describe how an event evolved, tidy shift-log entries and draft the end-of-shift narrative. Its output is advice. |
+| **Assistant** | Anthropic's Claude, called by Holly to evaluate notices, describe how an event evolved, tidy shift-log entries and draft the end-of-shift narrative. Its output is advice. Holly shows it a notice only when the notice's classification marking is cleared for it. |
 | **Procedure** | A document your team uploads to Holly. The assistant reads every procedure when it evaluates a notice. |
 | **Event timer** | A countdown you set to an upcoming event, with a pre-alert before it and an alarm at it. |
 
@@ -53,7 +53,7 @@ Holly is your watch-stand surface. It pulls Tactical Reports and Notices to Spac
 
 There is no self sign-up. If you do not have an account, ask the on-call operator.
 
-You stay signed in while you use Holly: your 30-minute access renews itself in the background, and each renewal lasts 7 days, unless your operator has changed those defaults. You sign in again after 7 days without using Holly, after you sign out, or if the operator signs everyone out. **Sign out**, in the header, clears your session from the browser and revokes it on the server, so it cannot be renewed. After 10 failed sign-ins for one username within 15 minutes, Holly refuses further attempts for a while and says how many seconds to wait.
+You stay signed in while you use Holly: your 30-minute access renews itself in the background, and each renewal lasts 7 days, unless your operator has changed those defaults. You sign in again after 7 days without using Holly, after you sign out, or if the operator signs everyone out. **Sign out**, in the header, clears your session from the browser and revokes it on the server, so it cannot be renewed. After 10 failed sign-ins for one username within 15 minutes, or 30 sign-in attempts from one address within a minute, Holly refuses further attempts for a while and says how many seconds to wait. If other sign-ins are being checked at that moment, Holly may answer `Sign-in is busy. Try again in a moment.`; sign in again shortly.
 
 > **TRAINER NOTE**
 >
@@ -73,10 +73,10 @@ Times are shown in UTC unless a field says otherwise.
 
 ## The Dashboard page
 
-The Dashboard answers one question: what needs your attention. It covers the TACREP_NOTSO notices from the last 5 days (your operator can change the window), the latest publication of each and at most the 100 most recent, each evaluated by the assistant against your uploaded procedures.
+The Dashboard answers one question: what needs your attention. It covers the TACREP_NOTSO notices from the last 5 days (your operator can change the window), the latest publication of each and at most the 100 most recent, each evaluated by the assistant against your uploaded procedures when its classification marking is cleared for it.
 
 ● **The counts** across the top show how many notices sit at **High**, **Medium** and **Low** urgency, how many are **Pending**, and how many are **Info only**.
-● **The feed** groups notices by urgency, most urgent first and newest first within each group. A notice's urgency is the most urgent of the actions the assistant recommends. **Informational** means the assistant recommended no action. **Awaiting analysis** means there is no evaluation yet, or the last one failed.
+● **The feed** groups notices by urgency, most urgent first and newest first within each group. A notice's urgency is the most urgent of the actions the assistant recommends. **Informational** means the assistant recommended no action. **Awaiting analysis** means there is no evaluation yet, or the last one failed. A notice marked `Not sent to the assistant: its classification marking is not cleared.` stays there: Holly does not send it to the assistant.
 ● **Each notice** shows its identifier, its UDL creation time, its event class, the **Event evolution** narrative (with the number of publications when there is more than one), the assistant's summary and its top action, marked **Next:**.
 ● **Select a notice** to open its detail page.
 
@@ -103,7 +103,7 @@ Holly pulls notices from UDL every hour on its own. **Pull from UDL** runs the w
 
 ### A notice's detail page
 
-● **Assistant:** the latest evaluation, with the model and the time it ran. It holds a summary; **Next actions**, each with an urgency, an optional deadline and the rationale; **Applicable procedures**, with why each applies; and **Open questions** the assistant could not answer. **Run assistant** evaluates a notice that has none; **Re-evaluate** runs it again, for example after a new procedure is uploaded. If the assistant could not produce a usable evaluation, the panel says why.
+● **Assistant:** the latest evaluation, with the model and the time it ran. It holds a summary; **Next actions**, each with an urgency, an optional deadline and the rationale; **Applicable procedures**, with why each applies; and **Open questions** the assistant could not answer. **Run assistant** evaluates a notice that has none; **Re-evaluate** runs it again, for example after a new procedure is uploaded. If the assistant could not produce a usable evaluation, the panel says why. For a notice whose classification marking is not cleared, running the assistant sends nothing: the panel says the notice was not sent to the assistant.
 ● **Status:** status, event type, message type, classification and data mode.
 ● **Identification:** the notice identifier, event id, UDL id, source, origin network, creator, author and, when the notice has one, a link to the source page, which opens in a new tab.
 ● **Timing:** UDL creation, publication, and the effective-from and effective-until times.
@@ -238,11 +238,11 @@ If you find yourself wishing Holly did something it does not, tell the team.
 | Symptom | Action |
 |---------|--------|
 | The page will not load | Refresh. Then tell the operator. |
-| Sign-in fails | Check your username and password. If Holly says to wait a number of seconds, wait. If it still fails, ask the operator whether your account is active. |
+| Sign-in fails | Check your username and password. If Holly says to wait a number of seconds, wait. If it says sign-in is busy, try again in a moment. If it still fails, ask the operator whether your account is active. |
 | You are sent back to the sign-in page | Your session ended; sign in again. |
 | **Pull from UDL** shows a red error | If it says to try again in a number of seconds, your assistant allowance is spent: wait. Otherwise tell the operator. |
 | **Pull from UDL** finishes but nothing new appears | Either UDL has nothing new, or the pull failed: UDL failures show only in Holly's log. If it persists, tell the operator. |
-| A notice stays **Awaiting analysis** | Open it. If the assistant panel shows an error, select **Re-evaluate**; if the error mentions the daily token cap, evaluations resume the next UTC day. |
+| A notice stays **Awaiting analysis** | Open it. If the assistant panel shows an error, select **Re-evaluate**; if the error mentions the daily token cap, evaluations resume the next UTC day. If the Dashboard says the notice was not sent to the assistant, its classification marking is not cleared and no evaluation will come; tell the operator if you expected one. |
 | The Comms page is empty | No channel is configured or the bot cannot read the channels; tell the operator. |
 | A timer makes no sound | Click anywhere in Holly or select **Enable alerts** in the banner, and check your browser allows sound for Holly. |
 | A table is empty when you expect rows | Check your filter, then **Clear** and look again. |

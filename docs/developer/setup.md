@@ -42,7 +42,7 @@ The first install command builds the virtualenv from the hash-pinned tooling loc
 
 Holly reads its settings from the environment, or from a `.env` file in the directory it runs from, which is the repository root for every command in this document ([src/app/config.py](../../src/app/config.py)). A variable set in the environment wins over the same name in `.env`. Two kinds come from the environment only, never from `.env`: `PORT`, and the admin command's `ADMIN_*` variables. `.env` is ignored by Git; never commit it and never copy a real value into any tracked file.
 
-Holly validates its settings when it first reads them and refuses to start with a clear message listing every problem: a signing key shorter than 32 characters, a `*` origin, no database settings, a non-https UDL or Mattermost URL outside development, `UDL_VERIFY_SSL=false` outside development, or a procedure directory that is relative or the filesystem root. Secrets are held as secret strings, so their values never appear in a log line.
+Holly validates its settings when it first reads them and refuses to start with one message, `Holly cannot start: ...`, that names the settings at fault and never repeats a value: a missing signing key or one shorter than 32 characters, a value of the wrong type or one that cannot be parsed, a `*` origin, no database settings, a non-https UDL or Mattermost URL outside development, `UDL_VERIFY_SSL=false` outside development, or a procedure directory that is relative or the filesystem root. In the container, gunicorn prints it as one line beginning `Error:`. Secrets are held as secret strings, so their values never appear in a log line.
 
 To make a signing key:
 
@@ -71,7 +71,7 @@ Every setting Holly reads. Names are environment variable names. Secret values a
 
 | Setting | Purpose | Default | Required |
 |---------|---------|---------|----------|
-| `DATABASE_URL` | PostgreSQL connection URL with a host; `postgres://`, `postgresql://` and `postgresql+asyncpg://` are accepted. Wins over the `POSTGRES_*` parts. On the App Store this is the assumed name of the POSTGRESQL add-on's variable: `TBC, re-verify`. Secret, because it carries the password. | none | Yes, unless the `POSTGRES_*` parts are set |
+| `DATABASE_URL` | PostgreSQL connection URL with a host; `postgres://`, `postgresql://` and `postgresql+asyncpg://` are accepted. An `sslmode` query parameter, as PostgreSQL's own clients write it, is passed to asyncpg as `ssl`, which takes the same values. Wins over the `POSTGRES_*` parts. On the App Store this is the assumed name of the POSTGRESQL add-on's variable: `TBC, re-verify`. Secret, because it carries the password. | none | Yes, unless the `POSTGRES_*` parts are set |
 | `POSTGRES_HOST` | Database host, used when `DATABASE_URL` is not set. | none | Yes, without `DATABASE_URL` |
 | `POSTGRES_PORT` | Database port, 1 to 65535. | `5432` | No |
 | `POSTGRES_DB` | Database name. | none | Yes, without `DATABASE_URL` |
@@ -111,10 +111,11 @@ Every setting Holly reads. Names are environment variable names. Secret values a
 
 | Setting | Purpose | Default | Required |
 |---------|---------|---------|----------|
-| `ANTHROPIC_API_KEY` | Key for every assistant call. Without it each call fails closed and the error is stored. Secret. | empty | For the assistant |
+| `ANTHROPIC_API_KEY` | Key for every assistant call. Without it each call fails closed and the error is stored, except that an event narrative keeps its earlier text. Secret. | empty | For the assistant |
 | `ANTHROPIC_MODEL` | Model id for every assistant call. | `claude-sonnet-4-6` | No |
 | `ANTHROPIC_MAX_TOKENS` | Most output tokens per evaluation, shift-note polish and shift summary, 256 to 16000. Event narratives use a fixed 400. | `4096` | No |
-| `LLM_DAILY_TOKEN_CAP` | Most assistant tokens, input and output, per UTC day across every caller. Counted in the process, so a restart starts the count again. Once spent, every assistant call fails until the next UTC day. | `2000000` | No |
+| `LLM_DAILY_TOKEN_CAP` | Most assistant tokens, input and output, per UTC day across every caller. Counted in the process, so a restart starts the count again. Each call holds its whole output allowance and one token for every 3 characters of its prompt before it is sent, then settles to its real use; a call the rest of the day's cap cannot cover fails. | `2000000` | No |
+| `ASSISTANT_CLEARED_MARKINGS` | The UDL classification markings whose notifications may be sent to the assistant, as a JSON list such as `["U"]`, matched exactly as UDL writes them. A notice with any other marking, or none, is never sent: evaluating it stores `Not sent to the assistant: ...` and calls nothing. Clearing a further marking is the data owner's decision; who that is, and whether the `JCO` source's own marking may be cleared, is `TBC, re-verify`. | `["U"]` | No |
 
 ### Procedure storage
 
@@ -277,7 +278,7 @@ sh scripts/simulate-pipeline.sh   # package the committed tree, check it out and
 sh scripts/smoke-container.sh     # build the image from the upload, run it with PostgreSQL, probe the contract
 ```
 
-The smoke rung needs Docker and `curl`. It fails on a non-200 probe, an error in the boot log, migrations that miss the newest revision, an audit log that accepts an UPDATE, a dashboard that is not served, or a misconfiguration that does not stop the container. `sh scripts/package-appstore.sh` alone writes the upload, `dist/appstore.zip`, after the upload nets pass.
+The smoke rung needs Docker and `curl`. It fails on a non-200 probe, an error in the boot log, migrations that miss the newest revision, migrations that run while another session holds their advisory lock, an audit log that accepts an UPDATE, a dashboard that is not served, or a misconfiguration that does not stop the container. `sh scripts/package-appstore.sh` alone writes the upload, `dist/appstore.zip`, after the upload nets pass.
 
 **SECTION 12**
 

@@ -108,7 +108,7 @@ await db.execute(
 )
 ```
 
-`pg_advisory_xact_lock` is released when the transaction commits or rolls back, so the lock lasts no longer than the write it protects. Holly reads the timestamp after taking the lock, so the chain's timestamp order is its write order.
+`pg_advisory_xact_lock` is released when the transaction commits or rolls back, so the lock lasts no longer than the write it protects. After taking the lock, Holly sets the row's timestamp to the later of its own clock and one microsecond after the newest row's, so the chain's timestamp order, which the verifier walks, is its write order even when two containers' clocks differ or a clock steps back.
 
 The key (`0x4F505841` in [src/app/services/audit.py](../../src/app/services/audit.py)) is constant across the application. Anything else that needs its own lock must use a different key; the migrations use `0x484F4C4C`.
 
@@ -120,7 +120,7 @@ Action types are dotted strings, `<domain>.<entity>.<verb>` where that fits. Eve
 
 | Action type | Written when | `detail` carries |
 |-------------|--------------|------------------|
-| `auth.user.login` | Every sign-in attempt. | `success`, the attempted `username`, and on failure a `reason`: `unknown_user`, `inactive_user`, `wrong_password` or `rate_limited`. `user_id` is null for `unknown_user` and `rate_limited`. |
+| `auth.user.login` | Every sign-in attempt, except one refused by the per-address limit or because sign-in is busy (HTTP 503). | `success`; the `username` on success, and on failure only when it names an account; and on failure a `reason`: `unknown_user`, `inactive_user`, `wrong_password` or `rate_limited`. `user_id` is null when the username names no account. |
 | `auth.token.refresh` | Every refresh-token exchange. | `success`, and on failure a `reason`: `invalid_token`, `malformed_subject`, `revoked_token` or `inactive_user`. On success the old refresh token's JWT ID (JTI) joins the `revoked_jti` block-list. |
 | `auth.user.logout` | Every sign-out (`POST /api/v1/auth/logout`, refresh token in the body). | `success`, and on failure a `reason`: `invalid_token`, `malformed_subject` or `already_revoked`. |
 | `auth.user.admin_upsert` | `python -m app.cli.create_admin` creates or resets an admin. | `username` and `action` (`created` or `updated`). No user id or address. |
@@ -128,7 +128,8 @@ Action types are dotted strings, `<domain>.<entity>.<verb>` where that fits. Eve
 | `udl.maneuver.ingest` | A manoeuvre pull by the background loop. | `event_start_time_gte`, `sat_no`, `data_mode`, `max_results` and the counts. |
 | `udl.elset.ingest` | `POST /api/v1/elsets/ingest`. | `epoch_gte`, `sat_no`, `data_mode`, `max_results` and the counts. |
 | `mattermost.ingest` | A Mattermost pull that polled at least one channel or failed one. | `channels_polled`, `channels_failed`, `pulled`, `inserted`, `skipped`. |
-| `assistant.evaluate` | An on-demand evaluation (`POST /api/v1/assistant/evaluate/{id}`). | `evaluation_id`, `model`, `procedures_used`, `had_error`. |
+| `assistant.evaluate` | An evaluation: on demand (`POST /api/v1/assistant/evaluate/{id}`), or by the background cycle with no user id or address. A request for a notice whose classification marking is not cleared is recorded too, with `had_error` true. | `evaluation_id`, `model`, `procedures_used`, `had_error`; a background row also carries `trigger` (`background`). |
+| `assistant.event_summary` | Each event narrative the background cycle attempts, in the same transaction as the narrative. Entity type `event`, entity id the event key; no user id or address. | `trigger` (`background`), `publications` (the number of the event's cleared publications), `had_error`. |
 | `procedure.upload` | A procedure upload. | `name`, `filename`, `size_bytes`. |
 | `procedure.delete` | A procedure deletion. | `name`, `filename`. |
 | `shift_log.note.create` | A new shift-log entry. | `shift_date`, `had_error` (whether the polish failed). |
@@ -142,7 +143,7 @@ Action types are dotted strings, `<domain>.<entity>.<verb>` where that fits. Eve
 | `event_timer.roll_forward` | A recurring timer is dismissed and moves to its next occurrence. | `label`, `recurrence`, `previous_target`, `next_target`. |
 | `event_timer.delete` | A timer is deleted. | `label`. |
 
-Not recorded: reads of any kind; the assistant's automatic evaluations and event narratives in the background cycle; and the analyst behind **Pull from UDL**, whose pull is recorded as a cycle with no user id. Add a new action type to this table when it is introduced.
+Not recorded: reads of any kind; and the analyst behind **Pull from UDL**, whose pull, evaluations and narratives are recorded as the cycle's, with no user id. Add a new action type to this table when it is introduced.
 
 **SECTION 07**
 
@@ -151,11 +152,11 @@ Not recorded: reads of any kind; the assistant's automatic evaluations and event
 For every audit row:
 
 ● **`action_type`**: see the taxonomy above.
-● **`entity_type`** and **`entity_id`**: what the action acted on, for example `user`, `procedure`, `shift_note`, `shift_summary`, `event_timer` or `notification` with its id. Ingest runs use `elset_ingest_run`, `notification_ingest_run`, `maneuver_ingest_run` or `mattermost_ingest_run`, with no id, because the action is bulk.
+● **`entity_type`** and **`entity_id`**: what the action acted on, for example `user`, `procedure`, `shift_note`, `shift_summary`, `event_timer` or `notification` with its id, or `event` with its event key. Ingest runs use `elset_ingest_run`, `notification_ingest_run`, `maneuver_ingest_run` or `mattermost_ingest_run`, with no id, because the action is bulk.
 ● **`user_id`**: the signed-in user, taken from the access token's subject. Null for the background loops, the admin command, and sign-in, refresh and sign-out attempts that name no valid user.
 ● **`ip_address`**: the client address the server saw (`request.client.host`). Behind the platform ingress this is the ingress's address unless gunicorn is set to trust its forwarded headers (`FORWARDED_ALLOW_IPS`); whether the platform does so is `TBC, re-verify` ([src/app/core/net.py](../../src/app/core/net.py)).
 ● **`detail`**: JSON text with the action-specific fields above.
-● **`timestamp`**: the time Holly wrote the row, in UTC.
+● **`timestamp`**: the time Holly wrote the row, in UTC, or one microsecond after the previous row's when that is later (section 05).
 
 **SECTION 08**
 

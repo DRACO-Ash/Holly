@@ -10,7 +10,7 @@
 
 > **BLUF**
 >
-> Holly carries Unclassified data on the Bluestaq App Store. Its controls aim at integrity, audit and operational hygiene: JSON Web Token (JWT) sign-in on every data route, an append-only and hash-chained audit log, strict response headers, request and cost limits that fail closed, settings validated at boot, and scanned dependencies. TLS is the platform's. Accepted positions and their trip-wires are in [SECURITY.md](../../SECURITY.md).
+> Holly carries Unclassified data on the Bluestaq App Store. Its controls aim at integrity, audit and operational hygiene: JSON Web Token (JWT) sign-in on every data route, an append-only and hash-chained audit log, strict response headers, a classification-marking check before a notification reaches the assistant, request and cost limits that fail closed, settings validated at boot, and scanned dependencies. TLS is the platform's. Accepted positions and their trip-wires are in [SECURITY.md](../../SECURITY.md).
 
 **SECTION 01**
 
@@ -23,9 +23,10 @@ Holly serves SDA watch analysts from one container on the Bluestaq App Store. Al
 ## Data classification
 
 ● **Unclassified**, per ADR-006, which covers UDL notifications and element sets, Mattermost content, procedure documents and analyst inputs. UDL manoeuvre records are a UDL source like the others; ADR-006 does not name them.
-● ADR-006 permits commercial AI APIs (Anthropic Claude) for this data. Section 09 lists exactly what Holly sends to Anthropic.
+● ADR-006 permits commercial AI APIs (Anthropic Claude) for this data; Holly narrows that by classification marking (next point). Section 09 lists exactly what Holly sends to Anthropic.
+● **Classification markings.** A UDL notification reaches the assistant only when its classification marking is listed in `ASSISTANT_CLEARED_MARKINGS`, `["U"]` by default and matched exactly; a notice with any other marking, or none, never leaves Holly ([src/app/services/disclosure.py](../../src/app/services/disclosure.py)). An evaluation request for such a notice stores `Not sent to the assistant: ...` and calls nothing, the background cycle evaluates a notice only when its latest publication is cleared, and an event narrative is written from the event's cleared publications only. The manoeuvre records sent with a cleared notice must be cleared too. Clearing a further marking is the data owner's decision; who that is, and whether the `JCO` source's own marking may be cleared, is `TBC, re-verify`.
 
-When a new data source is added, ADR-006 must be re-evaluated. A source carrying a higher classification must be refused at ingest until the system is uplifted.
+When a new data source is added, ADR-006 must be re-evaluated. Holly refuses no record at ingest by its marking: it stores and shows whatever its pulls return, and the marking decides only what reaches the assistant. Whether a source carrying a higher classification may be connected at all is the data owner's decision (`TBC, re-verify`).
 
 **SECTION 03**
 
@@ -39,7 +40,9 @@ When a new data source is added, ADR-006 must be re-evaluated. A source carrying
 ● **Server-side sign-out.** `POST /api/v1/auth/logout` takes the refresh token in its body, revokes its JTI and audits the action.
 ● **Access tokens are not block-listed.** After sign-out, an access token stays valid until it expires, up to 30 minutes by default. Every request does check that the user still exists and is active.
 ● **Passwords** are bcrypt hashes from the `bcrypt` library; only the first 72 bytes of a password count.
-● **Guessing is limited.** After 10 failed sign-ins for one username within 15 minutes, further attempts for it answer 429 with `Retry-After` and are audited with reason `rate_limited`; a success clears the count. An unknown username still costs a real bcrypt check against a dummy hash, so response time does not reveal which usernames exist ([src/app/api/v1/routes/auth.py](../../src/app/api/v1/routes/auth.py)).
+● **Guessing is limited.** Every sign-in attempt counts against its client address before any password is checked: after 30 in a minute, further attempts from that address answer 429 `Too many sign-in attempts from this address. Try again in <n> seconds.` with `Retry-After`, unaudited. After 10 failed sign-ins for one username within 15 minutes, further attempts for it answer 429 with `Retry-After` and are audited with reason `rate_limited`; a success clears the count. An unknown username still costs a real bcrypt check against a dummy hash, so response time does not reveal which usernames exist ([src/app/api/v1/routes/auth.py](../../src/app/api/v1/routes/auth.py)).
+● **Sign-in cannot stall the worker.** bcrypt runs on worker threads, at most 4 checks at once. A sign-in beyond them answers 503 `Sign-in is busy. Try again in a moment.` with `Retry-After: 1` at once, rather than queueing.
+● **An unknown username is not recorded.** A failed sign-in's audit row carries the username only when it names an account: an unknown one may be a password typed into the wrong box, and the audit chain is append-only.
 ● **Bounded input.** Usernames are at most 50 characters, passwords 1,024 and tokens 4,096; anything longer is refused before any work.
 ● **In the browser**, both tokens are kept in `localStorage` under `holly.auth.access` and `holly.auth.refresh`. Any script running in Holly's origin could read them; the dashboard's Content Security Policy (CSP), which allows scripts from Holly's own origin only and no inline script, is the mitigation.
 
@@ -92,8 +95,8 @@ The action types, what each records, and what is not recorded are in [docs/audit
 From [src/app/factory.py](../../src/app/factory.py) and [src/app/core/](../../src/app/core/):
 
 ● **Headers on every response**, errors included: `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Cache-Control: no-store`, an `X-Request-ID`, and a CSP. HTML pages (the dashboard) get `default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`; every other response gets `default-src 'none'; frame-ancestors 'none'`.
-● **Body cap:** a request body over 11 MiB is refused with 413, at once when its declared length is too large, or the moment a streamed body passes the cap, so an oversized upload never fills memory or disk.
-● **Procedures:** uploads are capped at 10 MiB and stored as `<id><plain extension>`, so an uploaded file name never reaches the filesystem. Every download is an `application/octet-stream` attachment with a safely encoded file name, whatever type the uploader claimed, so a stored file cannot render as a page in Holly's origin.
+● **Body cap:** a request body over 256 KiB is refused with 413; only a procedure upload (`POST /api/v1/procedures`) may reach 11 MiB. The refusal comes at once when the declared length is too large, or the moment a streamed body passes the cap, so an oversized upload never fills memory or disk.
+● **Procedures:** the upload's form is read only after sign-in, with at most one file and two fields, so an anonymous caller cannot make Holly parse or spool a large body. Uploads are capped at 10 MiB and stored as `<id><plain extension>`, so an uploaded file name never reaches the filesystem. Every download is an `application/octet-stream` attachment with a safely encoded file name, whatever type the uploader claimed, so a stored file cannot render as a page in Holly's origin.
 ● **No interactive API documentation** (`/docs`, `/redoc` and `/openapi.json` answer 404), and no trailing-slash redirect, which would echo the request's `Host` header.
 ● **No Cross-Origin Resource Sharing (CORS)** by default: `APP_ALLOWED_ORIGINS` is empty, and Holly refuses to start with `*`.
 ● **Request ids** from a caller are kept only when they are a plain token of at most 128 characters, so a caller cannot write arbitrary text into logs or headers.
@@ -109,11 +112,12 @@ All limits live in the one worker process and reset when the container restarts 
 | Limit | Applies to | Allowance |
 |-------|------------|-----------|
 | Coarse | Every request under `/api/` and `/status`, per client address | 600 in any 60 seconds |
+| Sign-in attempts | Every sign-in attempt, per client address, counted before any password check | 30 in any 60 seconds |
 | Sign-in | Failed sign-ins, per username | 10 in any 15 minutes |
 | Assistant | Each request that calls the assistant, per user: evaluations, **Pull from UDL**, new shift-log entries, re-polish and the end-of-shift narrative | 30 in any 10 minutes |
 | Daily tokens | Every assistant call, across all users and the background cycle, per UTC day | `LLM_DAILY_TOKEN_CAP`, 2,000,000 by default |
 
-The first three answer 429 with `Retry-After`, except that a new shift-log entry made after the assistant allowance is spent is saved unpolished rather than refused. The probes and the dashboard's static files are never limited. Each limiter remembers at most 10,000 keys, dropping the stalest first, so a flood of distinct keys cannot grow memory without bound. Once the daily token cap is spent, every assistant call fails closed until the next UTC day.
+The first four answer 429 with `Retry-After`, except that a new shift-log entry made after the assistant allowance is spent is saved unpolished rather than refused. Sign-in also runs at most 4 password checks at once and answers 503 beyond them (section 03). The probes and the dashboard's static files are never limited. Each limiter remembers at most 10,000 keys, dropping the stalest first, so a flood of distinct keys cannot grow memory without bound. Each assistant call holds its whole output allowance and one token for every 3 characters of its prompt against the daily token cap before it is sent, with nothing awaited between the check and the hold, so calls made together cannot overrun the cap; the hold is settled to the call's real use afterwards, or given back when no reply arrives. A call the rest of the day's cap cannot cover fails closed; the count starts again each UTC day.
 
 **The client address** is the one the server sees. Behind the platform ingress that is the ingress's own address unless gunicorn is set to trust the ingress's forwarded headers through `FORWARDED_ALLOW_IPS`; by default gunicorn trusts only `127.0.0.1` and `::1` ([src/app/core/net.py](../../src/app/core/net.py)). Until that is confirmed (`TBC, re-verify`), assume every caller shares one coarse allowance and the audit log records the ingress's address.
 
@@ -123,12 +127,14 @@ The first three answer 429 with `Retry-After`, except that a new shift-log entry
 
 Every call goes through one function, `call_claude` ([src/app/services/claude.py](../../src/app/services/claude.py)):
 
-● The API key is read server-side at call time; without it every call fails closed and the error is stored.
-● Model output is untrusted. An evaluation must parse as one JSON object of the expected shape, with bounded lengths and counts and an urgency of `high`, `medium` or `low` ([src/app/schemas/assistant.py](../../src/app/schemas/assistant.py)). A procedure id the model was not given is dropped. A reply that fails is retried once and then stored as an error, with no advice.
+● The API key is read server-side at call time; without it every call fails closed and the error is stored, except that an event narrative keeps its earlier text.
+● Model output is untrusted. An evaluation must parse as one JSON object of the expected shape, with bounded lengths and counts and an urgency of `high`, `medium` or `low` ([src/app/schemas/assistant.py](../../src/app/schemas/assistant.py)). A procedure id the model was not given is dropped. A reply that fails, including one nested too deeply to decode, is retried once and then stored as an error, with no advice.
 ● Each call writes one `llm.call` log line with its purpose, model and token count, never its content.
-● A persistent failure (a rejected key, no permission, rate limiting, exhausted credit, or the spent daily cap) stops the background phase early instead of retrying every notice.
+● An Anthropic API failure reaches analysts as a fixed message for its class, such as `The assistant rejected Holly's API key.`; the API's own error text goes to the server log only.
+● A persistent failure (a rejected key, no permission, a model the API does not offer, rate limiting, exhausted credit, or a daily cap that cannot cover the call) stops the background phase early instead of retrying every notice.
+● Each background evaluation writes an `assistant.evaluate` audit row and each background narrative an `assistant.event_summary` row, as an on-demand evaluation does. Each phase stops if a row cannot be written, and a narrative is stored only in the same transaction as its row.
 
-**What Holly sends to Anthropic:** for an evaluation, the notification's fields, up to 10 manoeuvre records for its satellites from the last 30 days, up to 30 team chat messages from the last 6 hours (each cut to 500 characters), and every uploaded procedure, with the text of those uploaded as plain text, Markdown, JSON or CSV (up to 64 KiB each). For an event narrative, the fields of each publication of the event. For the shift log, the analyst's raw entry (polish) or the day's entries (summary).
+**What Holly sends to Anthropic:** for an evaluation of a notice whose marking is cleared (section 02), the notification's fields, up to 10 manoeuvre records for its satellites from the last 30 days whose own marking is cleared, up to 30 team chat messages from the last 6 hours (each cut to 500 characters), and every uploaded procedure, with the text of those uploaded as plain text, Markdown, JSON or CSV (up to 64 KiB each). For an event narrative, the fields of each of the event's publications whose marking is cleared. For the shift log, the analyst's raw entry (polish) or the day's entries (summary).
 
 **SECTION 10**
 
@@ -164,13 +170,14 @@ Supply chain: Python installs only from the hash-pinned locks (`--require-hashes
 | Vector | Mitigation |
 |--------|-----------|
 | External attacker reaches the application | TLS and routing at the platform ingress. Every data route needs a valid access token; the open routes are pinned by a test. Strict headers and CSP on every response. |
-| Password guessing | 10 failed sign-ins per username per 15 minutes, a constant bcrypt cost for unknown usernames, and every attempt audited with its reason. |
+| Password guessing | 30 sign-in attempts per client address a minute, counted before any password check; 10 failed sign-ins per username per 15 minutes; a constant bcrypt cost for unknown usernames, on worker threads at most 4 at once, so a burst cannot stall the worker; and each attempt that is checked, or refused for its username, audited with its reason. |
 | Compromised analyst credentials | Every state change is audited. Access tokens expire after 30 minutes. Refresh tokens rotate on every use, so a stolen one is single-use and its reuse is refused and audited. Deactivating the user stops their tokens at once. |
 | Compromised UDL, Mattermost or Anthropic credentials | Held in environment variables, never in source. Holly only reads from UDL and Mattermost. Holly's daily token cap does not limit use of a stolen key outside Holly; rotate it at the source. |
 | SQL injection | SQLAlchemy parameterises every query; no SQL is built by string concatenation. |
 | Cross-site scripting (XSS) | React escapes by default and the dashboard uses no `dangerouslySetInnerHTML`. The CSP allows no inline or third-party script. Links from UDL data are limited to http and https. |
 | Cross-site request forgery (CSRF) | Tokens travel in the `Authorization` header, not a cookie, which removes the standard CSRF vector. |
 | Prompt injection through UDL data, chat or procedures | Model output is validated, bounded and shown as advice; the assistant has no tools and cannot act. |
+| Marked UDL content sent to Anthropic | Only notifications and manoeuvre records whose classification marking is listed in `ASSISTANT_CLEARED_MARKINGS` are sent, and each evaluation and narrative writes an audit row; the background cycle stops sending if a row cannot be written. |
 | Cost exhaustion | Per-user assistant limit and a daily token cap that fails closed. |
 | Supply-chain compromise | Hash-pinned Python locks, a committed npm lockfile with install scripts off, digest-pinned base images, `pip-audit` and `npm audit` in every loop. |
 | Insider modifies the audit log | The append-only trigger refuses changes through the application's database user. The hash chain detects a change made by disabling the trigger or from outside the database, unless every later hash is recomputed too; nothing anchors the chain outside the database. |

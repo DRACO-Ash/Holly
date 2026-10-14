@@ -15,16 +15,19 @@ All notable changes to Holly are recorded here, newest first. Holly V0.2 is the 
 ### Added
 
 ● **One App Store container.** The React dashboard is compiled in the image and served at `/`, beside the API under `/api/v1`, the platform probes and a secret-free `/status`. Migrations run at container start in the gunicorn master, under a PostgreSQL advisory lock. One worker runs the background refresh, so it runs once.
-● **Limits.** A coarse rate limit per client address on the API and `/status`; failed sign-ins limited per username; assistant calls limited per user; a daily assistant token cap (`LLM_DAILY_TOKEN_CAP`) that fails closed; an 11 MiB request body cap.
+● **Limits.** A coarse rate limit per client address on the API and `/status`; sign-in attempts limited per client address, before any password is checked, and failed sign-ins per username; at most 4 password checks at once, on worker threads, so a burst of sign-ins cannot stall the worker; assistant calls limited per user; a daily assistant token cap (`LLM_DAILY_TOKEN_CAP`) that fails closed and holds each call's largest possible cost before it is sent; request bodies capped at 256 KiB, 11 MiB for a procedure upload, whose form is read only after sign-in.
+● **`ASSISTANT_CLEARED_MARKINGS`**: the UDL classification markings whose notifications, and the manoeuvre records sent with them, may be sent to the assistant, `["U"]` by default. Any other marking, or none, never leaves Holly; the dashboard says which notices were not sent. Each background evaluation and event narrative is written to the audit chain, and the cycle stops sending if it cannot be.
 ● **`python -m app.cli.verify_audit`**, which recomputes the audit chain and names the first broken link. Migration 0017 refuses every UPDATE, DELETE and TRUNCATE on the audit log, the insert-only rule ADR-005 recorded but no migration enforced.
 ● **Recurrence anchor for event timers** (migration 0016): a monthly timer set for the 31st now returns to the 31st after a shorter month.
-● **Unit tests for the dashboard's logic** (Vitest), and a server suite of 870 tests at 99% line coverage.
+● **Unit tests for the dashboard's logic** (Vitest), and a server suite of 928 tests at 99% line coverage.
 ● **`scripts/dev.sh`**, the local run: PostgreSQL from `infra/docker-compose.yml`, migrations, the API on 8080 and the dashboard on 3000.
 
 ### Changed
 
 ● **Renamed to Holly**: the page title and header, the browser storage keys (`holly.*`, so every analyst signs in once more), the service name in the logs and the package names.
-● **Settings are validated at boot and fail closed**: a signing key of at least 32 characters, no `*` origin, https for UDL and Mattermost outside development, and an absolute, writable procedure store (proved with a real write at boot). A refusal is one line that names each variable at fault and repeats no value.
+● **Settings are validated at boot and fail closed**: a signing key of at least 32 characters, no `*` origin, https for UDL and Mattermost outside development, and an absolute, writable procedure store (proved with a real write at boot). A refusal is one line that names each variable at fault and repeats no value. A `DATABASE_URL` may carry libpq's `sslmode`.
+● **Failed sign-ins**: the audit chain records the username only when it names an account, since an unknown one may be a password typed into the wrong box.
+● **Assistant failures** reach analysts as fixed messages; the Anthropic API's own text stays in the server log.
 ● **Sign-in tokens use PyJWT** in place of python-jose, whose ecdsa dependency carries an advisory with no fixed release. Decoding accepts the configured algorithm only and requires every claim.
 ● **The audit chain hashes each row's stored timestamp and stored detail**, so every row Holly writes can be recomputed. Rows the Daily Operations Dashboard wrote hashed a timestamp it never stored and cannot be verified.
 ● **The admin command takes its password** from `ADMIN_PASSWORD` or a hidden prompt; the `--password` flag is gone, so a password never lands in shell history or the process list.
@@ -35,6 +38,7 @@ All notable changes to Holly are recorded here, newest first. Holly V0.2 is the 
 ### Fixed
 
 ● Every uploaded procedure was stored in one file per extension, named after an id the row did not have yet, so a later upload replaced an earlier one's content and refusing a duplicate deleted the original's file. An upload that fails for any reason now removes its own file, a blank name is refused, and a download whose file is missing answers 404 instead of failing.
+● A failed event narrative no longer replaces the earlier one and hides it: nothing is written, and the event is retried in the next cycle.
 ● Event summaries: a summary is refreshed only when the window holds a publication it has not seen, and from the event's full history, so it never shrinks as older publications age out; a timestamp tie no longer triggers a fresh narrative every hour; the newest events are summarised first when the per-cycle cap applies. The assistant is shown at most 20 publications of one event, the first and the newest, so a long-lived event costs no more to summarise than a busy one.
 ● The hourly loop survives a cycle cancelled by another caller, and stopping the loops no longer swallows the caller's own cancellation.
 ● A spent assistant limit no longer refuses a shift note: the note is kept as written and can be re-polished later.
@@ -44,6 +48,14 @@ All notable changes to Holly are recorded here, newest first. Holly V0.2 is the 
 ● Satellite ids that UDL sends as numbers no longer crash evaluations and event summaries.
 ● Event timers: a whitespace-only label is refused, targets are bounded to the years 2000 to 2099, and an unknown recurrence value is dismissed once instead of looping. The pre-alert badge and browser notification give the timer's own lead time, not a fixed 5 minutes.
 ● A manual UDL ingest may ask for at most 10,000 records in one pull. The element-set ingest's audit entry now records the data mode it asked for.
+● One UDL record that its table cannot store, such as text longer than its column, no longer fails the whole pull: it is skipped, counted and logged by column.
+● Each refused request built a new traceback onto one shared exception, so memory grew with every 401; each refusal is now a new exception.
+● An upload whose file write fails part-way, or whose request is cancelled, no longer leaves a file behind.
+● An assistant reply nested too deeply to read is an assistant error, not a crash that re-billed the notice every cycle.
+● Audit rows are timed after the newest row, so two containers whose clocks differ cannot make the verifier report a break.
+● A failed download shows the server's message, such as a missing procedure file, not the bare status code.
+● A 500 response carries the request id.
+● Each evaluation read every previewable procedure file whole, up to 10 MB, for a 64 KiB preview; it now reads the preview only.
 ● The empty Comms page no longer tells analysts to edit a local `.env` file.
 ● Links from UDL records become clickable only for http and https, and every new-tab link carries `noopener noreferrer`.
 
