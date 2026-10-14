@@ -26,6 +26,7 @@ from app.models.mattermost_message import MattermostMessage
 from app.models.notification import Notification
 from app.models.procedure import Procedure
 from app.schemas.assistant import AssistantEvaluationRead, StructuredEvaluation
+from app.services.audit import write_audit
 from app.services.claude import AssistantError, call_claude, extract_json_object
 from app.services.disclosure import NOT_CLEARED, is_cleared
 from app.services.procedure_storage import read_preview
@@ -402,6 +403,36 @@ async def evaluate_once(notification_id: uuid.UUID) -> EvaluationRun:
     """Evaluate and store, in a session of its own. A caller asking for a notification already
     being evaluated joins that run instead of starting another."""
     return await _IN_FLIGHT.run(str(notification_id), lambda: _evaluate_and_store(notification_id))
+
+
+async def write_evaluation_audit(
+    db: AsyncSession,
+    notification_id: uuid.UUID,
+    evaluation: AssistantEvaluationRead,
+    *,
+    user_id: uuid.UUID | None = None,
+    ip_address: str | None = None,
+    trigger: str | None = None,
+) -> None:
+    """The audit row for one evaluation: the notice the assistant was asked about, who asked,
+    and whether it answered. The background cycle marks its rows with trigger "background".
+    The caller commits."""
+    detail: dict[str, Any] = {} if trigger is None else {"trigger": trigger}
+    detail |= {
+        "evaluation_id": str(evaluation.id),
+        "model": evaluation.model,
+        "procedures_used": evaluation.procedures_used,
+        "had_error": evaluation.error is not None,
+    }
+    await write_audit(
+        db,
+        action_type="assistant.evaluate",
+        entity_type="notification",
+        entity_id=str(notification_id),
+        user_id=user_id,
+        ip_address=ip_address,
+        detail=detail,
+    )
 
 
 async def get_latest_evaluation(

@@ -29,8 +29,8 @@ from app.services.assistant import (
     NotificationNotFoundError,
     evaluate_once,
     get_latest_evaluation,
+    write_evaluation_audit,
 )
-from app.services.audit import write_audit
 from app.services.disclosure import is_cleared
 from app.services.event_summary import compute_event_key
 from app.services.notification_query import aliased_deduped_notifications
@@ -156,19 +156,8 @@ async def evaluate(
             status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found"
         ) from exc
     evaluation = run.evaluation
-    await write_audit(
-        db,
-        action_type="assistant.evaluate",
-        entity_type="notification",
-        entity_id=str(notification_id),
-        user_id=current_user.id,
-        ip_address=client_ip(request),
-        detail={
-            "evaluation_id": str(evaluation.id),
-            "model": evaluation.model,
-            "procedures_used": evaluation.procedures_used,
-            "had_error": evaluation.error is not None,
-        },
+    await write_evaluation_audit(
+        db, notification_id, evaluation, user_id=current_user.id, ip_address=client_ip(request)
     )
     await db.commit()
     return evaluation

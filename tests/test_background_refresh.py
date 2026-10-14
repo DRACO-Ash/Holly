@@ -22,7 +22,7 @@ from sqlalchemy.dialects import postgresql
 from app.models.event_summary import EventSummary
 from app.models.notification import Notification
 from app.schemas.assistant import AssistantEvaluationRead
-from app.services import background_refresh
+from app.services import assistant, background_refresh
 from app.services.assistant import EvaluationRun
 from app.services.event_summary import SummaryOutcome
 from app.services.udl_client import UDLAuthError, UDLClientError
@@ -153,13 +153,16 @@ class SessionFactory:
 
 @pytest.fixture(autouse=True)
 def audits(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
-    """write_audit, replaced with a recorder of each row and the session it was written in."""
+    """write_audit, where the cycle's evaluations and narratives reach it, replaced with a
+    recorder of each row and the session it was written in."""
     rows: list[dict[str, Any]] = []
 
     def record(db: FakeSession, **row: Any) -> None:
         rows.append({"db": db, **row})
 
-    monkeypatch.setattr(background_refresh, "write_audit", AsyncMock(side_effect=record))
+    recorder = AsyncMock(side_effect=record)
+    monkeypatch.setattr(background_refresh, "write_audit", recorder)
+    monkeypatch.setattr(assistant, "write_audit", recorder)
     return rows
 
 
@@ -436,6 +439,7 @@ class TestAutoEvaluation:
             "trigger": "background",
             "evaluation_id": str(evaluation_run().evaluation.id),
             "model": "claude-test",
+            "procedures_used": [],
             "had_error": False,
         }
         first["db"].commit.assert_awaited_once()
@@ -450,7 +454,7 @@ class TestAutoEvaluation:
         ids = [synthetic_id(number) for number in (1, 2)]
         sessions.script(FakeSession([rows_result([(each,) for each in ids])]))
         broken = RuntimeError("Example audit failure")
-        monkeypatch.setattr(background_refresh, "write_audit", AsyncMock(side_effect=broken))
+        monkeypatch.setattr(assistant, "write_audit", AsyncMock(side_effect=broken))
         await background_refresh._auto_evaluate_phase()
         assert [call.args for call in services.evaluate_once.await_args_list] == [(ids[0],)]
         [record] = logged(caplog, logging.ERROR)

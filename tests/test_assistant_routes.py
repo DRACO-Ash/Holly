@@ -79,7 +79,7 @@ class EvaluationService:
 @pytest.fixture(autouse=True)
 def audit(monkeypatch: pytest.MonkeyPatch) -> AuditRecorder:
     recorder = AuditRecorder()
-    monkeypatch.setattr("app.api.v1.routes.assistant.write_audit", recorder.write)
+    monkeypatch.setattr("app.services.assistant.write_audit", recorder.write)
     return recorder
 
 

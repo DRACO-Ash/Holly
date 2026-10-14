@@ -35,7 +35,7 @@ from app.db.session import get_session_factory
 from app.models.assistant_evaluation import AssistantEvaluation
 from app.models.event_summary import EventSummary
 from app.models.notification import Notification
-from app.services.assistant import EvaluationRun, evaluate_once
+from app.services.assistant import EvaluationRun, evaluate_once, write_evaluation_audit
 from app.services.audit import write_audit
 from app.services.disclosure import cleared_condition
 from app.services.event_summary import (
@@ -136,18 +136,7 @@ async def _audit_background_evaluation(notification_id: uuid.UUID, run: Evaluati
     """The background cycle's counterpart of the evaluate route's audit row: which notice the
     assistant was shown, by no user."""
     async with get_session_factory()() as db:
-        await write_audit(
-            db,
-            action_type="assistant.evaluate",
-            entity_type="notification",
-            entity_id=str(notification_id),
-            detail={
-                "trigger": "background",
-                "evaluation_id": str(run.evaluation.id),
-                "model": run.evaluation.model,
-                "had_error": run.evaluation.error is not None,
-            },
-        )
+        await write_evaluation_audit(db, notification_id, run.evaluation, trigger="background")
         await db.commit()
 
 
