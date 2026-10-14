@@ -38,7 +38,7 @@ sh scripts/simulate-pipeline.sh          # before every upload: package, check o
 sh scripts/smoke-container.sh            # before every upload: build the image from the upload, run it, probe the contract
 ```
 
-Relock after any dependency change with the `uv pip compile` command in the header of `requirements.in`, then `requirements-dev.in`; never edit a lockfile by hand. Packaging runs the upload nets in `scripts/check-package.sh` (required members, banned names, and a content scan with the secret-scan hook's rules), so it needs `node` and `unzip`; the loop's self-test of those nets also needs `python3`.
+Relock after any dependency change with the `uv pip compile` command in the header of `requirements.in`, then `requirements-dev.in`; never edit a lockfile by hand. Packaging runs the upload nets in `scripts/check-package.sh` (required members, banned names, and a content scan with the secret-scan hook's rules), so it needs `node` and `unzip`; the loop's self-test of those nets also needs `python3`. The upload may carry only text, plus any binary named with a reason in `scripts/upload-binaries.txt`; treat an addition there as a security change.
 
 Every change runs the verification loop, then passes the `engineering-reviewer` and `security-reviewer` gates before it is done. Anything that deploys, publishes, or mutates external state requires the `deploy-gate` verdict and an explicit human confirmation.
 
@@ -47,8 +47,9 @@ Every change runs the verification loop, then passes the `engineering-reviewer` 
 ```
 src/app/                the application: factory.py (create_app), main.py (ASGI entry), config.py, gunicorn_conf.py
 Dockerfile              the container build, hardened and flattened to one layer
-scripts/                verify.sh (the loop), package-appstore.sh with check-package.sh, scan-package.mjs and
-                        test-package-nets.sh (the upload nets), simulate-pipeline.sh, smoke-container.sh
+scripts/                verify.sh (the loop), package-appstore.sh with check-package.sh, scan-package.mjs,
+                        upload-binaries.txt and test-package-nets.sh (the upload nets),
+                        simulate-pipeline.sh, smoke-container.sh
 tests/                  the pytest suite (coverage.xml, 80% floor)
 docs/AUDIT-LOG.md       one row per change
 SECURITY.md             the accepted security positions and their trip-wires

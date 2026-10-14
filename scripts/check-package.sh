@@ -8,11 +8,12 @@
 #      extension (zip and its family such as docx, xlsx, jar and apk; tar, gz, xz, 7z and the
 #      like) at any depth, and no member name holding a control character (unzip lists one as
 #      ^X, so any ^ refuses). Extensions are defence in depth: the content net decides by bytes.
-#   3. Content net: every extracted file is read by scan-package.mjs. A file whose leading bytes
-#      mark an archive or compressed stream is refused whatever its name; every other file is
-#      scanned with the secret-scan hook's rules, as UTF-8 and as UTF-16 in either byte order.
-#      Cannot see: secret shapes the hook has no rule for, other encodings, or compressed
-#      streams embedded inside other formats (a PDF, a Parquet file, an image).
+#   3. Content net: scan-package.mjs scans only readable text (strict UTF-8, or UTF-16 with a
+#      byte-order mark, without control characters) with the secret-scan hook's rules, and
+#      refuses every other file whatever its name, unless scripts/upload-binaries.txt names it
+#      with a reason; those are named as unscanned on every run. Cannot see: secret shapes the
+#      hook has no rule for, secrets encoded inside text (base64, a data: URI), or anything
+#      inside an allowlisted binary.
 # Needs unzip and node; without them it refuses. scripts/test-package-nets.sh proves each net.
 set -eu
 
@@ -44,4 +45,5 @@ fi
 command -v node >/dev/null 2>&1 || { echo "node is required for the package secret scan"; exit 1; }
 unzip -q "$ZIP" -d "$SCAN"
 files="$(printf '%s\n' "$names" | grep -vc '/$' || true)"
-node "$ROOT/scripts/scan-package.mjs" "$SCAN" "$files" "$ROOT/.claude/hooks/secret-scan.mjs"
+node "$ROOT/scripts/scan-package.mjs" "$SCAN" "$files" "$ROOT/.claude/hooks/secret-scan.mjs" \
+  "$ROOT/scripts/upload-binaries.txt"

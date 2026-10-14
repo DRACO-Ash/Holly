@@ -1,27 +1,32 @@
 #!/usr/bin/env node
 // scan-package.mjs :: the content net for the App Store upload, run by check-package.sh.
-// Usage: node scripts/scan-package.mjs <extracted-upload-dir> <expected-file-count> <hook>
+// Usage: node scripts/scan-package.mjs <extracted-upload-dir> <expected-file-count> <hook> <binary-allowlist>
 //
-// Every regular file in the extracted upload is decoded as UTF-8 and, when it holds a NUL byte,
-// as UTF-16 in both byte orders at both alignments, and passed to the project's secret-scan hook,
-// so the rule list is the one that already guards every write. What to read is decided by
-// content, never by name: a file whose leading bytes mark an archive or a compressed stream
-// (zip and its family such as xlsx and jar, gzip, bzip2, xz, zstd, 7z, rar, lz4, compress, tar)
-// hides its text, so it cannot be scanned and is refused, whatever it is called.
+// It decides positively, by content: a file is scanned only when it is readable text, meaning
+// strict UTF-8, or UTF-16 that opens with a byte-order mark and decodes strictly, in either
+// case without control characters other than whitespace. That text goes to the project's
+// secret-scan hook, so the rule list is the one that already guards every write. Every other
+// file cannot be scanned and refuses the package, whatever its name or leading bytes, unless
+// the committed binary allowlist names it with a reason; allowlisted files are named as
+// unscanned on every run. Known archive and compression signatures only sharpen the message
+// for a file already refused as not text.
 // It fails closed, and reports a match apart from a failure to scan: the hook's block status
-// (2) is "rules matched"; a missing hook, any other status or a signal, a read or spawn error, a
-// symlink or special file, a control character in a name, archive or compressed content, or a
-// file count that differs from the archive's is "could not scan". Either refuses the package.
+// (2) is "rules matched"; anything else that stops a file being judged (not text, a missing
+// hook, any other status or a signal, a read or spawn error, a timeout, a symlink or special
+// file, a control character in a name, an allowlist entry without a reason, or a file count
+// that differs from the archive's) is "could not scan". Either refuses the package.
 // Cannot see: a secret in a shape the hook has no rule for (for example an unquoted GitHub
-// token or a JWT); in an encoding other than UTF-8 and UTF-16; or in a compressed stream
-// embedded inside another format, such as a PDF, a Parquet file or an image.
+// token or a JWT), a secret encoded inside text (base64, a data: URI), or anything inside an
+// allowlisted binary.
 import { spawnSync } from 'node:child_process';
 import { existsSync, lstatSync, readFileSync, readdirSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
-const [root, expectedArg, hook] = process.argv.slice(2);
-if (!root || !expectedArg || !hook) {
-  console.error('usage: scan-package.mjs <extracted-upload-dir> <expected-file-count> <hook>');
+const [root, expectedArg, hook, allowlistFile] = process.argv.slice(2);
+if (!root || !expectedArg || !hook || !allowlistFile) {
+  console.error(
+    'usage: scan-package.mjs <extracted-upload-dir> <expected-file-count> <hook> <binary-allowlist>',
+  );
   process.exit(1);
 }
 if (!existsSync(hook)) {
@@ -30,9 +35,13 @@ if (!existsSync(hook)) {
 }
 
 const HOOK_BLOCKED = 2; // the hook's documented exit status for a match
-const HOOK_TIMEOUT_MS = 30000;
-const CONTROL = /[\x00-\x1f\x7f]/;
-// [kind, byte offset, leading bytes] for archives and compressed streams.
+// 30 seconds unless overridden; a shorter timeout only refuses sooner.
+const HOOK_TIMEOUT_MS = Number(process.env.SCAN_HOOK_TIMEOUT_MS) || 30000;
+const NAME_CONTROL = /[\x00-\x1f\x7f]/;
+// Control characters text does not carry: everything below space except tab, line feed,
+// vertical tab, form feed and carriage return, plus DEL and the C1 range.
+const TEXT_CONTROL = /[\x00-\x08\x0e-\x1f\x7f-\x9f]/;
+// [kind, byte offset, leading bytes]: only to name the format in the refusal message.
 const SIGNATURES = [
   ['zip', 0, [0x50, 0x4b, 0x03, 0x04]],
   ['zip', 0, [0x50, 0x4b, 0x05, 0x06]],
@@ -49,17 +58,32 @@ const SIGNATURES = [
 ];
 const problems = [];
 const files = [];
+const unscanned = [];
 
 function walk(dir) {
   for (const name of readdirSync(dir)) {
     const path = join(dir, name);
     const shown = JSON.stringify(relative(root, path));
-    if (CONTROL.test(name)) problems.push(`could not scan: a control character in ${shown}`);
+    if (NAME_CONTROL.test(name)) problems.push(`could not scan: a control character in ${shown}`);
     const stats = lstatSync(path);
     if (stats.isDirectory()) walk(path);
     else if (stats.isFile()) files.push(path);
     else problems.push(`could not scan: ${shown} is not a regular file`);
   }
+}
+
+// One entry per line: `<path in the upload> # <reason>`. Blank lines and lines starting with #
+// are comments. An entry without a reason is an error, so nothing is allowlisted silently.
+function readAllowlist(file) {
+  const allowed = new Map();
+  for (const raw of readFileSync(file, 'utf8').split('\n')) {
+    const line = raw.trim();
+    if (line === '' || line.startsWith('#')) continue;
+    const at = line.indexOf(' # ');
+    if (at < 0) throw new Error(`the allowlist entry ${JSON.stringify(line)} gives no reason`);
+    allowed.set(line.slice(0, at).trim(), line.slice(at + 3).trim());
+  }
+  return allowed;
 }
 
 function containerKind(bytes) {
@@ -72,19 +96,18 @@ function containerKind(bytes) {
   return null;
 }
 
-function utf16BigEndian(bytes) {
-  const even = Buffer.from(bytes.subarray(0, bytes.length - (bytes.length % 2)));
-  return even.swap16().toString('utf16le');
-}
-
-function textViews(bytes) {
-  const views = [bytes.toString('utf8')];
-  if (bytes.includes(0)) {
-    const shifted = bytes.subarray(1);
-    views.push(bytes.toString('utf16le'), shifted.toString('utf16le'));
-    views.push(utf16BigEndian(bytes), utf16BigEndian(shifted));
+// The file's text, or null when it is not readable text.
+function asText(bytes) {
+  let encoding = 'utf-8';
+  if (bytes[0] === 0xff && bytes[1] === 0xfe) encoding = 'utf-16le';
+  else if (bytes[0] === 0xfe && bytes[1] === 0xff) encoding = 'utf-16be';
+  let text;
+  try {
+    text = new TextDecoder(encoding, { fatal: true }).decode(bytes);
+  } catch {
+    return null;
   }
-  return views;
+  return TEXT_CONTROL.test(text) ? null : text;
 }
 
 // True on a rule match. Throws when the hook could not judge the content at all, including a
@@ -103,18 +126,32 @@ function hookMatches(path, content) {
   return false;
 }
 
-try {
-  walk(root);
-  for (const path of files) {
-    const shown = JSON.stringify(relative(root, path));
-    const bytes = readFileSync(path);
-    const kind = containerKind(bytes);
-    if (kind) {
-      problems.push(`could not scan: ${shown} holds ${kind} content, which hides its text`);
-    } else if (textViews(bytes).some((text) => hookMatches(path, text))) {
-      problems.push(`secret-scan rules matched in ${shown}`);
-    }
+function judge(path, allowed) {
+  const name = relative(root, path);
+  const shown = JSON.stringify(name);
+  if (allowed.has(name)) {
+    unscanned.push(`${name} (${allowed.get(name)})`);
+    return;
   }
+  const bytes = readFileSync(path);
+  // Text first, so a text file that happens to begin like a signature is still scanned.
+  const text = asText(bytes);
+  if (text !== null) {
+    if (hookMatches(path, text)) problems.push(`secret-scan rules matched in ${shown}`);
+    return;
+  }
+  const kind = containerKind(bytes);
+  problems.push(
+    kind
+      ? `could not scan: ${shown} holds ${kind} content, which hides its text`
+      : `could not scan: ${shown} is not text (strict UTF-8, or UTF-16 with a byte-order mark)`,
+  );
+}
+
+try {
+  const allowed = readAllowlist(allowlistFile);
+  walk(root);
+  for (const path of files) judge(path, allowed);
 } catch (error) {
   problems.push(`could not scan: ${error.message}`);
 }
@@ -128,8 +165,9 @@ if (problems.length > 0) {
   for (const problem of problems) console.error(`content net: ${problem}`);
   process.exit(1);
 }
+const named = unscanned.length > 0 ? ` Unscanned, by the binary allowlist: ${unscanned.join('; ')}.` : '';
 console.log(
-  `content net: ${files.length} files scanned, clean. Cannot see: secret shapes outside the ` +
-    "hook's rules, encodings other than UTF-8 and UTF-16, or compressed streams embedded " +
-    'inside other formats (a PDF, a Parquet file, an image).',
+  `content net: ${files.length - unscanned.length} text files scanned, clean.${named} Cannot ` +
+    "see: secret shapes outside the hook's rules, secrets encoded inside text (base64, a " +
+    'data: URI), or anything inside an allowlisted binary.',
 );

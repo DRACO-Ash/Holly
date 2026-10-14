@@ -1,0 +1,7 @@
+# upload-binaries.txt :: the binary files the upload may carry without a content scan.
+# The content net scans only readable text and refuses every other file unless this list names
+# it. One entry per line: `<path in the upload> # <reason>`. An entry without a reason fails the
+# package. Every run names the allowlisted files as unscanned, so keep this list short and
+# reviewed: nothing inside a listed file is checked for secrets.
+#
+# Empty: Holly's upload carries no binary files today.
