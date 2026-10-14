@@ -409,10 +409,13 @@ class TestAutoEvaluation:
         ) in sql
         assert "ORDER BY anon_1.udl_created_at DESC LIMIT " in sql
         assert params["classification_marking_1_1"] == "U"
+        # The marking is checked once, after the latest publication is chosen, never inside
+        # the grouping, where an older cleared publication would stand in for a newer one.
+        assert sql.count("classification_marking IN") == 1
         assert params["param_1"] == 3
         services.evaluate_once.assert_not_awaited()
 
-    async def test_each_is_evaluated_in_turn_and_a_crash_skips_only_that_one(
+    async def test_each_is_evaluated_in_turn_and_audited_until_a_failure_stops_the_phase(
         self,
         sessions: SessionFactory,
         services: Services,
@@ -424,14 +427,16 @@ class TestAutoEvaluation:
         crash = RuntimeError("Example unexpected failure")
         services.evaluate_once.side_effect = [evaluation_run(), crash, evaluation_run()]
         await background_refresh._auto_evaluate_phase()
+        # Fail closed: the second notice may have been sent and its evaluation not stored, as
+        # when the database refuses writes, so the third is not sent.
         assert [call.args for call in services.evaluate_once.await_args_list] == [
-            (each,) for each in ids
+            (each,) for each in ids[:2]
         ]
         [record] = logged(caplog, logging.ERROR)
-        assert record.getMessage() == f"Auto-evaluate failed for notification {ids[1]}"
+        assert record.getMessage() == f"Auto-evaluate of notification {ids[1]} failed; stopping"
         assert raised(record) is crash
         # Each notice the assistant was shown is audited, in a session of its own.
-        assert [row["entity_id"] for row in audits] == [str(ids[0]), str(ids[2])]
+        assert [row["entity_id"] for row in audits] == [str(ids[0])]
         first = audits[0]
         assert first["action_type"] == "assistant.evaluate"
         assert first["entity_type"] == "notification"
@@ -458,7 +463,7 @@ class TestAutoEvaluation:
         await background_refresh._auto_evaluate_phase()
         assert [call.args for call in services.evaluate_once.await_args_list] == [(ids[0],)]
         [record] = logged(caplog, logging.ERROR)
-        assert record.getMessage() == f"Could not audit the evaluation of {ids[0]}; stopping"
+        assert record.getMessage() == f"Auto-evaluate of notification {ids[0]} failed; stopping"
         assert raised(record) is broken
 
     async def test_a_persistent_failure_stops_the_cycle_early(
@@ -642,46 +647,30 @@ class TestEventSummaries:
         assert keys_summarised(services) == ["TEST-EVENT-2", "TEST-EVENT-3"]
         assert len(sessions.opened) == 4
 
-    @pytest.mark.parametrize(
-        ("failing_step", "summarised"),
-        [
-            ("history", ["TEST-EVENT-2"]),
-            ("generate", [EVENT, "TEST-EVENT-2"]),
-        ],
-    )
-    async def test_a_failed_summary_is_rolled_back_and_the_next_event_still_runs(
-        self,
-        sessions: SessionFactory,
-        services: Services,
-        caplog: pytest.LogCaptureFixture,
-        failing_step: str,
-        summarised: list[str],
+    async def test_a_history_that_cannot_be_read_is_skipped_and_the_next_event_still_runs(
+        self, sessions: SessionFactory, services: Services, caplog: pytest.LogCaptureFixture
     ) -> None:
-        # TEST-EVENT-1 is the newer event, so it is regenerated first.
+        # TEST-EVENT-1 is the newer event, so it is regenerated first. Nothing has been sent for
+        # it when its history read fails, so the next event may still run.
         in_window = [publication(1, "TEST-EVENT-2", 2), publication(2, EVENT, 1)]
         error = RuntimeError("Example unexpected failure")
-        history = error if failing_step == "history" else rows_result([in_window[1]])
         _window, _lookup, first, second = sessions.script(
             FakeSession([rows_result(in_window)]),
             FakeSession([rows_result([])]),
-            FakeSession([history]),
+            FakeSession([error]),
             history_session([in_window[0]]),
         )
-        if failing_step == "generate":
-            services.generate_event_summary.side_effect = [error, summary_outcome("TEST-EVENT-2")]
-        if failing_step == "commit":
-            first.commit.side_effect = error
         await background_refresh._event_summary_phase()
         first.rollback.assert_awaited_once()
         second.commit.assert_awaited_once()
         second.rollback.assert_not_awaited()
-        assert keys_summarised(services) == summarised
+        assert keys_summarised(services) == ["TEST-EVENT-2"]
         [record] = logged(caplog, logging.ERROR)
         assert record.getMessage() == f"Event summary failed for {EVENT}"
         assert raised(record) is error
 
-    @pytest.mark.parametrize("failing_step", ["audit", "commit"])
-    async def test_a_narrative_that_cannot_be_recorded_stops_the_cycle(
+    @pytest.mark.parametrize("failing_step", ["generate", "audit", "commit"])
+    async def test_a_failure_once_the_publications_may_have_been_sent_stops_the_cycle(
         self,
         sessions: SessionFactory,
         services: Services,
@@ -697,16 +686,19 @@ class TestEventSummaries:
             FakeSession([rows_result([])]),
             history_session([in_window[1]]),
         )
-        if failing_step == "audit":
+        if failing_step == "generate":
+            # As when the database refuses the narrative's upsert after the call was made.
+            services.generate_event_summary.side_effect = [error]
+        elif failing_step == "audit":
             monkeypatch.setattr(background_refresh, "write_audit", AsyncMock(side_effect=error))
         else:
             first.commit.side_effect = error
         await background_refresh._event_summary_phase()
         first.rollback.assert_awaited_once()
-        # Fail closed: no further event is sent once a sending cannot be recorded.
+        # Fail closed: no further event is sent once a sending may have gone unrecorded.
         assert keys_summarised(services) == [EVENT]
         [record] = logged(caplog, logging.ERROR)
-        assert record.getMessage() == f"Could not record the narrative of {EVENT}; stopping"
+        assert record.getMessage() == f"Event summary for {EVENT} failed; stopping"
         assert raised(record) is error
 
     async def test_a_persistent_failure_stops_the_cycle(

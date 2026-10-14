@@ -121,14 +121,11 @@ async def _auto_evaluate_phase() -> None:
     for notification_id in ids:
         try:
             run = await evaluate_once(notification_id)
-        except Exception:
-            logger.exception("Auto-evaluate failed for notification %s", notification_id)
-            continue
-        try:
             await _audit_background_evaluation(notification_id, run)
         except Exception:
-            # Fail closed: no further notice is sent while sendings cannot be recorded.
-            logger.exception("Could not audit the evaluation of %s; stopping", notification_id)
+            # Fail closed: once the notice may have been sent, a failure to store or audit the
+            # evaluation means sendings may go unrecorded, so nothing more is sent this cycle.
+            logger.exception("Auto-evaluate of notification %s failed; stopping", notification_id)
             return
         if run.persistent_failure:
             logger.warning("Stopping auto-evaluate cycle early: %s", run.evaluation.error)
@@ -212,17 +209,19 @@ async def _event_summary_phase() -> None:
         async with get_session_factory()() as db:
             try:
                 history = await _event_history(db, key)
-                outcome = await generate_event_summary(db, key, history)
             except Exception:
+                # Nothing has been sent for this event yet, so the next one may still run.
                 logger.exception("Event summary failed for %s", key)
                 await db.rollback()
                 continue
             try:
+                outcome = await generate_event_summary(db, key, history)
                 await write_audit(db, **_summary_audit(key, history, outcome.summary is None))
                 await db.commit()
             except Exception:
-                # Fail closed: no further event is sent while sendings cannot be recorded.
-                logger.exception("Could not record the narrative of %s; stopping", key)
+                # Fail closed: the publications may have been sent, and the narrative or its
+                # audit row not stored, so nothing more is sent this cycle.
+                logger.exception("Event summary for %s failed; stopping", key)
                 await db.rollback()
                 return
         if outcome.persistent_failure:
