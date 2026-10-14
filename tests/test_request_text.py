@@ -2,6 +2,7 @@
 before any query, assistant call or write. JSON carries a NUL as the six-character escape
 \\u0000, a query string as %00 and a multipart form as the raw byte."""
 
+import json
 from collections.abc import Callable
 from typing import Any
 from unittest.mock import AsyncMock
@@ -147,3 +148,30 @@ async def test_an_upload_holding_a_nul_is_refused_and_never_stored(
     response = await api.post("/api/v1/procedures", content=body, headers=headers)
     assert response.status_code == 422
     assert session.added == []
+
+
+@pytest.mark.parametrize(
+    ("password", "problem"),
+    [
+        ("SYNTHpw\ud800secret", "string_unicode"),
+        ("SYNTHpw" + "x" * 1024, "string_too_long"),
+    ],
+    ids=["lone-surrogate", "too-long"],
+)
+async def test_a_refusal_names_the_field_and_never_echoes_the_value(
+    api: httpx2.AsyncClient, use_session: UseSession, password: str, problem: str
+) -> None:
+    # Sent as JSON escapes, as a client must: a lone surrogate could not be sent back at all.
+    session = use_session(FakeSession())
+    body = json.dumps({"username": "alice", "password": password})
+    response = await api.post(
+        "/api/v1/auth/login", content=body, headers={"content-type": "application/json"}
+    )
+    assert response.status_code == 422
+    [error] = response.json()["detail"]
+    assert set(error) == {"type", "loc", "msg"}
+    assert (error["type"], error["loc"]) == (problem, ["body", "password"])
+    assert "SYNTH" not in response.text
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["x-request-id"]
+    session.execute.assert_not_awaited()

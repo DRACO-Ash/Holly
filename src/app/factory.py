@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Request, Response
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
 
@@ -198,6 +199,17 @@ def create_app(static_dir: Path = STATIC_DIR) -> FastAPI:
     app.middleware("http")(_coarse_rate_limit)
     app.add_middleware(RequestIDMiddleware)
     app.middleware("http")(_security_headers)
+
+    @app.exception_handler(RequestValidationError)
+    def _invalid_request(_request: Request, exc: RequestValidationError) -> JSONResponse:
+        # Each error's type, place and message, never the submitted value, which may be a
+        # password, nor its context: a value that will not encode as UTF-8 could not be sent
+        # back at all, and the response would fail as a 500 with the value in its traceback.
+        detail = [
+            {"type": error["type"], "loc": list(error["loc"]), "msg": error["msg"]}
+            for error in exc.errors()
+        ]
+        return JSONResponse({"detail": detail}, status_code=422)
 
     @app.exception_handler(500)
     def _server_error(request: Request, _exc: Exception) -> PlainTextResponse:
