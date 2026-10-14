@@ -32,23 +32,40 @@ def test_a_malformed_port_stops_the_container(monkeypatch: pytest.MonkeyPatch, p
         load_settings(monkeypatch, port)
 
 
-def test_control_socket_is_off_and_the_worker_is_uvicorn(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_control_socket_is_off_and_one_uvicorn_worker_runs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     settings = load_settings(monkeypatch, None)
     assert settings["control_socket_disable"] is True
     assert settings["worker_class"] == "uvicorn_worker.UvicornWorker"
+    # One worker, so the background loops, the rate limits and the assistant cap run once.
+    assert settings["workers"] == 1
+
+
+def test_the_master_migrates_before_any_worker_starts(monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = load_settings(monkeypatch, None)
+    calls: list[str] = []
+    monkeypatch.setitem(
+        settings["on_starting"].__globals__, "run_migrations", lambda: calls.append("migrate")
+    )
+    monkeypatch.setitem(
+        settings["on_starting"].__globals__, "configure_logging", lambda: calls.append("log")
+    )
+    settings["on_starting"](object())
+    assert calls == ["log", "migrate"]
 
 
 def test_gunicorn_knows_every_setting_the_module_defines(monkeypatch: pytest.MonkeyPatch) -> None:
     # gunicorn ignores a name it does not know, so a misspelt setting or server hook would do
     # nothing silently. Every public name except the module's own imports counts, functions
     # included, because gunicorn's server hooks (post_fork and the like) are functions.
-    imports = {"os", "resolve_port"}
+    imports = {"os", "resolve_port", "configure_logging", "run_migrations"}
     defined = {
         name
         for name in load_settings(monkeypatch, None)
         if not name.startswith("_") and name not in imports
     }
-    assert defined == {"bind", "worker_class", "control_socket_disable"}
+    assert defined == {"bind", "worker_class", "workers", "control_socket_disable", "on_starting"}
     assert defined <= set(Config().settings)
 
 

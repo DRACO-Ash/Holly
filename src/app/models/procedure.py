@@ -1,14 +1,13 @@
 import uuid
-from typing import Optional
 
 from sqlalchemy import Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.db.base import Base, TimestampMixin
+from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
 
-class Procedure(Base, TimestampMixin):
+class Procedure(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     """Operator-uploaded operations procedure.
 
     Procedures are flexible documents the operator uploads through the
@@ -21,18 +20,13 @@ class Procedure(Base, TimestampMixin):
 
     __tablename__ = "procedure"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid.uuid4,
-    )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
-    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
     content_type: Mapped[str] = mapped_column(String(100), nullable=False)
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
     file_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    uploaded_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    uploaded_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
 
     __table_args__ = (
         UniqueConstraint("file_hash", name="uq_procedure_file_hash"),

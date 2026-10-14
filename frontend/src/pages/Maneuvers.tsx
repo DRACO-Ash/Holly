@@ -2,6 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { listManeuvers } from "../api/maneuvers";
 import SortableHeader from "../components/SortableHeader";
 import type { Maneuver, ManeuverSortColumn, SortDirection } from "../types";
+import { extractErrorMessage } from "../utils/errors";
 
 const PAGE_SIZE = 50;
 
@@ -13,16 +14,6 @@ function formatDateTime(value: string | null): string {
 function formatNumber(value: number | null, digits = 3): string {
   if (value === null || value === undefined) return "n/a";
   return value.toFixed(digits);
-}
-
-function extractErrorMessage(err: unknown, fallback: string): string {
-  if (err && typeof err === "object" && "response" in err) {
-    const response = (err as { response?: { data?: { detail?: unknown } } }).response;
-    const detail = response?.data?.detail;
-    if (typeof detail === "string") return detail;
-  }
-  if (err instanceof Error) return err.message;
-  return fallback;
 }
 
 export default function ManeuversPage() {

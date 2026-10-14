@@ -3,13 +3,8 @@ import { Link, useParams } from "react-router-dom";
 import { getNotification } from "../api/notifications";
 import AssistantPanel from "../components/AssistantPanel";
 import type { NotificationDetail as NotificationDetailType } from "../types";
-
-interface NotsoImage {
-  id?: string;
-  filename?: string;
-  caption?: string;
-  url?: string;
-}
+import { NEW_TAB_REL, safeHttpUrl } from "../utils/links";
+import { parseArtefacts } from "../utils/notso";
 
 function formatField(value: unknown): string {
   if (value === null || value === undefined) return "n/a";
@@ -21,20 +16,6 @@ function formatField(value: unknown): string {
 function formatDateTime(value: string | null | undefined): string {
   if (!value) return "n/a";
   return new Date(value).toISOString().replace("T", " ").slice(0, 19);
-}
-
-function parseImageMetadata(raw: Record<string, unknown> | null | undefined): NotsoImage[] {
-  if (!raw) return [];
-  const msgBody = (raw as Record<string, unknown>)["msgBody"];
-  if (!msgBody || typeof msgBody !== "object") return [];
-  const value = (msgBody as Record<string, unknown>)["NOTSO_Image_Metadata"];
-  if (typeof value !== "string") return Array.isArray(value) ? (value as NotsoImage[]) : [];
-  try {
-    const parsed = JSON.parse(value);
-    return Array.isArray(parsed) ? (parsed as NotsoImage[]) : [];
-  } catch {
-    return [];
-  }
 }
 
 function statusClass(status: string | null): string {
@@ -84,8 +65,9 @@ export default function NotificationDetailPage() {
   if (error) return <div className="form-error">{error}</div>;
   if (!item) return null;
 
-  const images = parseImageMetadata(item.raw);
+  const images = parseArtefacts(item.raw);
   const satIds = item.sat_ids && item.sat_ids.length > 0 ? item.sat_ids.join(", ") : null;
+  const notsoLink = safeHttpUrl(item.notso_link);
 
   return (
     <div>
@@ -136,9 +118,13 @@ export default function NotificationDetailPage() {
             <>
               <dt>Source link</dt>
               <dd>
-                <a href={item.notso_link} target="_blank" rel="noreferrer">
-                  {item.notso_link}
-                </a>
+                {notsoLink ? (
+                  <a href={notsoLink} target="_blank" rel={NEW_TAB_REL}>
+                    {item.notso_link}
+                  </a>
+                ) : (
+                  <span>{item.notso_link}</span>
+                )}
               </dd>
             </>
           )}
@@ -182,8 +168,8 @@ export default function NotificationDetailPage() {
           <ul className="image-list">
             {images.map((img, idx) => (
               <li key={img.id ?? idx}>
-                {img.url ? (
-                  <a href={img.url} target="_blank" rel="noreferrer">
+                {img.href ? (
+                  <a href={img.href} target="_blank" rel={NEW_TAB_REL}>
                     {img.filename ?? img.url}
                   </a>
                 ) : (

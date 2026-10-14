@@ -16,11 +16,25 @@
 #   - The shipped stage is flattened to one layer (FROM scratch, one COPY --from=prep / /), so
 #     the image policy scan finds no layer history. It has no WORKDIR, which would add a layer.
 #   - gunicorn starts in exec form with app/gunicorn_conf.py, which binds through the same
-#     validated PORT parser as the dev server (a malformed PORT stops the container) and turns
-#     off gunicorn's admin control socket. The worker is uvicorn-worker, the maintained
-#     replacement for the deprecated uvicorn.workers module.
+#     validated PORT parser as the dev server (a malformed PORT stops the container), turns
+#     off gunicorn's admin control socket, runs one worker, and applies the database
+#     migrations in the master before the worker starts. The worker is uvicorn-worker, the
+#     maintained replacement for the deprecated uvicorn.workers module.
+#   - The dashboard is built from frontend/ in its own stage, from the committed lockfile, and
+#     only its static output is copied into app/static, so neither Node nor npm nor any
+#     node_modules reach the image. The node base is pinned to the node:22-alpine index digest
+#     (Node 22.23.3); refresh it deliberately, as with the Python base.
 #   - No HEALTHCHECK: the platform runs on Kubernetes, which ignores it and probes the health
 #     paths itself.
+
+# ---- dashboard: compile the React app to static files ----
+FROM node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402 AS dashboard
+WORKDIR /frontend
+COPY frontend/package.json frontend/package-lock.json ./
+# Install scripts stay off: nothing in the tree needs one, and none may run at build time.
+RUN npm ci --ignore-scripts --no-audit --no-fund
+COPY frontend/ ./
+RUN npm run build
 
 # ---- build: install from the hash-locked requirements into an isolated venv ----
 FROM python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1 AS build
@@ -41,6 +55,7 @@ RUN (apt-get update --error-on=any && DEBIAN_FRONTEND=noninteractive apt-get -y 
     rm -rf /var/lib/apt/lists/*
 COPY --from=build /opt/venv /opt/venv
 COPY src /app/src
+COPY --from=dashboard /frontend/dist /app/src/app/static
 # Mandatory and fail-closed: remove pip from the venv and the base (and the bundled pip wheels),
 # add the numeric non-root user with a matching group and no home directory, make the code
 # writable by root alone, then strip every setuid/setgid bit on files and directories. The

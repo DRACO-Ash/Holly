@@ -25,3 +25,10 @@ coverage.xml
 .coverage.*
 htmlcov/
 dist/
+
+# The dashboard: dependencies, build output and coverage. The container build compiles
+# frontend/ into src/app/static, so that directory is never committed either.
+node_modules/
+frontend/dist/
+frontend/coverage/
+src/app/static/

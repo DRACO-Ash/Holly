@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
@@ -10,13 +9,13 @@ class AuditLogRead(BaseModel):
 
     id: UUID
     timestamp: datetime
-    user_id: Optional[UUID] = None
+    user_id: UUID | None = None
     action_type: str
-    entity_type: Optional[str] = None
-    entity_id: Optional[str] = None
-    ip_address: Optional[str] = None
-    detail: Optional[str] = None
-    previous_hash: Optional[str] = None
+    entity_type: str | None = None
+    entity_id: str | None = None
+    ip_address: str | None = None
+    detail: str | None = None
+    previous_hash: str | None = None
     entry_hash: str
 
 

@@ -1,65 +1,74 @@
 """Per-surface background refresh loops.
 
-Three independent asyncio tasks, each managing one external surface
-with its own cadence:
+Three independent asyncio tasks, each owning one external surface on its own cadence:
 
-● notifications — hourly, 5-day window from UDL. After each pull,
-  runs the auto-evaluate phase (per-notification Claude analysis)
-  and the event-summary phase (3-sentence evolution narrative per
-  logical event).
-● maneuvers — every 10 minutes, 48h window from UDL. Pull only.
-● mattermost — every 60 seconds from configured chat channels.
-  Pull only; messages flow into the assistant prompt at evaluation
-  time alongside notifications and maneuvers.
+● notifications: hourly, a 5-day window from UDL. After each pull, Claude evaluates the
+  notifications that have no evaluation yet, and the three-sentence event narratives are
+  refreshed.
+● maneuvers: every 10 minutes, a 48-hour window from UDL. Pull only.
+● mattermost: every 60 seconds from the configured chat channels. Pull only; the messages
+  reach the assistant's prompt at evaluation time.
 
-Elset auto-pulling was removed because the operator wasn't using
-the data; the backend route/model/table remain for recoverability.
+Element-set auto-pulling was removed because operators were not using the data; the route,
+model and table remain for recoverability.
 
-Each loop opens its own AsyncSession per phase and swallows
-exceptions so a transient outage never kills it.
+Each loop opens its own session per phase, and logs and survives any failure, so a transient
+outage never kills it. The notification cycle is single-flight: a manual refresh during a
+running cycle joins it instead of starting a second.
 """
 
 import asyncio
 import logging
+import uuid
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
+from app.config import get_settings
+from app.core.single_flight import SingleFlight
 from app.db.session import get_session_factory
 from app.models.assistant_evaluation import AssistantEvaluation
 from app.models.event_summary import EventSummary
 from app.models.notification import Notification
-from app.services.assistant import evaluate_notification, is_persistent_anthropic_failure
-from app.services.event_summary import compute_event_key, generate_event_summary
+from app.services.assistant import evaluate_once
+from app.services.event_summary import (
+    compute_event_key,
+    generate_event_summary,
+    publication_order,
+)
 from app.services.maneuver_ingest import ingest_maneuvers
 from app.services.mattermost_ingest import ingest_mattermost_messages
 from app.services.notification_ingest import ingest_notifications
-from app.services.notification_query import aliased_deduped_notifications
+from app.services.notification_query import (
+    aliased_deduped_notifications,
+    notification_group_key,
+)
 from app.services.udl_client import UDLAuthError, UDLClient, UDLClientError
 
 logger = logging.getLogger(__name__)
+
+_CYCLE: SingleFlight[None] = SingleFlight()
 
 
 # Notifications -------------------------------------------------
 
 
 async def _pull_notifications_once() -> None:
-    window_hours = settings.background_notification_window_hours
-    window_start = datetime.now(timezone.utc) - timedelta(hours=window_hours)
-    factory = get_session_factory()
+    window_hours = get_settings().background_notification_window_hours
+    window_start = datetime.now(UTC) - timedelta(hours=window_hours)
     try:
-        async with UDLClient() as client:
-            async with factory() as db:
-                await ingest_notifications(
-                    db,
-                    client=client,
-                    msg_type="TACREP_NOTSO",
-                    created_at_gte=window_start,
-                    data_mode="REAL",
-                    source="JCO",
-                )
+        async with UDLClient() as client, get_session_factory()() as db:
+            await ingest_notifications(
+                db,
+                client,
+                msg_type="TACREP_NOTSO",
+                created_at_gte=window_start,
+                data_mode="REAL",
+                source="JCO",
+            )
         logger.info("Notification ingest complete (window: last %sh)", window_hours)
     except UDLAuthError as exc:
         logger.warning("Notification ingest skipped: UDL auth failed (%s)", exc)
@@ -69,19 +78,10 @@ async def _pull_notifications_once() -> None:
         logger.exception("Notification ingest crashed unexpectedly")
 
 
-async def _auto_evaluate_phase() -> None:
-    if not settings.background_auto_evaluate:
-        return
-    factory = get_session_factory()
-    window_start = datetime.now(timezone.utc) - timedelta(
-        hours=settings.background_notification_window_hours
-    )
-    limit = settings.background_max_evaluations_per_cycle
-
-    async with factory() as db:
-        # Only evaluate the latest version of each logical notice; UDL
-        # re-publishes them, and we don't want to spend Claude tokens
-        # on every duplicate.
+async def _unevaluated_notification_ids(window_start: datetime, limit: int) -> list[uuid.UUID]:
+    # Only the latest version of each logical notice: UDL re-publishes notices, and a
+    # duplicate is not worth an assistant call.
+    async with get_session_factory()() as db:
         notif_alias, _dedup_subq = aliased_deduped_notifications(
             [Notification.udl_created_at >= window_start]
         )
@@ -95,100 +95,107 @@ async def _auto_evaluate_phase() -> None:
             .order_by(notif_alias.udl_created_at.desc())
             .limit(limit)
         )
-        ids = [row[0] for row in (await db.execute(stmt)).all()]
+        return [row[0] for row in (await db.execute(stmt)).all()]
 
+
+async def _auto_evaluate_phase() -> None:
+    settings = get_settings()
+    if not settings.background_auto_evaluate:
+        return
+    window_start = datetime.now(UTC) - timedelta(
+        hours=settings.background_notification_window_hours
+    )
+    ids = await _unevaluated_notification_ids(
+        window_start, settings.background_max_evaluations_per_cycle
+    )
     if not ids:
         return
     logger.info("Auto-evaluating %s un-analysed notification(s)", len(ids))
     for notification_id in ids:
-        async with factory() as db:
-            try:
-                evaluation = await evaluate_notification(db, notification_id)
-                await db.commit()
-            except Exception:
-                logger.exception("Auto-evaluate failed for notification %s", notification_id)
-                await db.rollback()
-                continue
-        if evaluation.error and is_persistent_anthropic_failure(evaluation.error):
-            logger.warning("Stopping auto-evaluate cycle early: %s", evaluation.error)
+        try:
+            run = await evaluate_once(notification_id)
+        except Exception:
+            logger.exception("Auto-evaluate failed for notification %s", notification_id)
+            continue
+        if run.persistent_failure:
+            logger.warning("Stopping auto-evaluate cycle early: %s", run.evaluation.error)
             return
 
 
+async def _publications_by_event(window_start: datetime) -> dict[str, list[Notification]]:
+    # Grouped in Python, so the key is the same COALESCE event_key the rest of the system
+    # uses, without a lateral join.
+    async with get_session_factory()() as db:
+        stmt = (
+            select(Notification)
+            .where(Notification.udl_created_at >= window_start)
+            .order_by(Notification.udl_created_at.asc(), Notification.id.asc())
+        )
+        publications = list((await db.execute(stmt)).scalars().all())
+    grouped: dict[str, list[Notification]] = defaultdict(list)
+    for publication in publications:
+        grouped[compute_event_key(publication)].append(publication)
+    return grouped
+
+
+def _summary_is_stale(existing: EventSummary | None, publications: list[Notification]) -> bool:
+    """Stale when the window holds a publication the summary has not seen. A publication that
+    has aged out of the window never makes a summary stale, so no summary ever shrinks."""
+    if existing is None:
+        return True
+    seen = set(existing.source_notification_ids or ())
+    return any(str(publication.id) not in seen for publication in publications)
+
+
+async def _event_history(db: AsyncSession, event_key: str) -> list[Notification]:
+    """Every stored publication of one logical event, the ones older than the window too."""
+    stmt = select(Notification).where(notification_group_key() == event_key)
+    return list((await db.execute(stmt)).scalars().all())
+
+
+async def _stale_event_keys(grouped: dict[str, list[Notification]]) -> list[str]:
+    async with get_session_factory()() as db:
+        stmt = select(EventSummary).where(EventSummary.event_key.in_(grouped.keys()))
+        existing = {row.event_key: row for row in (await db.execute(stmt)).scalars().all()}
+    return [
+        key
+        for key, publications in grouped.items()
+        if publications and _summary_is_stale(existing.get(key), publications)
+    ]
+
+
 async def _event_summary_phase() -> None:
-    """Refresh event-evolution summaries for any logical event whose
-    latest publication is newer than its existing summary."""
-    factory = get_session_factory()
-    window_start = datetime.now(timezone.utc) - timedelta(
+    """Refresh the narrative of every logical event in the window that holds a publication its
+    summary has not seen, newest events first, up to the per-cycle cap."""
+    settings = get_settings()
+    window_start = datetime.now(UTC) - timedelta(
         hours=settings.background_notification_window_hours
     )
-    limit = settings.background_max_event_summaries_per_cycle
-
-    async with factory() as db:
-        # Load all publications in the window. Grouping is done in
-        # Python so we can compute the same COALESCE event_key the
-        # rest of the system uses without a lateral join.
-        publications = list(
-            (
-                await db.execute(
-                    select(Notification)
-                    .where(Notification.udl_created_at >= window_start)
-                    .order_by(Notification.udl_created_at.asc())
-                )
-            )
-            .scalars()
-            .all()
-        )
-
-    grouped: dict[str, list[Notification]] = defaultdict(list)
-    for n in publications:
-        grouped[compute_event_key(n)].append(n)
-
+    grouped = await _publications_by_event(window_start)
     if not grouped:
         return
-
-    async with factory() as db:
-        existing_rows = (
-            (
-                await db.execute(
-                    select(EventSummary).where(EventSummary.event_key.in_(grouped.keys()))
-                )
-            )
-            .scalars()
-            .all()
-        )
-    existing_by_key = {row.event_key: row for row in existing_rows}
-
-    stale_keys: list[str] = []
-    for key, pubs in grouped.items():
-        if not pubs:
-            continue
-        latest = max(pubs, key=lambda p: p.udl_created_at or p.created_at)
-        existing = existing_by_key.get(key)
-        if existing is None:
-            stale_keys.append(key)
-            continue
-        if existing.latest_notification_id != latest.id:
-            stale_keys.append(key)
-            continue
-        if existing.publication_count != len(pubs):
-            stale_keys.append(key)
-
+    # Newest events first, so the per-cycle cap never leaves the current picture waiting.
+    stale = sorted(
+        await _stale_event_keys(grouped),
+        key=lambda key: max(map(publication_order, grouped[key])),
+        reverse=True,
+    )
+    stale_keys = stale[: settings.background_max_event_summaries_per_cycle]
     if not stale_keys:
         return
-
-    stale_keys = stale_keys[:limit]
     logger.info("Refreshing %s event summary/summaries", len(stale_keys))
     for key in stale_keys:
-        async with factory() as db:
+        async with get_session_factory()() as db:
             try:
-                summary = await generate_event_summary(db, key, grouped[key])
+                history = await _event_history(db, key)
+                outcome = await generate_event_summary(db, key, history)
                 await db.commit()
             except Exception:
                 logger.exception("Event summary failed for %s", key)
                 await db.rollback()
                 continue
-        if summary.error and is_persistent_anthropic_failure(summary.error):
-            logger.warning("Stopping event summary cycle early: %s", summary.error)
+        if outcome.persistent_failure:
+            logger.warning("Stopping event summary cycle early: %s", outcome.summary.error)
             return
 
 
@@ -198,13 +205,18 @@ async def _notification_cycle() -> None:
     await _event_summary_phase()
 
 
+async def run_pull_notifications_now() -> None:
+    """Run the notification cycle now (UDL pull, auto-evaluate, event summaries). A call made
+    while a cycle is already running joins that cycle."""
+    await _CYCLE.run("notifications", _notification_cycle)
+
+
 # Mattermost ------------------------------------------------------
 
 
 async def _pull_mattermost_once() -> None:
-    factory = get_session_factory()
     try:
-        async with factory() as db:
+        async with get_session_factory()() as db:
             await ingest_mattermost_messages(db)
     except Exception:
         logger.exception("Mattermost ingest crashed unexpectedly")
@@ -214,18 +226,16 @@ async def _pull_mattermost_once() -> None:
 
 
 async def _pull_maneuvers_once() -> None:
-    window_hours = settings.background_maneuver_window_hours
-    window_start = datetime.now(timezone.utc) - timedelta(hours=window_hours)
-    factory = get_session_factory()
+    window_hours = get_settings().background_maneuver_window_hours
+    window_start = datetime.now(UTC) - timedelta(hours=window_hours)
     try:
-        async with UDLClient() as client:
-            async with factory() as db:
-                await ingest_maneuvers(
-                    db,
-                    client=client,
-                    event_start_time_gte=window_start,
-                    data_mode="REAL",
-                )
+        async with UDLClient() as client, get_session_factory()() as db:
+            await ingest_maneuvers(
+                db,
+                client,
+                event_start_time_gte=window_start,
+                data_mode="REAL",
+            )
         logger.info("Maneuver ingest complete (window: last %sh)", window_hours)
     except UDLAuthError as exc:
         logger.warning("Maneuver ingest skipped: UDL auth failed (%s)", exc)
@@ -238,50 +248,44 @@ async def _pull_maneuvers_once() -> None:
 # Loops ----------------------------------------------------------
 
 
-def _make_loop(name: str, work, interval: int):
-    async def _loop():
-        logger.info(
-            "Background %s loop enabled: every %ss",
-            name,
-            interval,
-        )
-        while True:
-            try:
-                await work()
-            except asyncio.CancelledError:
+async def run_forever(name: str, work: Callable[[], Awaitable[None]], interval: int) -> None:
+    """Run `work` every `interval` seconds until cancelled, surviving any failure."""
+    logger.info("Background %s loop enabled: every %ss", name, interval)
+    while True:
+        try:
+            await work()
+        except asyncio.CancelledError:
+            # A cycle joined from another caller is cancelled when that caller is; only a
+            # cancellation of this loop itself (shutdown) may end it.
+            task = asyncio.current_task()
+            if task is None or task.cancelling():
                 raise
-            except Exception:
-                logger.exception("Background %s cycle crashed (continuing)", name)
-            await asyncio.sleep(interval)
-
-    return _loop
-
-
-def notification_loop():
-    return _make_loop(
-        "notifications",
-        _notification_cycle,
-        settings.background_notification_interval_seconds,
-    )()
+            logger.warning("Background %s cycle was cancelled by another caller (continuing)", name)
+        except Exception:
+            logger.exception("Background %s cycle crashed (continuing)", name)
+        await asyncio.sleep(interval)
 
 
-def maneuver_loop():
-    return _make_loop(
-        "maneuvers",
-        _pull_maneuvers_once,
-        settings.background_maneuver_interval_seconds,
-    )()
+def start_background_loops() -> list[asyncio.Task[None]]:
+    settings = get_settings()
+    loops = (
+        (
+            "notifications",
+            run_pull_notifications_now,
+            settings.background_notification_interval_seconds,
+        ),
+        ("maneuvers", _pull_maneuvers_once, settings.background_maneuver_interval_seconds),
+        ("mattermost", _pull_mattermost_once, settings.mattermost_interval_seconds),
+    )
+    return [asyncio.create_task(run_forever(*loop), name=f"holly-{loop[0]}") for loop in loops]
 
 
-def mattermost_loop():
-    return _make_loop(
-        "mattermost",
-        _pull_mattermost_once,
-        settings.mattermost_interval_seconds,
-    )()
-
-
-async def run_pull_notifications_now() -> None:
-    """Public entry point so an HTTP handler can trigger the notification
-    pipeline on demand (without waiting for the hourly cadence)."""
-    await _notification_cycle()
+async def stop_background_loops(tasks: list[asyncio.Task[None]]) -> None:
+    """Cancel the loops and wait for them. A cancellation of the caller itself still reaches
+    the caller; a loop that ended with an error is logged."""
+    for task in tasks:
+        task.cancel()
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    for task, result in zip(tasks, results, strict=True):
+        if isinstance(result, Exception):
+            logger.error("Background task %s exited with error", task.get_name(), exc_info=result)

@@ -1,36 +1,36 @@
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ElsetRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    udl_id: Optional[str] = None
+    udl_id: str | None = None
     sat_no: int
     epoch: datetime
-    mean_motion: Optional[float] = None
-    eccentricity: Optional[float] = None
-    inclination: Optional[float] = None
-    raan: Optional[float] = None
-    arg_of_perigee: Optional[float] = None
-    mean_anomaly: Optional[float] = None
-    rev_no: Optional[int] = None
-    bstar: Optional[float] = None
-    mean_motion_dot: Optional[float] = None
-    mean_motion_ddot: Optional[float] = None
-    semi_major_axis: Optional[float] = None
-    period: Optional[float] = None
-    apogee: Optional[float] = None
-    perigee: Optional[float] = None
-    line1: Optional[str] = None
-    line2: Optional[str] = None
-    classification_marking: Optional[str] = None
-    data_mode: Optional[str] = None
-    source: Optional[str] = None
+    mean_motion: float | None = None
+    eccentricity: float | None = None
+    inclination: float | None = None
+    raan: float | None = None
+    arg_of_perigee: float | None = None
+    mean_anomaly: float | None = None
+    rev_no: int | None = None
+    bstar: float | None = None
+    mean_motion_dot: float | None = None
+    mean_motion_ddot: float | None = None
+    semi_major_axis: float | None = None
+    period: float | None = None
+    apogee: float | None = None
+    perigee: float | None = None
+    line1: str | None = None
+    line2: str | None = None
+    classification_marking: str | None = None
+    data_mode: str | None = None
+    source: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -48,8 +48,9 @@ class ElsetPage(BaseModel):
 
 class ElsetIngestRequest(BaseModel):
     epoch_gte: datetime
-    sat_no: Optional[int] = None
-    max_results: Optional[int] = None
+    sat_no: int | None = None
+    # Holly's own cap on one manual pull, so a request cannot ask UDL for an unbounded page.
+    max_results: int | None = Field(default=None, ge=1, le=10_000)
 
 
 class ElsetIngestResponse(BaseModel):

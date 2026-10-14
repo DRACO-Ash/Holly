@@ -1,5 +1,5 @@
 :root {
-  /* Surfaces — dark with slight cool tint */
+  /* Surfaces: dark with slight cool tint */
   --color-bg: #0a0e18;
   --color-surface: #11172a;
   --color-surface-elevated: #17203a;
@@ -14,7 +14,7 @@
   --color-text-muted: #8893aa;
   --color-text-faint: #5c6680;
 
-  /* Accent — single blue that leads the eye */
+  /* Accent: single blue that leads the eye */
   --color-accent: #7aa7e0;
   --color-accent-strong: #5b8bd0;
   --color-accent-dim: #3e5e91;

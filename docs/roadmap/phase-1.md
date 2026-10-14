@@ -4,13 +4,17 @@
 
 **Document classification:** Commercial in Confidence
 **Data classification:** Unclassified (per ADR-006)
-**Owner:** Daily Operations Dashboard Team, Bluestaq Limited
-**Version:** 0.3
-**Last updated:** 2026-05-28
+**Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned the plan below)
+**Version:** 0.4
+**Last updated:** 2026-10-14
+
+> **HISTORICAL NOTE**
+>
+> This is the Daily Operations Dashboard's Phase 1 plan as it stood on 2026-05-28. It predates Holly, which was built from the dashboard's code and runs as one container on the Bluestaq App Store (ADR-012). It is kept as a record, not as Holly's plan: some items below now exist in Holly's code, and others, such as the nginx proxy and the Docker Compose deployment, no longer apply. Whether the App Store meets the plan's sovereign UK host intent is `TBC, re-verify`. The repository holds no roadmap for Holly.
 
 > **BLUF**
 >
-> Phase 1 stands up the operational core on a sovereign UK host. UDL ingest (elsets + NOTSOs), real JWT auth with refresh rotation, hash-chained audit with viewer, request-id-correlated logs, watch-stand UI. The bar for "done" is: an analyst completes a typical watch cycle entirely inside the dashboard, with full audit history, without ad-hoc tooling. Most of that bar is now met.
+> Phase 1 stands up the operational core on a sovereign UK host. UDL ingest (elsets and NOTSOs), real JWT auth with refresh rotation, hash-chained audit with viewer, request-id-correlated logs, watch-stand UI. The bar for "done" is: an analyst completes a typical watch cycle entirely inside the dashboard, with full audit history, without ad-hoc tooling. Most of that bar is now met.
 
 **SECTION 01**
 
@@ -131,4 +135,4 @@ Phase 2 scope will be expanded once Phase 1 ships.
 
 This roadmap is reviewed at the end of every sprint. Owners update the **Completed** and **In progress** sections in real time as work moves.
 
-Bluestaq Limited | Daily Operations Dashboard documentation | 2026 | **COMMERCIAL IN CONFIDENCE**
+Bluestaq Limited | Holly documentation | 2026 | **COMMERCIAL IN CONFIDENCE**

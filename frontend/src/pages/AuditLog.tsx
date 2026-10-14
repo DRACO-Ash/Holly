@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { listAuditLog } from "../api/audit";
 import type { AuditLog } from "../types";
+import { errorStatus, extractErrorMessage } from "../utils/errors";
 
 const PAGE_SIZE = 50;
 
@@ -22,21 +23,11 @@ function formatDetail(detail: string | null): string {
   }
 }
 
-function extractErrorMessage(err: unknown, fallback: string): string {
-  if (err && typeof err === "object" && "response" in err) {
-    const response = (
-      err as {
-        response?: { data?: { detail?: unknown }; status?: number };
-      }
-    ).response;
-    if (response?.status === 403) {
-      return "Insufficient privileges. Operator or admin role required.";
-    }
-    const detail = response?.data?.detail;
-    if (typeof detail === "string") return detail;
+function auditErrorMessage(err: unknown, fallback: string): string {
+  if (errorStatus(err) === 403) {
+    return "Insufficient privileges. Operator or admin role required.";
   }
-  if (err instanceof Error) return err.message;
-  return fallback;
+  return extractErrorMessage(err, fallback);
 }
 
 export default function AuditLogPage() {
@@ -65,7 +56,7 @@ export default function AuditLogPage() {
         }
       } catch (err) {
         if (!cancelled) {
-          setError(extractErrorMessage(err, "Failed to load audit log."));
+          setError(auditErrorMessage(err, "Failed to load audit log."));
         }
       } finally {
         if (!cancelled) setLoading(false);

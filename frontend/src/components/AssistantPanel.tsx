@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { getEvaluation, runEvaluation } from "../api/assistant";
 import type { AssistantEvaluation, NextAction } from "../types";
+import { extractErrorMessage } from "../utils/errors";
 
 interface AssistantPanelProps {
   notificationId: string;
@@ -17,16 +18,6 @@ function urgencyClass(urgency: string): string {
   if (lower === "medium") return "urgency-pill urgency-medium";
   if (lower === "low") return "urgency-pill urgency-low";
   return "urgency-pill";
-}
-
-function extractErrorMessage(err: unknown, fallback: string): string {
-  if (err && typeof err === "object" && "response" in err) {
-    const response = (err as { response?: { data?: { detail?: unknown } } }).response;
-    const detail = response?.data?.detail;
-    if (typeof detail === "string") return detail;
-  }
-  if (err instanceof Error) return err.message;
-  return fallback;
 }
 
 export default function AssistantPanel({ notificationId }: AssistantPanelProps) {

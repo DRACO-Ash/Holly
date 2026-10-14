@@ -1,4 +1,4 @@
-import { apiClient } from "./client";
+import { apiClient, downloadFile } from "./client";
 import type { Procedure, ProcedureContent, ProcedurePage } from "../types";
 
 export async function listProcedures(): Promise<ProcedurePage> {
@@ -30,6 +30,6 @@ export async function deleteProcedure(id: string): Promise<void> {
   await apiClient.delete(`/procedures/${id}`);
 }
 
-export function procedureDownloadUrl(id: string): string {
-  return `/api/v1/procedures/${id}/download`;
+export async function downloadProcedure(id: string, filename: string): Promise<void> {
+  await downloadFile(`/procedures/${id}/download`, filename);
 }

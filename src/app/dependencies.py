@@ -1,4 +1,7 @@
-from typing import Optional
+"""Request dependencies: the database session and the signed-in user."""
+
+from collections.abc import Callable
+from typing import Annotated
 from uuid import UUID
 
 from fastapi import Depends, Header, HTTPException, status
@@ -9,6 +12,8 @@ from app.core.security import decode_token
 from app.db.session import get_db
 from app.models.user import User, UserRole
 
+DbSession = Annotated[AsyncSession, Depends(get_db)]
+
 _credentials_error = HTTPException(
     status_code=status.HTTP_401_UNAUTHORIZED,
     detail="Could not validate credentials",
@@ -16,41 +21,40 @@ _credentials_error = HTTPException(
 )
 
 
-def _extract_bearer_token(authorization: Optional[str]) -> str:
+def _extract_bearer_token(authorization: str | None) -> str:
     if not authorization or not authorization.lower().startswith("bearer "):
         raise _credentials_error
     return authorization.split(" ", 1)[1].strip()
 
 
-async def get_current_user(
-    authorization: Optional[str] = Header(default=None),
-    db: AsyncSession = Depends(get_db),
-) -> User:
-    token = _extract_bearer_token(authorization)
-    payload = decode_token(token)
-    if payload is None:
-        raise _credentials_error
-    if payload.get("type") != "access":
-        raise _credentials_error
-    subject = payload.get("sub")
-    if not subject:
+def _access_subject(authorization: str | None) -> UUID:
+    payload = decode_token(_extract_bearer_token(authorization))
+    if payload is None or payload.get("type") != "access":
         raise _credentials_error
     try:
-        user_id = UUID(subject)
-    except (ValueError, TypeError) as exc:
+        return UUID(str(payload.get("sub")))
+    except ValueError as exc:
         raise _credentials_error from exc
 
-    result = await db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
+
+async def get_current_user(
+    db: DbSession, authorization: Annotated[str | None, Header()] = None
+) -> User:
+    user_id = _access_subject(authorization)
+    user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
     if user is None or not user.is_active:
         raise _credentials_error
     return user
 
 
-def require_role(*allowed_roles: UserRole):
+CurrentUser = Annotated[User, Depends(get_current_user)]
+
+
+def require_role(*allowed_roles: UserRole) -> Callable[[User], User]:
     allowed = {role.value for role in allowed_roles}
 
-    async def checker(current_user: User = Depends(get_current_user)) -> User:
+    # A plain function: it awaits nothing (SonarQube python:S7503).
+    def checker(current_user: CurrentUser) -> User:
         if current_user.role not in allowed:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

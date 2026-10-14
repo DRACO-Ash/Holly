@@ -1,7 +1,8 @@
-"""Holly: Daily Ops Dashboard. A Bluestaq App Store server on the python template.
+"""Holly: the daily operations dashboard for Space Domain Awareness (SDA) watch analysts.
 
-The package is named `app`, as the deploy-recipes Python template expects, so every
-coverage command the baseline documents measures it.
+A Bluestaq App Store server on the python template. The package is named `app`, as the
+deploy-recipes Python template expects, so every coverage command the baseline documents
+measures it.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

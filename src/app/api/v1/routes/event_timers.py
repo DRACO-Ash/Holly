@@ -1,64 +1,123 @@
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+"""Operator countdown timers, with a pre-alert and optional daily, weekly or monthly recurrence."""
+
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
+from typing import Any
 from uuid import UUID
 
-from dateutil.relativedelta import relativedelta  # type: ignore[import-untyped]
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from dateutil.relativedelta import relativedelta
+from fastapi import APIRouter, Request, status
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.session import get_db
-from app.dependencies import get_current_user
+from app.api.v1.common import get_or_404
+from app.core.net import client_ip
+from app.dependencies import CurrentUser, DbSession
 from app.models.event_timer import EventTimer
 from app.models.user import User
 from app.schemas.event_timer import EventTimerCreate, EventTimerList, EventTimerRead
 from app.services.audit import write_audit
 
-
-def _advance(target: datetime, recurrence: str) -> datetime:
-    if recurrence == "daily":
-        return target + timedelta(days=1)
-    if recurrence == "weekly":
-        return target + timedelta(days=7)
-    if recurrence == "monthly":
-        # relativedelta handles month-end edge cases: Jan 31 + 1 month
-        # lands on Feb 28/29 rather than overflowing.
-        return target + relativedelta(months=1)
-    return target
-
-
-def _next_future_occurrence(target: datetime, recurrence: str) -> datetime:
-    """Advance `target` by `recurrence` repeatedly until it's in the future.
-
-    Handles the case where the operator dismisses long after the alarm
-    started firing (a daily timer at 0900 dismissed at 1100 next morning
-    should roll to the day after, not just bump to the past time again).
-    """
-    now = datetime.now(timezone.utc)
-    nxt = _advance(target, recurrence)
-    while nxt <= now:
-        nxt = _advance(nxt, recurrence)
-    return nxt
-
-
 router = APIRouter(prefix="/event-timers", tags=["event-timers"])
 
-# Dismissed timers fall off the active list after this long. Long
-# enough that an operator scrolling back through a shift can still
-# see what was acknowledged; short enough that the active list stays
-# uncluttered across shifts.
+# Dismissed timers leave the active list after this long: long enough that an operator
+# scrolling back through a shift still sees what was acknowledged, short enough that the list
+# stays uncluttered across shifts.
 _INCLUDE_DISMISSED_WINDOW = timedelta(hours=12)
 
+# n steps of each recurrence. relativedelta keeps month ends: 31 January plus one month is 28
+# or 29 February, and plus two months is 31 March.
+_STEPS: dict[str, Callable[[int], timedelta | relativedelta]] = {
+    "daily": lambda n: timedelta(days=n),
+    "weekly": lambda n: timedelta(weeks=n),
+    "monthly": lambda n: relativedelta(months=n),
+}
 
-@router.get("", response_model=EventTimerList)
+
+def _whole_steps(anchor: datetime, moment: datetime, recurrence: str) -> int:
+    """A count of steps from `anchor` that never passes `moment`, so the search below starts
+    close to the answer instead of walking every occurrence since the anchor."""
+    if moment <= anchor:
+        return 0
+    if recurrence == "monthly":
+        return (moment.year - anchor.year) * 12 + moment.month - anchor.month - 1
+    unit = timedelta(weeks=1) if recurrence == "weekly" else timedelta(days=1)
+    return (moment - anchor) // unit
+
+
+def _next_occurrence(anchor: datetime, after: datetime, recurrence: str) -> datetime:
+    """The first occurrence later than `after`, counted in whole steps from `anchor`.
+
+    Counting from the anchor, never from the last occurrence, keeps a monthly timer on its own
+    day: one set for the 31st fires on 28 February and then on 31 March again.
+    """
+    step = _STEPS[recurrence]
+    n = max(1, _whole_steps(anchor, after, recurrence))
+    while anchor + step(n) <= after:
+        n += 1
+    return anchor + step(n)
+
+
+async def _audit_timer(
+    db: AsyncSession,
+    request: Request,
+    user: User,
+    action_type: str,
+    timer_id: UUID,
+    detail: dict[str, Any],
+) -> None:
+    await write_audit(
+        db,
+        action_type=action_type,
+        entity_type="event_timer",
+        entity_id=str(timer_id),
+        user_id=user.id,
+        ip_address=client_ip(request),
+        detail=detail,
+    )
+
+
+def _roll_forward(timer: EventTimer) -> tuple[str, dict[str, Any]]:
+    """Move a recurring timer to its next occurrence; it stays active, with a fresh pre-alert.
+
+    Dismissing acknowledges the current occurrence, so the next one is after both now and the
+    current target: an operator who dismisses long after the alarm started (a daily 0900 timer
+    dismissed at 1100 the next morning) rolls to an occurrence still to come.
+    """
+    previous_target = timer.target_time
+    # Timers created before the anchor existed count from their current target.
+    anchor = timer.recurrence_anchor or timer.target_time
+    after = max(datetime.now(UTC), timer.target_time)
+    timer.target_time = _next_occurrence(anchor, after, timer.recurrence)
+    timer.recurrence_anchor = anchor
+    timer.pre_alert_fired_at = None
+    return "event_timer.roll_forward", {
+        "label": timer.label,
+        "recurrence": timer.recurrence,
+        "previous_target": previous_target.isoformat(),
+        "next_target": timer.target_time.isoformat(),
+    }
+
+
+def _dismiss(timer: EventTimer, user: User) -> tuple[str, dict[str, Any]]:
+    now = datetime.now(UTC)
+    timer.dismissed_at = now
+    timer.dismissed_by = user.id
+    if timer.pre_alert_fired_at is None:
+        timer.pre_alert_fired_at = now
+    return "event_timer.dismiss", {
+        "label": timer.label,
+        "target_time": timer.target_time.isoformat(),
+    }
+
+
+@router.get("")
 async def list_active_timers(
-    include_dismissed: bool = Query(False),
-    db: AsyncSession = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    db: DbSession, _current_user: CurrentUser, include_dismissed: bool = False
 ) -> EventTimerList:
     stmt = select(EventTimer).order_by(EventTimer.target_time.asc())
     if not include_dismissed:
-        cutoff = datetime.now(timezone.utc) - _INCLUDE_DISMISSED_WINDOW
+        cutoff = datetime.now(UTC) - _INCLUDE_DISMISSED_WINDOW
         stmt = stmt.where(
             or_(
                 EventTimer.dismissed_at.is_(None),
@@ -69,20 +128,18 @@ async def list_active_timers(
     return EventTimerList(items=[EventTimerRead.model_validate(t) for t in items])
 
 
-@router.post("", response_model=EventTimerRead, status_code=status.HTTP_201_CREATED)
+@router.post("", status_code=status.HTTP_201_CREATED)
 async def create_timer(
-    payload: EventTimerCreate,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    payload: EventTimerCreate, request: Request, db: DbSession, current_user: CurrentUser
 ) -> EventTimerRead:
     target = payload.target_time
     if target.tzinfo is None:
-        target = target.replace(tzinfo=timezone.utc)
+        target = target.replace(tzinfo=UTC)
     timer = EventTimer(
         event_key=payload.event_key,
         label=payload.label.strip(),
         target_time=target,
+        recurrence_anchor=target,
         pre_alert_minutes=payload.pre_alert_minutes,
         recurrence=payload.recurrence,
         shift_date=payload.shift_date,
@@ -90,16 +147,13 @@ async def create_timer(
     )
     db.add(timer)
     await db.flush()
-
-    ip = request.client.host if request.client else None
-    await write_audit(
+    await _audit_timer(
         db,
-        action_type="event_timer.create",
-        entity_type="event_timer",
-        entity_id=str(timer.id),
-        user_id=current_user.id,
-        ip_address=ip,
-        detail={
+        request,
+        current_user,
+        "event_timer.create",
+        timer.id,
+        {
             "label": timer.label,
             "event_key": timer.event_key,
             "target_time": timer.target_time.isoformat(),
@@ -112,93 +166,41 @@ async def create_timer(
     return EventTimerRead.model_validate(timer)
 
 
-async def _load_timer(db: AsyncSession, timer_id: UUID) -> EventTimer:
-    timer: Optional[EventTimer] = (
-        await db.execute(select(EventTimer).where(EventTimer.id == timer_id))
-    ).scalar_one_or_none()
-    if timer is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Timer not found")
-    return timer
-
-
-@router.post("/{timer_id}/acknowledge-pre-alert", response_model=EventTimerRead)
+@router.post("/{timer_id}/acknowledge-pre-alert")
 async def acknowledge_pre_alert(
-    timer_id: UUID,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    timer_id: UUID, request: Request, db: DbSession, current_user: CurrentUser
 ) -> EventTimerRead:
-    timer = await _load_timer(db, timer_id)
+    timer: EventTimer = await get_or_404(db, EventTimer, timer_id, "Timer")
     if timer.pre_alert_fired_at is None:
-        timer.pre_alert_fired_at = datetime.now(timezone.utc)
+        timer.pre_alert_fired_at = datetime.now(UTC)
         await db.flush()
-        ip = request.client.host if request.client else None
-        await write_audit(
+        await _audit_timer(
             db,
-            action_type="event_timer.acknowledge_pre_alert",
-            entity_type="event_timer",
-            entity_id=str(timer.id),
-            user_id=current_user.id,
-            ip_address=ip,
-            detail={"label": timer.label},
+            request,
+            current_user,
+            "event_timer.acknowledge_pre_alert",
+            timer.id,
+            {"label": timer.label},
         )
         await db.commit()
         await db.refresh(timer)
     return EventTimerRead.model_validate(timer)
 
 
-@router.post("/{timer_id}/dismiss", response_model=EventTimerRead)
+@router.post("/{timer_id}/dismiss")
 async def dismiss_timer(
-    timer_id: UUID,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    timer_id: UUID, request: Request, db: DbSession, current_user: CurrentUser
 ) -> EventTimerRead:
-    timer = await _load_timer(db, timer_id)
+    timer: EventTimer = await get_or_404(db, EventTimer, timer_id, "Timer")
     if timer.dismissed_at is None:
-        now = datetime.now(timezone.utc)
-        ip = request.client.host if request.client else None
-        if timer.recurrence != "none":
-            # Recurring: roll forward to the next occurrence. The
-            # timer stays "active" — dismissed_at is not set, the
-            # pre-alert flag clears so the next-occurrence pre-alert
-            # fires fresh.
-            previous_target = timer.target_time
-            timer.target_time = _next_future_occurrence(timer.target_time, timer.recurrence)
-            timer.pre_alert_fired_at = None
-            await db.flush()
-            await write_audit(
-                db,
-                action_type="event_timer.roll_forward",
-                entity_type="event_timer",
-                entity_id=str(timer.id),
-                user_id=current_user.id,
-                ip_address=ip,
-                detail={
-                    "label": timer.label,
-                    "recurrence": timer.recurrence,
-                    "previous_target": previous_target.isoformat(),
-                    "next_target": timer.target_time.isoformat(),
-                },
-            )
+        # Only a known recurrence rolls forward; anything else, a value written outside the API
+        # included, is dismissed once, so a bad row can never stall the worker in a loop.
+        if timer.recurrence in _STEPS:
+            action_type, detail = _roll_forward(timer)
         else:
-            timer.dismissed_at = now
-            timer.dismissed_by = current_user.id
-            if timer.pre_alert_fired_at is None:
-                timer.pre_alert_fired_at = now
-            await db.flush()
-            await write_audit(
-                db,
-                action_type="event_timer.dismiss",
-                entity_type="event_timer",
-                entity_id=str(timer.id),
-                user_id=current_user.id,
-                ip_address=ip,
-                detail={
-                    "label": timer.label,
-                    "target_time": timer.target_time.isoformat(),
-                },
-            )
+            action_type, detail = _dismiss(timer, current_user)
+        await db.flush()
+        await _audit_timer(db, request, current_user, action_type, timer.id, detail)
         await db.commit()
         await db.refresh(timer)
     return EventTimerRead.model_validate(timer)
@@ -206,22 +208,10 @@ async def dismiss_timer(
 
 @router.delete("/{timer_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_timer(
-    timer_id: UUID,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    timer_id: UUID, request: Request, db: DbSession, current_user: CurrentUser
 ) -> None:
-    timer = await _load_timer(db, timer_id)
+    timer: EventTimer = await get_or_404(db, EventTimer, timer_id, "Timer")
     label = timer.label
     await db.delete(timer)
-    ip = request.client.host if request.client else None
-    await write_audit(
-        db,
-        action_type="event_timer.delete",
-        entity_type="event_timer",
-        entity_id=str(timer_id),
-        user_id=current_user.id,
-        ip_address=ip,
-        detail={"label": label},
-    )
+    await _audit_timer(db, request, current_user, "event_timer.delete", timer_id, {"label": label})
     await db.commit()

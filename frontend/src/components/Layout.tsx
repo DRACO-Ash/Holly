@@ -34,7 +34,7 @@ export default function Layout() {
     <EventTimersProvider>
       <div className="app-shell">
         <header className="app-header">
-          <div className="app-title">Daily Operations Dashboard</div>
+          <div className="app-title">Holly</div>
           <div className="app-header-right">
             {user && <span className="app-user">{user.username}</span>}
             <button type="button" className="logout-btn" onClick={logout}>

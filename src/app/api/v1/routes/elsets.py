@@ -1,16 +1,25 @@
+from dataclasses import asdict
 from datetime import datetime
-from typing import Literal, Optional
+from operator import eq, ge, le
+from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from sqlalchemy import func as sa_func
+from fastapi import APIRouter, Request
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.session import get_db
-from app.dependencies import get_current_user
+from app.api.v1.common import (
+    Limit,
+    Offset,
+    SortDirection,
+    fetch_page,
+    get_or_404,
+    present_filters,
+    run_udl_ingest,
+    sort_order,
+)
+from app.core.net import client_ip
+from app.dependencies import CurrentUser, DbSession
 from app.models.elset import Elset
-from app.models.user import User
 from app.schemas.elset import (
     ElsetDetail,
     ElsetIngestRequest,
@@ -19,7 +28,6 @@ from app.schemas.elset import (
     ElsetRead,
 )
 from app.services.elset_ingest import ingest_elsets
-from app.services.udl_client import UDLAuthError, UDLClient, UDLClientError
 
 router = APIRouter(prefix="/elsets", tags=["elsets"])
 
@@ -28,38 +36,29 @@ ElsetSortColumn = Literal[
 ]
 
 
-@router.get("", response_model=ElsetPage)
+@router.get("")
 async def list_elsets(
-    sat_no: Optional[int] = Query(None),
-    epoch_gte: Optional[datetime] = Query(None),
-    epoch_lte: Optional[datetime] = Query(None),
-    limit: int = Query(50, ge=1, le=500),
-    offset: int = Query(0, ge=0),
-    sort_by: ElsetSortColumn = Query("epoch"),
-    sort_dir: Literal["asc", "desc"] = Query("desc"),
-    db: AsyncSession = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
+    db: DbSession,
+    _current_user: CurrentUser,
+    sat_no: int | None = None,
+    epoch_gte: datetime | None = None,
+    epoch_lte: datetime | None = None,
+    limit: Limit = 50,
+    offset: Offset = 0,
+    sort_by: ElsetSortColumn = "epoch",
+    sort_dir: SortDirection = "desc",
 ) -> ElsetPage:
-    base = select(Elset)
-    conditions = []
-    if sat_no is not None:
-        conditions.append(Elset.sat_no == sat_no)
-    if epoch_gte is not None:
-        conditions.append(Elset.epoch >= epoch_gte)
-    if epoch_lte is not None:
-        conditions.append(Elset.epoch <= epoch_lte)
-    if conditions:
-        base = base.where(*conditions)
-
-    count_stmt = select(sa_func.count()).select_from(base.subquery())
-    total = (await db.execute(count_stmt)).scalar_one()
-
-    sort_column = getattr(Elset, sort_by)
-    order = sort_column.asc() if sort_dir == "asc" else sort_column.desc()
-    items_stmt = base.order_by(order.nullslast()).limit(limit).offset(offset)
-    items_result = await db.execute(items_stmt)
-    items = items_result.scalars().all()
-
+    base = select(Elset).where(
+        *present_filters(
+            [
+                (sat_no, Elset.sat_no, eq),
+                (epoch_gte, Elset.epoch, ge),
+                (epoch_lte, Elset.epoch, le),
+            ]
+        )
+    )
+    order = [sort_order(getattr(Elset, sort_by), sort_dir)]
+    items, total = await fetch_page(db, base, order, limit, offset)
     return ElsetPage(
         items=[ElsetRead.model_validate(item) for item in items],
         total=total,
@@ -68,46 +67,27 @@ async def list_elsets(
     )
 
 
-@router.get("/{elset_id}", response_model=ElsetDetail)
-async def get_elset(
-    elset_id: UUID,
-    db: AsyncSession = Depends(get_db),
-    _current_user: User = Depends(get_current_user),
-) -> ElsetDetail:
-    result = await db.execute(select(Elset).where(Elset.id == elset_id))
-    row = result.scalar_one_or_none()
-    if row is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Elset not found")
-    return ElsetDetail.model_validate(row)
+@router.get("/{elset_id}")
+async def get_elset(elset_id: UUID, db: DbSession, _current_user: CurrentUser) -> ElsetDetail:
+    return ElsetDetail.model_validate(await get_or_404(db, Elset, elset_id, "Elset"))
 
 
-@router.post("/ingest", response_model=ElsetIngestResponse)
+@router.post("/ingest")
 async def trigger_ingest(
     payload: ElsetIngestRequest,
     request: Request,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    db: DbSession,
+    current_user: CurrentUser,
 ) -> ElsetIngestResponse:
-    ip_address = request.client.host if request.client else None
-    try:
-        async with UDLClient() as client:
-            result = await ingest_elsets(
-                db,
-                client=client,
-                epoch_gte=payload.epoch_gte,
-                sat_no=payload.sat_no,
-                max_results=payload.max_results,
-                user_id=current_user.id,
-                ip_address=ip_address,
-            )
-    except UDLAuthError as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
-    except UDLClientError as exc:
-        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
-
-    return ElsetIngestResponse(
-        pulled=result.pulled,
-        inserted=result.inserted,
-        updated=result.updated,
-        skipped=result.skipped,
+    result = await run_udl_ingest(
+        lambda client: ingest_elsets(
+            db,
+            client,
+            epoch_gte=payload.epoch_gte,
+            sat_no=payload.sat_no,
+            max_results=payload.max_results,
+            user_id=current_user.id,
+            ip_address=client_ip(request),
+        )
     )
+    return ElsetIngestResponse(**asdict(result))

@@ -1,16 +1,27 @@
 """Thin async wrapper around Mattermost's REST API.
 
-We use Mattermost's `/api/v4` surface with a bot personal access token.
-The bot must be a member of any channel we want to poll; channels it
-isn't in respond 403 and the caller treats that as "skip silently".
+Holly uses Mattermost's `/api/v4` surface with a bot personal access token. The bot must be a
+member of any channel Holly polls; channels it is not in answer 403, which the caller treats
+as "skip silently". Mattermost's response bodies go to the server log, never to a browser.
 """
 
-from datetime import datetime, timezone
-from typing import Any, Optional
+import logging
+import re
+from datetime import UTC, datetime
+from http import HTTPStatus
+from typing import Any, Self
 
-import httpx
+import httpx2
 
-from app.config import settings
+from app.config import get_settings
+from app.services.api_client import ApiClient
+
+logger = logging.getLogger(__name__)
+
+# The shape of a Mattermost id (26 lowercase letters and digits in practice). Every id that
+# goes into a request path is checked against it, so a value taken from a post can never point
+# the bot's token at a different API path.
+PLAIN_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
 
 
 class MattermostClientError(Exception):
@@ -18,71 +29,66 @@ class MattermostClientError(Exception):
 
 
 class MattermostAuthError(MattermostClientError):
-    """Raised when Mattermost rejects the bot token."""
+    """Raised when Mattermost rejects the bot token or the bot lacks access."""
 
 
-class MattermostClient:
+class MattermostClient(ApiClient):
     """Async client. Use as `async with MattermostClient() as mm: ...`."""
+
+    service = "Mattermost"
+    error = MattermostClientError
+    logger = logger
 
     def __init__(
         self,
-        base_url: Optional[str] = None,
-        bot_token: Optional[str] = None,
+        base_url: str | None = None,
+        bot_token: str | None = None,
         timeout: float = 30.0,
-        transport: Optional[httpx.AsyncBaseTransport] = None,
+        transport: httpx2.AsyncBaseTransport | None = None,
     ) -> None:
+        settings = get_settings()
         self._base_url = (base_url or settings.mattermost_url).rstrip("/")
-        self._bot_token = bot_token if bot_token is not None else settings.mattermost_bot_token
+        self._bot_token = (
+            bot_token if bot_token is not None else settings.mattermost_bot_token.get_secret_value()
+        )
         self._timeout = timeout
         self._transport = transport
-        self._client: Optional[httpx.AsyncClient] = None
+        self._client: httpx2.AsyncClient | None = None
 
-    async def __aenter__(self) -> "MattermostClient":
+    async def __aenter__(self) -> Self:
         if not self._base_url or not self._bot_token:
-            raise MattermostClientError(
-                "Mattermost is not configured (MATTERMOST_URL / MATTERMOST_BOT_TOKEN)."
-            )
-        client_kwargs: dict[str, Any] = {
-            "base_url": f"{self._base_url}/api/v4",
-            "headers": {"Authorization": f"Bearer {self._bot_token}"},
-            "timeout": self._timeout,
-        }
-        if self._transport is not None:
-            client_kwargs["transport"] = self._transport
-        self._client = httpx.AsyncClient(**client_kwargs)
+            msg = "Mattermost is not configured (MATTERMOST_URL / MATTERMOST_BOT_TOKEN)."
+            raise MattermostClientError(msg)
+        client = httpx2.AsyncClient(
+            base_url=f"{self._base_url}/api/v4",
+            headers={"Authorization": f"Bearer {self._bot_token}"},
+            timeout=self._timeout,
+            transport=self._transport,
+        )
+        self._client = await client.__aenter__()
         return self
 
-    async def __aexit__(self, *exc_info: Any) -> None:
-        if self._client is not None:
-            await self._client.aclose()
-            self._client = None
+    def _check_auth(self, response: httpx2.Response) -> None:
+        if response.status_code == HTTPStatus.UNAUTHORIZED:
+            msg = "Mattermost rejected the bot token (401)."
+            raise MattermostAuthError(msg)
+        if response.status_code == HTTPStatus.FORBIDDEN:
+            msg = "Mattermost denied access (403): is the bot in the channel?"
+            raise MattermostAuthError(msg)
 
-    async def _get_json(self, path: str, params: Optional[dict[str, Any]] = None) -> Any:
-        if self._client is None:
-            raise MattermostClientError(
-                "MattermostClient must be used as an async context manager."
-            )
-        try:
-            response = await self._client.get(path, params=params)
-        except httpx.HTTPError as exc:
-            raise MattermostClientError(f"Mattermost request failed: {exc}") from exc
-        if response.status_code == 401:
-            raise MattermostAuthError("Mattermost rejected the bot token (401).")
-        if response.status_code == 403:
-            raise MattermostAuthError(
-                f"Mattermost denied access ({response.status_code}): bot not in channel?"
-            )
-        if response.status_code >= 400:
-            raise MattermostClientError(
-                f"Mattermost returned HTTP {response.status_code}: {response.text}"
-            )
-        return response.json()
+    async def _get_object(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        """The JSON object at `path`; anything else raises MattermostClientError."""
+        data = await self._get_json(path, params)
+        if not isinstance(data, dict):
+            msg = f"Mattermost response was not a JSON object (got {type(data).__name__})."
+            raise MattermostClientError(msg)
+        return data
 
     async def get_channel(self, channel_id: str) -> dict[str, Any]:
-        return await self._get_json(f"/channels/{channel_id}")
+        return await self._get_object(f"/channels/{_checked(channel_id)}")
 
     async def get_user(self, user_id: str) -> dict[str, Any]:
-        return await self._get_json(f"/users/{user_id}")
+        return await self._get_object(f"/users/{_checked(user_id)}")
 
     async def get_channel_posts_since(
         self,
@@ -90,22 +96,29 @@ class MattermostClient:
         since_ms: int,
         per_page: int = 200,
     ) -> dict[str, Any]:
-        """Get posts in a channel created since `since_ms` (epoch milliseconds).
+        """Posts in a channel created since `since_ms` (epoch milliseconds).
 
-        Returns Mattermost's native shape: `{posts: {id: {...}}, order: [id, ...]}`.
-        `order` is newest-first.
+        Returns Mattermost's native shape: `{posts: {id: {...}}, order: [id, ...]}`, with
+        `order` newest first.
         """
-        return await self._get_json(
-            f"/channels/{channel_id}/posts",
+        return await self._get_object(
+            f"/channels/{_checked(channel_id)}/posts",
             params={"since": since_ms, "per_page": per_page},
         )
 
 
+def _checked(identifier: str) -> str:
+    if not PLAIN_ID.fullmatch(identifier):
+        msg = "A Mattermost id was malformed."
+        raise MattermostClientError(msg)
+    return identifier
+
+
 def datetime_to_ms(dt: datetime) -> int:
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
     return int(dt.timestamp() * 1000)
 
 
 def ms_to_datetime(ms: int) -> datetime:
-    return datetime.fromtimestamp(ms / 1000, tz=timezone.utc)
+    return datetime.fromtimestamp(ms / 1000, tz=UTC)

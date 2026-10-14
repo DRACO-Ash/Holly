@@ -7,11 +7,12 @@ import {
   listShiftDates,
   listShiftNotes,
   repolishShiftNote,
-  shiftExportUrl,
+  downloadShiftExport,
   updateShiftNote,
 } from "../api/shift";
 import EventTimersPanel from "../components/EventTimersPanel";
-import type { ShiftDateSummary, ShiftNote, ShiftSummary } from "../types";
+import type { ShiftDateSummary, ShiftExportFormat, ShiftNote, ShiftSummary } from "../types";
+import { extractErrorMessage } from "../utils/errors";
 
 function todayUtcIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -19,16 +20,6 @@ function todayUtcIso(): string {
 
 function formatTime(value: string): string {
   return new Date(value).toISOString().slice(11, 19) + "Z";
-}
-
-function extractErrorMessage(err: unknown, fallback: string): string {
-  if (err && typeof err === "object" && "response" in err) {
-    const response = (err as { response?: { data?: { detail?: unknown } } }).response;
-    const detail = response?.data?.detail;
-    if (typeof detail === "string") return detail;
-  }
-  if (err instanceof Error) return err.message;
-  return fallback;
 }
 
 interface NoteRowProps {
@@ -248,6 +239,15 @@ export default function ShiftLogPage() {
     void refreshRecentDates();
   }
 
+  async function onExport(format: ShiftExportFormat) {
+    setError(null);
+    try {
+      await downloadShiftExport(shiftDate, format);
+    } catch (err) {
+      setError(extractErrorMessage(err, "Export failed."));
+    }
+  }
+
   const hasNotes = notes.length > 0;
 
   return (
@@ -269,12 +269,12 @@ export default function ShiftLogPage() {
               onChange={(e) => setShiftDate(e.target.value || todayUtcIso())}
             />
           </label>
-          <a href={shiftExportUrl(shiftDate, "md")} target="_blank" rel="noreferrer">
+          <button type="button" onClick={() => void onExport("md")}>
             Export .md
-          </a>
-          <a href={shiftExportUrl(shiftDate, "html")} target="_blank" rel="noreferrer">
+          </button>
+          <button type="button" onClick={() => void onExport("html")}>
             Export .html
-          </a>
+          </button>
         </div>
       </div>
 

@@ -1,5 +1,6 @@
+"""The refresh-token block-list (ADR-011)."""
+
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 from sqlalchemy import select
@@ -17,7 +18,7 @@ async def revoke(
     db: AsyncSession,
     *,
     jti: str,
-    user_id: Optional[UUID],
+    user_id: UUID | None,
     expires_at: datetime,
 ) -> None:
     if await is_revoked(db, jti):

@@ -1,34 +1,39 @@
-"""Claude-driven reasoning over notifications, procedures, and orbital events.
+"""Claude's evaluation of a notification against the team's procedures.
 
-Loads a notification plus all uploaded procedures, hands them to Claude
-along with a strict JSON-output instruction, parses the structured
-response, and persists it to the `assistant_evaluation` table.
-
-Phase 2 Slice 1C: notifications + procedures only.
-Slice 2 will add SGP4-derived orbital events to the prompt.
+Loads a notification with the related maneuvers, recent team chat and every uploaded
+procedure, asks Claude for a strict JSON evaluation, validates it (schemas/assistant.py) and
+stores it in assistant_evaluation. A reply that is not valid JSON of the right shape is retried
+once; a second failure is stored as the error, with no advice (llm-integration). Concurrent
+requests for the same notification share one run (core/single_flight.py).
 """
 
-import json
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+import uuid
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
-import anthropic
+from pydantic import ValidationError
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
+from app.config import get_settings
+from app.core.single_flight import SingleFlight
+from app.db.session import get_session_factory
 from app.models.assistant_evaluation import AssistantEvaluation
 from app.models.maneuver import Maneuver
 from app.models.mattermost_message import MattermostMessage
 from app.models.notification import Notification
 from app.models.procedure import Procedure
+from app.schemas.assistant import AssistantEvaluationRead, StructuredEvaluation
+from app.services.claude import AssistantError, call_claude, extract_json_object
 from app.services.procedure_storage import read_preview
+
+logger = logging.getLogger(__name__)
 
 _MANEUVER_LOOKBACK_DAYS = 30
 _MANEUVER_MAX_PER_PROMPT = 10
-
-logger = logging.getLogger(__name__)
+_CHAT_MESSAGE_MAX_CHARS = 500
 
 _SYSTEM_PROMPT = """\
 You are an expert space operations analyst supporting a Daily Space
@@ -44,8 +49,8 @@ patterns (e.g. recent maneuver may explain a new conjunction) and to
 contextualise the notification.
 
 The TEAM CHAT section is recent shop-talk from the ops floor. Treat
-it as soft context — useful for spotting decisions the team has
-already made, escalations in flight, or open threads — not as
+it as soft context, useful for spotting decisions the team has
+already made, escalations in flight, or open threads, not as
 authoritative source data. Operators may speculate or revise.
 
 You must respond with a single JSON object and nothing else. No prose
@@ -85,43 +90,85 @@ Rules:
 - Use UTC for any timestamps.
 """
 
+_JSON_RETRY_NUDGE = (
+    "Your previous reply could not be used. Return only the JSON object described in the "
+    "instructions, with every required field, and no text before or after it."
+)
 
-class AssistantError(Exception):
-    """Raised when Claude returns an unparseable or invalid response."""
+
+def _empty_evaluation() -> dict[str, Any]:
+    return {
+        "summary": "Assistant evaluation could not be generated.",
+        "applicable_procedures": [],
+        "next_actions": [],
+        "open_questions": [],
+    }
+
+
+# (label, attribute) for each notification field the prompt shows, in order.
+_NOTIFICATION_FIELDS = (
+    ("Notice", "notso_identifier"),
+    ("Message type", "msg_type"),
+    ("Event type", "event_type"),
+    ("Event class", "event_class"),
+    ("Status", "status"),
+    ("Subject", "subject"),
+    ("Description", "description"),
+    ("Region", "region"),
+    ("Company", "company_name"),
+    ("Published", "publish_date"),
+    ("Effective from", "effective_from"),
+    ("Effective until", "effective_until"),
+    ("UDL created", "udl_created_at"),
+)
+_MANEUVER_FIELDS = (
+    ("start", "event_start_time"),
+    ("stop", "event_stop_time"),
+    ("type", "mnvr_type"),
+    ("status", "maneuver_status"),
+    ("deltaV", "delta_v"),
+    ("source", "source"),
+)
+
+
+class NotificationNotFoundError(LookupError):
+    """The notification asked about does not exist."""
+
+
+@dataclass(frozen=True)
+class EvaluationOutcome:
+    evaluation: AssistantEvaluation
+    persistent_failure: bool
+
+
+@dataclass(frozen=True)
+class EvaluationRun:
+    evaluation: AssistantEvaluationRead
+    persistent_failure: bool
+
+
+_IN_FLIGHT: SingleFlight[EvaluationRun] = SingleFlight()
+
+
+def display_value(value: object) -> str:
+    """A prompt-ready rendering: datetimes in ISO 8601, everything else as text."""
+    return value.isoformat() if isinstance(value, datetime) else str(value)
+
+
+def _shown(value: object) -> bool:
+    return value is not None and value != ""
 
 
 def _format_notification(n: Notification) -> str:
     lines = ["NOTIFICATION:"]
-    if n.notso_identifier:
-        lines.append(f"  Notice: {n.notso_identifier}")
-    if n.msg_type:
-        lines.append(f"  Message type: {n.msg_type}")
-    if n.event_type:
-        lines.append(f"  Event type: {n.event_type}")
-    if n.event_class:
-        lines.append(f"  Event class: {n.event_class}")
-    if n.status:
-        lines.append(f"  Status: {n.status}")
-    if n.subject:
-        lines.append(f"  Subject: {n.subject}")
-    if n.description:
-        lines.append(f"  Description: {n.description}")
-    if n.region:
-        lines.append(f"  Region: {n.region}")
-    if n.company_name:
-        lines.append(f"  Company: {n.company_name}")
-    if n.publish_date:
-        lines.append(f"  Published: {n.publish_date.isoformat()}")
-    if n.effective_from:
-        lines.append(f"  Effective from: {n.effective_from.isoformat()}")
-    if n.effective_until:
-        lines.append(f"  Effective until: {n.effective_until.isoformat()}")
-    if n.udl_created_at:
-        lines.append(f"  UDL created: {n.udl_created_at.isoformat()}")
+    for label, attribute in _NOTIFICATION_FIELDS:
+        value = getattr(n, attribute)
+        if _shown(value):
+            lines.append(f"  {label}: {display_value(value)}")
     if n.sat_no is not None:
         lines.append(f"  Satellite: {n.sat_no}")
     if n.sat_ids:
-        lines.append(f"  Satellites: {', '.join(n.sat_ids)}")
+        lines.append(f"  Satellites: {', '.join(str(sat) for sat in n.sat_ids)}")
     if n.notso_link:
         lines.append(f"  Source link: {n.notso_link}")
     return "\n".join(lines)
@@ -129,18 +176,10 @@ def _format_notification(n: Notification) -> str:
 
 def _format_maneuver(m: Maneuver) -> str:
     parts = [f"  - Sat {m.sat_no if m.sat_no is not None else '?'}"]
-    if m.event_start_time:
-        parts.append(f"start={m.event_start_time.isoformat()}")
-    if m.event_stop_time:
-        parts.append(f"stop={m.event_stop_time.isoformat()}")
-    if m.mnvr_type:
-        parts.append(f"type={m.mnvr_type}")
-    if m.maneuver_status:
-        parts.append(f"status={m.maneuver_status}")
-    if m.delta_v is not None:
-        parts.append(f"deltaV={m.delta_v}")
-    if m.source:
-        parts.append(f"source={m.source}")
+    for label, attribute in _MANEUVER_FIELDS:
+        value = getattr(m, attribute)
+        if _shown(value):
+            parts.append(f"{label}={display_value(value)}")
     head = " | ".join(parts)
     if m.description:
         return f"{head}\n    {m.description.strip()}"
@@ -148,30 +187,22 @@ def _format_maneuver(m: Maneuver) -> str:
 
 
 def _extract_sat_nos(notification: Notification) -> list[int]:
-    nos: list[int] = []
+    numbers: list[int] = []
     if notification.sat_no is not None:
-        nos.append(notification.sat_no)
-    if notification.sat_ids:
-        for value in notification.sat_ids:
-            try:
-                nos.append(int(value))
-            except (TypeError, ValueError):
-                continue
-    # de-duplicate, preserve order
-    seen: set[int] = set()
-    ordered: list[int] = []
-    for n in nos:
-        if n not in seen:
-            seen.add(n)
-            ordered.append(n)
-    return ordered
+        numbers.append(notification.sat_no)
+    for value in notification.sat_ids or []:
+        try:
+            numbers.append(int(value))
+        except (TypeError, ValueError):
+            continue
+    return list(dict.fromkeys(numbers))  # de-duplicated, order kept
 
 
 async def _load_relevant_maneuvers(db: AsyncSession, notification: Notification) -> list[Maneuver]:
     sat_nos = _extract_sat_nos(notification)
     if not sat_nos:
         return []
-    window_start = datetime.now(timezone.utc) - timedelta(days=_MANEUVER_LOOKBACK_DAYS)
+    window_start = datetime.now(UTC) - timedelta(days=_MANEUVER_LOOKBACK_DAYS)
     stmt = (
         select(Maneuver)
         .where(Maneuver.sat_no.in_(sat_nos))
@@ -188,19 +219,13 @@ async def _load_relevant_maneuvers(db: AsyncSession, notification: Notification)
 
 
 async def _load_recent_chat(db: AsyncSession) -> list[MattermostMessage]:
-    """Pull the most-recent chat from configured Mattermost channels.
-
-    Returned ascending by posted_at so the formatted block reads
-    chronologically (oldest first, newest at the bottom — same flow
-    the operator would see in chat).
-    """
+    """The latest chat from the configured channels, oldest first, as the operator reads it."""
+    settings = get_settings()
     window_hours = settings.mattermost_prompt_window_hours
     limit = settings.mattermost_max_messages_in_prompt
     if window_hours <= 0 or limit <= 0:
         return []
-    window_start = datetime.now(timezone.utc) - timedelta(hours=window_hours)
-    # Fetch the latest `limit` messages within the window, then reverse
-    # for chronological display.
+    window_start = datetime.now(UTC) - timedelta(hours=window_hours)
     stmt = (
         select(MattermostMessage)
         .where(MattermostMessage.posted_at >= window_start)
@@ -215,25 +240,21 @@ async def _load_recent_chat(db: AsyncSession) -> list[MattermostMessage]:
 def _format_chat(messages: list[MattermostMessage]) -> str:
     if not messages:
         return ""
-    lines = [
-        f"TEAM CHAT (last {settings.mattermost_prompt_window_hours} hours):",
-    ]
+    lines = [f"TEAM CHAT (last {get_settings().mattermost_prompt_window_hours} hours):"]
     for m in messages:
         ts = m.posted_at.strftime("%Y-%m-%d %H:%M")
         author = m.user_display_name or m.user_id
         channel = m.channel_name or m.channel_id
         body = m.message.replace("\n", " ").strip()
-        if len(body) > 500:
-            body = body[:500] + "..."
+        if len(body) > _CHAT_MESSAGE_MAX_CHARS:
+            body = body[:_CHAT_MESSAGE_MAX_CHARS] + "..."
         lines.append(f"- [{ts}] #{channel} @{author}: {body}")
     return "\n".join(lines)
 
 
 def _format_procedure(p: Procedure) -> str:
     content, truncated = read_preview(p.id, p.filename, p.content_type)
-    block = [
-        f"PROCEDURE id={p.id} name={p.name!r}",
-    ]
+    block = [f"PROCEDURE id={p.id} name={p.name!r}"]
     if p.description:
         block.append(f"  Description: {p.description}")
     if content is None:
@@ -272,162 +293,106 @@ def _build_user_message(
     return "\n\n".join(parts)
 
 
-def _extract_json(text: str) -> dict[str, Any]:
-    """Pull the first balanced JSON object out of a model response.
-
-    Walks the text character by character tracking brace depth, but
-    skips characters inside string literals so a `{` or `}` appearing
-    inside a quoted value (e.g. a procedure snippet Claude is citing)
-    doesn't throw the counter off and produce a spurious "unterminated"
-    error.
-    """
-    start = text.find("{")
-    if start == -1:
-        raise AssistantError("Model response contained no JSON object")
-    depth = 0
-    in_string = False
-    escape = False
-    for i in range(start, len(text)):
-        ch = text[i]
-        if escape:
-            escape = False
-            continue
-        if in_string:
-            if ch == "\\":
-                escape = True
-            elif ch == '"':
-                in_string = False
-            continue
-        if ch == '"':
-            in_string = True
-            continue
-        if ch == "{":
-            depth += 1
-        elif ch == "}":
-            depth -= 1
-            if depth == 0:
-                payload = text[start : i + 1]
-                try:
-                    return json.loads(payload)
-                except json.JSONDecodeError as exc:
-                    raise AssistantError(f"Model response was not valid JSON: {exc}") from exc
-    raise AssistantError("Model response had an unterminated JSON object")
-
-
-async def _call_claude(user_message: str) -> tuple[dict[str, Any], str]:
-    if not settings.anthropic_api_key:
-        raise AssistantError("ANTHROPIC_API_KEY is not configured")
-    client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+def parse_evaluation(text: str, procedure_ids: set[str]) -> StructuredEvaluation:
+    """Validate a reply as an evaluation. Raises AssistantError when it is not one."""
     try:
-        response = await client.messages.create(
-            model=settings.anthropic_model,
-            max_tokens=settings.anthropic_max_tokens,
-            system=_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_message}],
-        )
-    except anthropic.APIError as exc:
-        # Surface SDK errors (auth, credit, rate limit, server) as
-        # AssistantError so evaluate_notification persists a row with
-        # the failure reason rather than letting the exception escape.
-        raise AssistantError(f"Anthropic API error: {exc}") from exc
-    if response.stop_reason == "max_tokens":
-        # Truncated mid-output; the JSON will be incomplete. Surface a
-        # specific error rather than letting the parser fail later on
-        # the half-written object with a cryptic "unterminated" message.
-        raise AssistantError(
-            f"Model response was truncated at {settings.anthropic_max_tokens} tokens "
-            "before completing the JSON. Raise ANTHROPIC_MAX_TOKENS."
-        )
-    # response.content is list[TextBlock | ToolUseBlock]; only text
-    # blocks expose .text. Use getattr so mypy is happy without a
-    # cast or a hard isinstance import (the SDK's block class paths
-    # are not part of its public API contract).
-    blocks: list[str] = []
-    for b in response.content:
-        text_value = getattr(b, "text", None)
-        if isinstance(text_value, str):
-            blocks.append(text_value)
-    if not blocks:
-        raise AssistantError("Model response contained no text blocks")
-    text = "\n".join(blocks)
-    return _extract_json(text), settings.anthropic_model
+        evaluation = StructuredEvaluation.model_validate(extract_json_object(text))
+    except ValidationError as exc:
+        msg = f"Model response did not match the evaluation schema ({exc.error_count()} errors)"
+        raise AssistantError(msg) from exc
+    # The model may cite only the procedures it was given; any other id is dropped.
+    for procedure in evaluation.applicable_procedures:
+        if procedure.procedure_id not in procedure_ids:
+            procedure.procedure_id = None
+    return evaluation
 
 
-def is_persistent_anthropic_failure(error_message: Optional[str]) -> bool:
-    """True if the failure is unlikely to clear up within a poll cycle.
-
-    Used by the background poller to break out of the auto-evaluate
-    loop instead of burning the per-cycle quota against an outage that
-    every call will hit identically.
-    """
-    if not error_message:
-        return False
-    lower = error_message.lower()
-    return any(
-        needle in lower
-        for needle in (
-            "credit balance",
-            "rate limit",
-            "authentication",
-            "invalid api key",
-            "permission",
-        )
+async def _ask(user_message: str) -> tuple[str, str]:
+    max_tokens = get_settings().anthropic_max_tokens
+    reply = await call_claude(
+        _SYSTEM_PROMPT, user_message, max_tokens=max_tokens, purpose="assistant.evaluate"
     )
+    if reply.truncated:
+        # A truncated reply cannot hold the complete JSON; a retry would truncate again.
+        msg = (
+            f"Model response was truncated at {max_tokens} tokens before completing the JSON. "
+            "Raise ANTHROPIC_MAX_TOKENS."
+        )
+        raise AssistantError(msg)
+    return reply.text, reply.model
 
 
-async def evaluate_notification(
-    db: AsyncSession,
-    notification_id: Any,
-) -> AssistantEvaluation:
+async def _evaluate(user_message: str, procedure_ids: set[str]) -> tuple[StructuredEvaluation, str]:
+    text, model = await _ask(user_message)
+    try:
+        return parse_evaluation(text, procedure_ids), model
+    except AssistantError as exc:
+        logger.info("Evaluation reply unusable (%s); retrying once for JSON only", exc)
+    text, model = await _ask(f"{user_message}\n\n{_JSON_RETRY_NUDGE}")
+    return parse_evaluation(text, procedure_ids), model
+
+
+async def evaluate_notification(db: AsyncSession, notification_id: uuid.UUID) -> EvaluationOutcome:
+    """Evaluate one notification and add the result to the session (the caller commits)."""
     notification = (
         await db.execute(select(Notification).where(Notification.id == notification_id))
     ).scalar_one_or_none()
     if notification is None:
-        raise AssistantError("Notification not found")
+        raise NotificationNotFoundError(str(notification_id))
 
-    procedures = (
+    procedures = list(
         (await db.execute(select(Procedure).order_by(Procedure.created_at))).scalars().all()
     )
     maneuvers = await _load_relevant_maneuvers(db, notification)
     chat = await _load_recent_chat(db)
+    user_message = _build_user_message(notification, procedures, maneuvers, chat)
+    procedure_ids = {str(p.id) for p in procedures}
 
-    user_message = _build_user_message(notification, list(procedures), maneuvers, chat)
-
-    error: Optional[str] = None
-    structured: dict[str, Any]
-    model: str
+    error: str | None = None
+    persistent = False
+    structured = _empty_evaluation()
+    model = get_settings().anthropic_model
     try:
-        structured, model = await _call_claude(user_message)
+        evaluation, model = await _evaluate(user_message, procedure_ids)
+        structured = evaluation.model_dump()
     except AssistantError as exc:
         logger.warning("Assistant evaluation failed for %s: %s", notification_id, exc)
-        error = str(exc)
-        structured = {
-            "summary": "Assistant evaluation could not be generated.",
-            "applicable_procedures": [],
-            "next_actions": [],
-            "open_questions": [],
-        }
-        model = settings.anthropic_model
+        error, persistent = str(exc), exc.persistent
 
-    summary = str(structured.get("summary", "")) or "No summary returned."
-
-    evaluation = AssistantEvaluation(
+    row = AssistantEvaluation(
         notification_id=notification.id,
-        summary=summary,
+        summary=str(structured.get("summary") or "No summary returned."),
         structured=structured,
         procedures_used=[str(p.id) for p in procedures],
         model=model,
         error=error,
     )
-    db.add(evaluation)
+    db.add(row)
     await db.flush()
-    return evaluation
+    return EvaluationOutcome(evaluation=row, persistent_failure=persistent)
+
+
+async def _evaluate_and_store(notification_id: uuid.UUID) -> EvaluationRun:
+    async with get_session_factory()() as db:
+        outcome = await evaluate_notification(db, notification_id)
+        await db.commit()
+        await db.refresh(outcome.evaluation)
+        return EvaluationRun(
+            evaluation=AssistantEvaluationRead.model_validate(outcome.evaluation),
+            persistent_failure=outcome.persistent_failure,
+        )
+
+
+async def evaluate_once(notification_id: uuid.UUID) -> EvaluationRun:
+    """Evaluate and store, in a session of its own. A caller asking for a notification already
+    being evaluated joins that run instead of starting another."""
+    return await _IN_FLIGHT.run(str(notification_id), lambda: _evaluate_and_store(notification_id))
 
 
 async def get_latest_evaluation(
     db: AsyncSession,
-    notification_id: Any,
-) -> Optional[AssistantEvaluation]:
+    notification_id: uuid.UUID,
+) -> AssistantEvaluation | None:
     stmt = (
         select(AssistantEvaluation)
         .where(AssistantEvaluation.notification_id == notification_id)

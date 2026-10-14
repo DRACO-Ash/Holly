@@ -1,29 +1,38 @@
-"""Claude-driven 3-sentence narrative of how a single logical event evolved.
+"""Claude's three-sentence narrative of how a single logical event evolved.
 
-A "logical event" here is the dedup grouping used everywhere else: every
-UDL re-publication of the same notice shares a group key (event_id /
-notso_identifier / udl_id). This service feeds every publication of one
-event to Claude in chronological order and asks for a strict 3-sentence
-summary of the evolution.
+A "logical event" is the grouping used everywhere else: every UDL re-publication of the same
+notice shares a group key (event_id, then notso_identifier, then udl_id). This service feeds
+every publication of one event to Claude in chronological order and asks for a strict
+three-sentence summary of the evolution.
 
-Stored in event_summary keyed on event_key so the dashboard can render
-the narrative without re-billing Claude on every load.
+Stored in event_summary keyed on event_key, so the dashboard renders the narrative without
+paying for Claude on every load.
 """
 
 import logging
-from typing import Any, Optional
+import re
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any
 
-import anthropic
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
+from app.config import get_settings
 from app.models.event_summary import EventSummary
 from app.models.notification import Notification
-from app.services.assistant import AssistantError
+from app.services.assistant import display_value
+from app.services.claude import AssistantError, call_claude
 
 logger = logging.getLogger(__name__)
+
+# Three sentences fit comfortably under 400 tokens.
+_MAX_TOKENS = 400
+_MAX_SENTENCES = 3
+# A long-lived event can gather many publications. Claude is shown the first and the newest, at
+# most this many in all; the stored summary still lists every publication it covers.
+_MAX_PROMPT_PUBLICATIONS = 20
 
 _SYSTEM_PROMPT = """\
 You are summarising the evolution of a single space-operations event
@@ -40,20 +49,37 @@ first, what changed across publications, what the current status is.
 Rules:
 - HARD CAP: no more than 3 sentences.
 - Plain text only. No markdown, no bullet list, no headings.
-- Operational tone — name the satellite(s), event class, key timing.
+- Operational tone. Name the satellite(s), event class, key timing.
 - If only one publication exists, just describe that publication in
   at most 3 sentences.
 - Do not quote the source publications.
 """
 
+_HEAD_FIELDS = (
+    ("udl_created", "udl_created_at"),
+    ("status", "status"),
+    ("event_type", "event_type"),
+)
+
+
+@dataclass(frozen=True)
+class SummaryOutcome:
+    summary: EventSummary
+    persistent_failure: bool
+
+
+def publication_order(n: Notification) -> tuple[datetime, str]:
+    """Oldest first by UDL time, the id breaking a tie, so every reader agrees which
+    publication is the latest."""
+    return (n.udl_created_at or n.created_at, str(n.id))
+
 
 def compute_event_key(n: Notification) -> str:
     """Python mirror of the SQL COALESCE in notification_query.
 
-    The SQL uses COALESCE(event_id, notso_identifier, udl_id) for the
-    dedup grouping. We compute the same key in Python so the auto
-    summariser can look up notifications by group and the dashboard
-    can join notifications to their summary by key.
+    The SQL groups on COALESCE(event_id, notso_identifier, udl_id). The same key is computed
+    here, so the summariser can group publications and the dashboard can join notifications
+    to their summary.
     """
     for value in (n.event_id, n.notso_identifier, n.udl_id):
         if value:
@@ -62,128 +88,99 @@ def compute_event_key(n: Notification) -> str:
 
 
 def _format_publication(index: int, n: Notification) -> str:
-    parts = [f"Publication {index + 1}"]
-    if n.udl_created_at:
-        parts.append(f"udl_created={n.udl_created_at.isoformat()}")
-    if n.status:
-        parts.append(f"status={n.status}")
-    if n.event_type:
-        parts.append(f"event_type={n.event_type}")
-    head = " | ".join(parts)
-
-    body_lines = []
-    if n.event_class:
-        body_lines.append(f"  event_class: {n.event_class}")
-    if n.subject and n.subject != n.event_class:
-        body_lines.append(f"  subject: {n.subject}")
-    if n.region:
-        body_lines.append(f"  region: {n.region}")
-    if n.sat_no is not None:
-        body_lines.append(f"  sat_no: {n.sat_no}")
-    if n.sat_ids:
-        body_lines.append(f"  sat_ids: {', '.join(n.sat_ids)}")
-    if n.description:
-        body_lines.append(f"  description: {n.description.strip()}")
-    if n.effective_from:
-        body_lines.append(f"  effective_from: {n.effective_from.isoformat()}")
-    if n.effective_until:
-        body_lines.append(f"  effective_until: {n.effective_until.isoformat()}")
-
-    return head + "\n" + "\n".join(body_lines)
+    head = [f"Publication {index + 1}"]
+    for label, attribute in _HEAD_FIELDS:
+        value = getattr(n, attribute)
+        if value:
+            head.append(f"{label}={display_value(value)}")
+    body: dict[str, object] = {
+        "event_class": n.event_class,
+        "subject": n.subject if n.subject != n.event_class else None,
+        "region": n.region,
+        "sat_no": n.sat_no,
+        "sat_ids": ", ".join(str(sat) for sat in n.sat_ids) if n.sat_ids else None,
+        "description": n.description.strip() if n.description else None,
+        "effective_from": n.effective_from,
+        "effective_until": n.effective_until,
+    }
+    lines = [
+        f"  {name}: {display_value(value)}"
+        for name, value in body.items()
+        if value is not None and value != ""
+    ]
+    return " | ".join(head) + "\n" + "\n".join(lines)
 
 
 def _build_user_message(publications: list[Notification]) -> str:
-    blocks = [_format_publication(i, p) for i, p in enumerate(publications)]
-    return "EVENT PUBLICATIONS (oldest to newest):\n\n" + "\n\n".join(blocks)
-
-
-async def _call_claude(user_message: str) -> tuple[str, str]:
-    if not settings.anthropic_api_key:
-        raise AssistantError("ANTHROPIC_API_KEY is not configured")
-    client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
-    try:
-        response = await client.messages.create(
-            model=settings.anthropic_model,
-            max_tokens=400,  # 3 sentences fits comfortably under 400 tokens
-            system=_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_message}],
-        )
-    except anthropic.APIError as exc:
-        raise AssistantError(f"Anthropic API error: {exc}") from exc
-    chunks: list[str] = []
-    for block in response.content:
-        text_value = getattr(block, "text", None)
-        if isinstance(text_value, str):
-            chunks.append(text_value)
-    if not chunks:
-        raise AssistantError("Model response contained no text blocks")
-    return "\n".join(chunks).strip(), settings.anthropic_model
+    numbered = list(enumerate(publications))
+    heading = "EVENT PUBLICATIONS (oldest to newest"
+    if len(numbered) > _MAX_PROMPT_PUBLICATIONS:
+        # How the event began, then where it stands now.
+        numbered = [numbered[0], *numbered[1 - _MAX_PROMPT_PUBLICATIONS :]]
+        heading += f"; the first and the newest {len(numbered) - 1} of {len(publications)}"
+    blocks = [_format_publication(i, p) for i, p in numbered]
+    return heading + "):\n\n" + "\n\n".join(blocks)
 
 
 def _enforce_three_sentences(text: str) -> str:
-    """Belt-and-braces: trim the narrative to its first three sentences
-    if Claude over-shoots the cap."""
-    import re
-
+    """Belt and braces: keep the first three sentences if Claude overshoots the cap."""
     pieces = re.split(r"(?<=[.!?])\s+", text.strip())
-    return " ".join(pieces[:3]).strip()
+    return " ".join(pieces[:_MAX_SENTENCES]).strip()
+
+
+async def _narrate(publications: list[Notification]) -> tuple[str, str]:
+    reply = await call_claude(
+        _SYSTEM_PROMPT,
+        _build_user_message(publications),
+        max_tokens=_MAX_TOKENS,
+        purpose="assistant.event_summary",
+    )
+    return _enforce_three_sentences(reply.text), reply.model
 
 
 async def generate_event_summary(
     db: AsyncSession,
     event_key: str,
     publications: list[Notification],
-) -> EventSummary:
-    """Generate or update the event summary for a logical event.
+) -> SummaryOutcome:
+    """Generate or replace the summary for one logical event (the caller commits).
 
-    Caller passes the publications already grouped + sorted chronologically.
-    The row is upserted on event_key, so re-runs replace the prior text.
+    The caller passes the event's publications; they are sorted oldest first here. The row is
+    upserted on event_key, so a re-run replaces the earlier text.
     """
     if not publications:
-        raise AssistantError("Cannot summarise an empty publication list")
+        msg = "Cannot summarise an empty publication list"
+        raise AssistantError(msg)
+    publications = sorted(publications, key=publication_order)
 
-    publications = sorted(
-        publications,
-        key=lambda n: n.udl_created_at or n.created_at,
-    )
-    latest = publications[-1]
-
-    error: Optional[str] = None
-    narrative: str
-    model: str
+    error: str | None = None
+    persistent = False
     try:
-        narrative, model = await _call_claude(_build_user_message(publications))
-        narrative = _enforce_three_sentences(narrative)
+        narrative, model = await _narrate(publications)
     except AssistantError as exc:
         logger.warning("Event summary failed for %s: %s", event_key, exc)
-        error = str(exc)
-        narrative = "Event summary could not be generated."
-        model = settings.anthropic_model
+        error, persistent = str(exc), exc.persistent
+        narrative, model = "Event summary could not be generated.", get_settings().anthropic_model
 
     values: dict[str, Any] = {
         "event_key": event_key,
         "narrative": narrative,
         "source_notification_ids": [str(p.id) for p in publications],
-        "latest_notification_id": latest.id,
+        "latest_notification_id": publications[-1].id,
         "publication_count": len(publications),
         "model": model,
         "error": error,
     }
     stmt = pg_insert(EventSummary).values(values)
+    replaced = {
+        column: getattr(stmt.excluded, column) for column in values if column != "event_key"
+    }
     stmt = stmt.on_conflict_do_update(
         constraint="uq_event_summary_event_key",
-        set_={
-            "narrative": stmt.excluded.narrative,
-            "source_notification_ids": stmt.excluded.source_notification_ids,
-            "latest_notification_id": stmt.excluded.latest_notification_id,
-            "publication_count": stmt.excluded.publication_count,
-            "model": stmt.excluded.model,
-            "error": stmt.excluded.error,
-        },
+        set_={**replaced, "updated_at": func.now()},
     )
     await db.execute(stmt)
-
-    fetched = (
+    summary = (
         await db.execute(select(EventSummary).where(EventSummary.event_key == event_key))
     ).scalar_one()
-    return fetched
+    return SummaryOutcome(summary=summary, persistent_failure=persistent)

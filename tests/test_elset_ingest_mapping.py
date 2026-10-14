@@ -1,9 +1,10 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from typing import Any
 
 from app.services.elset_ingest import _map_udl_record
 
 
-def _sample_record() -> dict:
+def _sample_record() -> dict[str, Any]:
     return {
         "id": "udl-abc-123",
         "satNo": 25544,
@@ -60,7 +61,7 @@ def test_map_udl_record_full_record() -> None:
 def test_map_udl_record_parses_epoch_with_timezone() -> None:
     mapped = _map_udl_record(_sample_record())
     assert mapped is not None
-    assert mapped["epoch"] == datetime(2025, 1, 15, 12, 34, 56, 789012, tzinfo=timezone.utc)
+    assert mapped["epoch"] == datetime(2025, 1, 15, 12, 34, 56, 789012, tzinfo=UTC)
 
 
 def test_map_udl_record_preserves_full_payload_in_raw() -> None:

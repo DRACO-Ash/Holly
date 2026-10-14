@@ -1,12 +1,12 @@
 # CLAUDE.md
 
-> Adoption note (delete when the open items are resolved): this file is inherited from the Bluestaq Foundations baseline and was filled at scaffold. Still open: the App Store slug (`TBC, re-verify`); the platform's exact stage commands for the python template, install, test, check and build (`TBC, re-verify`; rehearse the confirmed ones with `INSTALL_CMD='...' TEST_CMD='...' sh scripts/simulate-pipeline.sh`); the upload baseline record and the rung that refuses without it, due before the first upload (appstore-gate-compliance section 3); and `.env.example` (`PORT=`), needed before the first secret-bearing variable, which Claude's Write tool refuses under this project's `Read(./.env.*)` deny rule. Keep this file short; procedures live in `skills/`, not here.
+> Adoption note (delete when the open items are resolved): this file is inherited from the Bluestaq Foundations baseline, filled at scaffold and updated when the Daily Operations Dashboard was fused in (V0.2). Still open, each `TBC, re-verify`: the App Store slug; the platform's exact stage commands for the python template, install, test, check and build (rehearse the confirmed ones with `INSTALL_CMD='...' TEST_CMD='...' sh scripts/simulate-pipeline.sh`); whether the python template's coverage and issue gates count the dashboard's TypeScript, which its test stage cannot cover; the variable the POSTGRESQL add-on injects (Holly reads `DATABASE_URL` or the `POSTGRES_*` parts); the ingress addresses for `FORWARDED_ALLOW_IPS`; whether the platform offers a shell in the container for `python -m app.cli.create_admin`; and the upload baseline record and the rung that refuses without it, due before the first upload (appstore-gate-compliance section 3). Settings are listed in `docs/developer/setup.md` in place of a `.env.example`, which Claude's Write tool refuses under this project's `Read(./.env.*)` deny rule. Keep this file short; procedures live in `skills/`, not here.
 
 Always-true conventions for this project. Procedures live in `.claude/skills/`. The house voice is in `.claude/output-styles/house-voice.md`. When a rule here and a skill disagree, this file wins for conventions and the skill wins for procedure.
 
 ## What this project is
 
-Holly, the Daily Ops Dashboard: a Python 3.12 FastAPI server. Archetype: `server` (one of: `static` single-file or built-static artifact; `server` backed container application). Deployment target: the Bluestaq App Store at `<slug>.apps.bluestaq.com`, slug `TBC, re-verify` (assumed `holly` in `sonar-project.properties`), detected template `python` (one of `static-html`, `node-react`, `java-spring`, `python`, `docker-only`), detected from `requirements.txt` with the `Dockerfile` at the root.
+Holly, the daily operations dashboard for Space Domain Awareness (SDA) watch analysts, built from the Daily Operations Dashboard: a Python 3.12 FastAPI server that also serves its React dashboard (`frontend/`, compiled into the image), with PostgreSQL and file storage from the App Store's POSTGRESQL and FILE_STORAGE add-ons. Archetype: `server` (one of: `static` single-file or built-static artifact; `server` backed container application). Deployment target: the Bluestaq App Store at `<slug>.apps.bluestaq.com`, slug `TBC, re-verify` (assumed `holly` in `sonar-project.properties`), detected template `python` (one of `static-html`, `node-react`, `java-spring`, `python`, `docker-only`), detected from `requirements.txt` with the `Dockerfile` at the root.
 
 ## Hard rules (never violate)
 
@@ -26,7 +26,8 @@ Holly, the Daily Ops Dashboard: a Python 3.12 FastAPI server. Archetype: `server
 **Server archetype**
 - **The container is the whole build.** A single `Dockerfile` installs from the lockfile and runs the server; no separate bundler output. Runs as a non-root numeric user, no setuid/setgid binaries.
 - **Listen on `process.env.PORT`, default 8080, bound to `0.0.0.0`.** Never add `ENV PORT=` to the Dockerfile. Answer `/`, `/healthz`, `/readyz`, `/livez`, `/ping` with HTTP 200, unauthenticated, touching nothing.
-- **Secrets are server-side only.** Compare the team token in constant time. Validate every request body and every LLM output before storing or returning it; the dataset merge never silently shrinks.
+- **Secrets are server-side only.** Compare secrets in constant time (bcrypt and PyJWT's signature check do). Sign-in guards every route outside the reviewed public set in `tests/test_app.py`. Validate every request body and every LLM output before storing or returning it; the dataset merge never silently shrinks.
+- **One process.** gunicorn runs one worker: the background loops, the rate limits and the assistant's daily token cap live in it. Migrations run in the gunicorn master at start, under an advisory lock.
 
 ## Commands
 
@@ -35,8 +36,11 @@ python3.12 -m venv .venv && .venv/bin/pip install --require-hashes -r requiremen
 sh scripts/verify.sh                     # the verification loop: pin, format, lint, types, complexity, duplication, tests with coverage, audit
 PYTHONPATH=src .venv/bin/python -m app   # dev server on 0.0.0.0, at PORT or 8080
 sh scripts/simulate-pipeline.sh          # before every upload: package, check out and test the way the platform does
-sh scripts/smoke-container.sh            # before every upload: build the image from the upload, run it, probe the contract
+sh scripts/smoke-container.sh            # before every upload: build the image from the upload, run it with PostgreSQL, probe the contract
+sh scripts/dev.sh                        # local run: PostgreSQL, migrations, the API on 8080, the dashboard on 3000
 ```
+
+The dashboard installs from its lockfile with `cd frontend && npm ci --ignore-scripts`; the loop runs its lint, format, build, unit tests and `npm audit`. Pin dashboard packages exactly and relock with `npm install --package-lock-only`, never by hand.
 
 Relock after any dependency change with the `uv pip compile` command in the header of `requirements.in`, then `requirements-dev.in`; never edit a lockfile by hand. Packaging runs the upload nets in `scripts/check-package.sh` (required members, banned names, and a content scan with the secret-scan hook's rules), so it needs `node` and `unzip`; the loop's self-test of those nets also needs `python3`. The upload may carry only strict UTF-8 text, plus any binary pinned by SHA-256 with a reason in `scripts/upload-binaries.txt` (read from HEAD); treat any change there as a security change.
 
@@ -45,12 +49,17 @@ Every change runs the verification loop, then passes the `engineering-reviewer` 
 ## Directory layout
 
 ```
-src/app/                the application: factory.py (create_app), main.py (ASGI entry), config.py, gunicorn_conf.py
-Dockerfile              the container build, hardened and flattened to one layer
+src/app/                the application: factory.py (create_app), main.py (ASGI entry), config.py, gunicorn_conf.py,
+                        migrate.py; api/ (routes), core/, db/, models/, schemas/, services/, cli/
+src/app/migrations/     the Alembic migrations, applied at container start (alembic.ini serves the CLI)
+frontend/               the React dashboard (Vite, TypeScript), built into src/app/static by the Dockerfile
+infra/docker-compose.yml  a local PostgreSQL for development only
+Dockerfile              the container build: the dashboard stage, then hardened and flattened to one layer
 scripts/                verify.sh (the loop), package-appstore.sh with check-package.sh, scan-package.mjs,
                         upload-binaries.txt and test-package-nets.sh (the upload nets),
                         simulate-pipeline.sh, smoke-container.sh
-tests/                  the pytest suite (coverage.xml, 80% floor)
+tests/                  the pytest suite (coverage.xml, 80% floor); tests/fakes.py holds the session fake
+docs/                   architecture, runbook, user handbook, security and developer setup (settings reference)
 docs/AUDIT-LOG.md       one row per change
 SECURITY.md             the accepted security positions and their trip-wires
 .claude/                this baseline (skills, agents, output style, hooks, settings)
@@ -58,7 +67,7 @@ SECURITY.md             the accepted security positions and their trip-wires
 
 ## Naming and versioning
 
-- Releases are `V<major>.<minor>`; the current stamp is V0.1 (`__version__` in `src/app/__init__.py`, held equal to `pyproject.toml` by a test). Bump the in-app version stamp and add one audit row to `docs/AUDIT-LOG.md` on every change.
+- Releases are `V<major>.<minor>`; the current stamp is V0.2 (`__version__` in `src/app/__init__.py`, held equal to `pyproject.toml` by a test; `frontend/package.json` carries the same). Bump the in-app version stamp and add one audit row to `docs/AUDIT-LOG.md` on every change.
 - Static delivery copies (static archetype only, so not used here) follow `Bluestaq_Limited_-_<product>_-_V<major>_<minor>_-_<date>.html`.
 - The App Store app name (slug) is lowercase, hyphenated, starts and ends alphanumeric, unique in the store: `TBC, re-verify`.
 

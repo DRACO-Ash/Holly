@@ -36,6 +36,42 @@ step "Tests with coverage (pytest --cov; writes coverage.xml and fails under 80%
 "$BIN/pytest" --cov --cov-report=xml --cov-report=term-missing
 test -s coverage.xml || { echo "FAIL: coverage.xml is missing or empty; the gate would read 0%"; exit 1; }
 
+step "Dashboard: install from the lockfile, then lint, format, types and build, unit tests"
+echo "Reads: frontend/ with its committed configuration. The lockfile must not change."
+(
+  cd frontend
+  npm ci --ignore-scripts --no-audit --no-fund
+  git diff --exit-code -- package-lock.json \
+    || { echo "FAIL: npm ci changed package-lock.json; relock from package.json"; exit 1; }
+  npm run lint
+  npm run format:check
+  npm run build
+  npm test
+)
+
+step "Dashboard dependency audit (npm audit: runtime and tooling, every severity)"
+# npm audit exits 0 with an error-shaped report when it cannot reach the advisory service, so
+# the report's shape is checked: no metadata means the audit did not run, which fails.
+(cd frontend && npm audit --json || true) | node -e '
+let text = "";
+process.stdin.on("data", (chunk) => (text += chunk)).on("end", () => {
+  let report;
+  try {
+    report = JSON.parse(text);
+  } catch {
+    console.log("FAIL: npm audit gave no report");
+    process.exit(1);
+  }
+  if (!report.metadata) {
+    console.log("FAIL: npm audit could not check: " + (report.message || "no metadata"));
+    process.exit(1);
+  }
+  const found = report.metadata.vulnerabilities;
+  const total = ["info", "low", "moderate", "high", "critical"].reduce((n, k) => n + (found[k] || 0), 0);
+  console.log(`npm audit: ${total} known vulnerabilities in ${report.metadata.dependencies.total} packages`);
+  process.exit(total === 0 ? 0 : 1);
+});'
+
 step "Upload nets self-test (every planted problem refused, a clean upload accepted)"
 sh scripts/test-package-nets.sh
 

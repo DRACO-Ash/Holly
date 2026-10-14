@@ -1,4 +1,4 @@
-import { apiClient } from "./client";
+import { apiClient, downloadFile } from "./client";
 import type {
   ShiftDateList,
   ShiftExportFormat,
@@ -59,6 +59,12 @@ export async function generateShiftSummary(shiftDate?: string): Promise<ShiftSum
   return data;
 }
 
-export function shiftExportUrl(shiftDate: string, format: ShiftExportFormat): string {
-  return `/api/v1/shift-log/export?shift_date=${encodeURIComponent(shiftDate)}&format=${format}`;
+export async function downloadShiftExport(
+  shiftDate: string,
+  format: ShiftExportFormat,
+): Promise<void> {
+  await downloadFile("/shift-log/export", `shift-log-${shiftDate}.${format}`, {
+    shift_date: shiftDate,
+    format,
+  });
 }

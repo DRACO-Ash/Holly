@@ -1,15 +1,14 @@
-import uuid
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 from sqlalchemy import DateTime, Index, Integer, String, Text, UniqueConstraint
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.db.base import Base, TimestampMixin
+from app.db.base import Base, TimestampMixin, UDLEnvelopeMixin, UUIDPrimaryKeyMixin
 
 
-class Notification(Base, TimestampMixin):
+class Notification(Base, UUIDPrimaryKeyMixin, UDLEnvelopeMixin, TimestampMixin):
     """Generic UDL notification record.
 
     Covers Tactical Reports (TACREP) and Notices to Space Operators
@@ -26,60 +25,44 @@ class Notification(Base, TimestampMixin):
 
     __tablename__ = "notification"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid.uuid4,
-    )
-    udl_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
-
     # Top-level UDL envelope
-    msg_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    data_mode: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
-    source: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    classification_marking: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    created_by: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    orig_network: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    udl_created_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True,
-    )
+    msg_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     # msgBody-derived identifiers
-    notso_identifier: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    notice_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    event_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    notso_identifier: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    notice_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    event_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     # msgBody-derived classification of the event
-    event_class: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
-    event_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    status: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    event_class: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    event_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    status: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     # msgBody-derived content
-    subject: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
-    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    region: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    notso_link: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    company_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    subject: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    region: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    notso_link: Mapped[str | None] = mapped_column(Text, nullable=True)
+    company_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
     # Time fields
-    publish_date: Mapped[Optional[datetime]] = mapped_column(
+    publish_date: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
     )
-    effective_from: Mapped[Optional[datetime]] = mapped_column(
+    effective_from: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
     )
-    effective_until: Mapped[Optional[datetime]] = mapped_column(
+    effective_until: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
     )
 
     # Associated satellite(s). `sat_no` is a convenience for single-sat
     # notices; `sat_ids` holds the full list for multi-sat notices.
-    sat_no: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    sat_ids: Mapped[Optional[list[str]]] = mapped_column(JSONB, nullable=True)
+    sat_no: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    sat_ids: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
 
     raw: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 

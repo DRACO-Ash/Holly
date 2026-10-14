@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { listNotifications, refreshNotificationsNow } from "../api/notifications";
 import SortableHeader from "../components/SortableHeader";
 import type { Notification, NotificationSortColumn, SortDirection } from "../types";
+import { extractErrorMessage } from "../utils/errors";
 
 const PAGE_SIZE = 50;
 
@@ -23,16 +24,6 @@ function formatSatIds(item: Notification): string {
 function statusClass(status: string | null): string {
   if (!status) return "status-pill";
   return `status-pill status-${status.toLowerCase()}`;
-}
-
-function extractErrorMessage(err: unknown, fallback: string): string {
-  if (err && typeof err === "object" && "response" in err) {
-    const response = (err as { response?: { data?: { detail?: unknown } } }).response;
-    const detail = response?.data?.detail;
-    if (typeof detail === "string") return detail;
-  }
-  if (err instanceof Error) return err.message;
-  return fallback;
 }
 
 export default function NotificationsPage() {

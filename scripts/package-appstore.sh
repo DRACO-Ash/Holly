@@ -32,10 +32,13 @@ trap finish EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+# frontend/ is the dashboard's source, which the Dockerfile compiles; alembic.ini is the
+# developer's migration entry point, which the test suite checks against the packaged
+# migrations in src/app/migrations.
 git archive --format=zip -o "$TMP" HEAD -- \
-  Dockerfile .dockerignore .python-version pyproject.toml README.md \
+  Dockerfile .dockerignore .python-version pyproject.toml README.md alembic.ini \
   requirements.in requirements.txt requirements-dev.in requirements-dev.txt \
-  sonar-project.properties src tests
+  sonar-project.properties src tests frontend
 
 sh scripts/check-package.sh "$TMP"
 

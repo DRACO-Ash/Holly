@@ -76,7 +76,7 @@ export function EventTimersProvider({ children }: { children: ReactNode }) {
 
   // Track which timers we have already played the pre-alert beep for
   // in this browser session, independent of the server-side
-  // pre_alert_fired_at flag — that flag persists across sessions, but
+  // pre_alert_fired_at flag; that flag persists across sessions, but
   // we still want a chime on the first poll after page load if the
   // operator hasn't acked yet.
   const alertedPreAlertIdsRef = useRef<Set<string>>(new Set());
@@ -154,7 +154,7 @@ export function EventTimersProvider({ children }: { children: ReactNode }) {
       alertedPreAlertIdsRef.current.add(t.id);
       playPreAlert();
       if (typeof Notification !== "undefined" && Notification.permission === "granted") {
-        new Notification("Event in 5 minutes", {
+        new Notification(`Event in ${t.pre_alert_minutes} min`, {
           body: t.label,
           tag: `event-timer-pre-${t.id}`,
         });

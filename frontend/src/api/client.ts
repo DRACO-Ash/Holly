@@ -1,9 +1,8 @@
 import axios, { AxiosError, AxiosRequestConfig } from "axios";
+import { filenameFromDisposition, saveBlob } from "../utils/download";
 
-export const ACCESS_TOKEN_KEY = "ops-dashboard.auth.access";
-export const REFRESH_TOKEN_KEY = "ops-dashboard.auth.refresh";
-
-const LEGACY_TOKEN_KEY = "ops-dashboard.auth.token";
+export const ACCESS_TOKEN_KEY = "holly.auth.access";
+export const REFRESH_TOKEN_KEY = "holly.auth.refresh";
 
 export const apiClient = axios.create({
   baseURL: "/api/v1",
@@ -13,7 +12,6 @@ export const apiClient = axios.create({
 function clearTokens(): void {
   localStorage.removeItem(ACCESS_TOKEN_KEY);
   localStorage.removeItem(REFRESH_TOKEN_KEY);
-  localStorage.removeItem(LEGACY_TOKEN_KEY);
 }
 
 function redirectToLogin(): void {
@@ -91,3 +89,18 @@ apiClient.interceptors.response.use(
     }
   },
 );
+
+// Fetch a file with the signed-in analyst's token and save it under the server's file name.
+export async function downloadFile(
+  path: string,
+  fallbackName: string,
+  params?: Record<string, string>,
+): Promise<void> {
+  const response = await apiClient.get<Blob>(path, { params, responseType: "blob" });
+  const disposition = response.headers["content-disposition"];
+  const name = filenameFromDisposition(
+    typeof disposition === "string" ? disposition : null,
+    fallbackName,
+  );
+  saveBlob(response.data, name);
+}

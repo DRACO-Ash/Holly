@@ -1,9 +1,23 @@
-from datetime import datetime, timezone
-from typing import Any, Optional
+"""A read-only client for the Unified Data Library (UDL), over HTTPS with Basic auth.
 
-import httpx
+Errors carry a short message of Holly's own: UDL's response body goes to the server log,
+never back to a browser.
+"""
 
-from app.config import settings
+import logging
+from datetime import UTC, datetime
+from http import HTTPStatus
+from typing import Any, Self
+
+import httpx2
+
+from app.config import get_settings
+from app.services.api_client import ApiClient
+
+logger = logging.getLogger(__name__)
+
+UDLRecord = dict[str, Any]
+QueryValue = str | int | float | bool
 
 
 class UDLClientError(Exception):
@@ -16,128 +30,107 @@ class UDLAuthError(UDLClientError):
 
 def _format_epoch(dt: datetime) -> str:
     if dt.tzinfo is not None:
-        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+        dt = dt.astimezone(UTC).replace(tzinfo=None)
     return dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
-class UDLClient:
+def _after(dt: datetime) -> str:
+    # UDL accepts only `>` as the interval operator on these endpoints (`>=` is rejected).
+    # The microsecond between the two never matters in practice.
+    return f">{_format_epoch(dt)}"
+
+
+def _present(**params: QueryValue | None) -> dict[str, QueryValue]:
+    """The query parameters that were supplied, under their UDL names."""
+    return {name: value for name, value in params.items() if value is not None}
+
+
+class UDLClient(ApiClient):
+    service = "UDL"
+    error = UDLClientError
+    logger = logger
+
     def __init__(
         self,
-        base_url: Optional[str] = None,
-        username: Optional[str] = None,
-        password: Optional[str] = None,
-        timeout: Optional[float] = None,
-        verify_ssl: Optional[bool] = None,
-        transport: Optional[httpx.AsyncBaseTransport] = None,
+        base_url: str | None = None,
+        username: str | None = None,
+        password: str | None = None,
+        timeout: float | None = None,
+        verify_ssl: bool | None = None,
+        transport: httpx2.AsyncBaseTransport | None = None,
     ) -> None:
+        settings = get_settings()
         self._base_url = (base_url or settings.udl_base_url).rstrip("/")
         self._username = username if username is not None else settings.udl_username
-        self._password = password if password is not None else settings.udl_password
+        self._password = (
+            password if password is not None else settings.udl_password.get_secret_value()
+        )
         self._timeout = timeout if timeout is not None else settings.udl_request_timeout_seconds
         self._verify_ssl = verify_ssl if verify_ssl is not None else settings.udl_verify_ssl
         self._transport = transport
-        self._client: Optional[httpx.AsyncClient] = None
+        self._client: httpx2.AsyncClient | None = None
 
-    async def __aenter__(self) -> "UDLClient":
+    async def __aenter__(self) -> Self:
         if not self._username or not self._password:
-            raise UDLClientError(
-                "UDL credentials are not configured (UDL_USERNAME / UDL_PASSWORD)."
-            )
-        client_kwargs: dict[str, Any] = {
-            "base_url": self._base_url,
-            "auth": httpx.BasicAuth(self._username, self._password),
-            "timeout": self._timeout,
-            "verify": self._verify_ssl,
-        }
-        if self._transport is not None:
-            client_kwargs["transport"] = self._transport
-        self._client = httpx.AsyncClient(**client_kwargs)
+            msg = "UDL credentials are not configured (UDL_USERNAME / UDL_PASSWORD)."
+            raise UDLClientError(msg)
+        client = httpx2.AsyncClient(
+            base_url=self._base_url,
+            auth=httpx2.BasicAuth(self._username, self._password),
+            timeout=self._timeout,
+            verify=self._verify_ssl,
+            transport=self._transport,
+        )
+        self._client = await client.__aenter__()
         return self
 
-    async def __aexit__(self, *exc_info: Any) -> None:
-        if self._client is not None:
-            await self._client.aclose()
-            self._client = None
+    def _check_auth(self, response: httpx2.Response) -> None:
+        if response.status_code == HTTPStatus.UNAUTHORIZED:
+            msg = "UDL rejected credentials (401)."
+            raise UDLAuthError(msg)
 
     async def get_elsets(
         self,
         epoch_gte: datetime,
-        sat_no: Optional[int] = None,
-        data_mode: Optional[str] = None,
-        max_results: Optional[int] = None,
-    ) -> list[dict]:
-        # UDL's elset endpoint rejects `>=` and only accepts `>` as the
-        # interval operator (the notification endpoint behaves the same
-        # way). The microsecond difference between strict-greater-than
-        # and greater-than-or-equal is irrelevant in practice.
-        params: dict[str, Any] = {"epoch": f">{_format_epoch(epoch_gte)}"}
-        if sat_no is not None:
-            params["satNo"] = sat_no
-        if data_mode is not None:
-            params["dataMode"] = data_mode
-        if max_results is not None:
-            params["maxResults"] = max_results
-        return await self._get_list("/elset", params)
+        sat_no: int | None = None,
+        data_mode: str | None = None,
+        max_results: int | None = None,
+    ) -> list[UDLRecord]:
+        params = _present(satNo=sat_no, dataMode=data_mode, maxResults=max_results)
+        return await self._get_list("/elset", {"epoch": _after(epoch_gte), **params})
 
     async def get_maneuvers(
         self,
         event_start_time_gte: datetime,
-        sat_no: Optional[int] = None,
-        data_mode: Optional[str] = None,
-        max_results: Optional[int] = None,
-    ) -> list[dict]:
-        # UDL filter operator for eventStartTime is `>` (same as the
-        # notification and elset endpoints — `>=` is not accepted).
-        params: dict[str, Any] = {"eventStartTime": f">{_format_epoch(event_start_time_gte)}"}
-        if sat_no is not None:
-            params["satNo"] = sat_no
-        if data_mode is not None:
-            params["dataMode"] = data_mode
-        if max_results is not None:
-            params["maxResults"] = max_results
-        return await self._get_list("/maneuver", params)
+        sat_no: int | None = None,
+        data_mode: str | None = None,
+        max_results: int | None = None,
+    ) -> list[UDLRecord]:
+        params = _present(satNo=sat_no, dataMode=data_mode, maxResults=max_results)
+        return await self._get_list(
+            "/maneuver", {"eventStartTime": _after(event_start_time_gte), **params}
+        )
 
     async def get_notifications(
         self,
-        msg_type: Optional[str] = None,
-        created_at_gte: Optional[datetime] = None,
-        data_mode: Optional[str] = None,
-        source: Optional[str] = None,
-        max_results: Optional[int] = None,
-    ) -> list[dict]:
-        params: dict[str, Any] = {}
-        if msg_type is not None:
-            params["msgType"] = msg_type
-        if created_at_gte is not None:
-            params["createdAt"] = f">{_format_epoch(created_at_gte)}"
-        if data_mode is not None:
-            params["dataMode"] = data_mode
-        if source is not None:
-            params["source"] = source
-        if max_results is not None:
-            params["maxResults"] = max_results
+        msg_type: str | None = None,
+        created_at_gte: datetime | None = None,
+        data_mode: str | None = None,
+        source: str | None = None,
+        max_results: int | None = None,
+    ) -> list[UDLRecord]:
+        params = _present(
+            msgType=msg_type,
+            createdAt=_after(created_at_gte) if created_at_gte is not None else None,
+            dataMode=data_mode,
+            source=source,
+            maxResults=max_results,
+        )
         return await self._get_list("/notification", params)
 
-    async def _get_list(self, path: str, params: dict[str, Any]) -> list[dict]:
-        if self._client is None:
-            raise UDLClientError("UDLClient must be used as an async context manager.")
-
-        try:
-            response = await self._client.get(path, params=params)
-        except httpx.HTTPError as exc:
-            raise UDLClientError(f"UDL request failed: {exc}") from exc
-
-        if response.status_code == 401:
-            raise UDLAuthError("UDL rejected credentials (401).")
-        if response.status_code >= 400:
-            raise UDLClientError(f"UDL returned HTTP {response.status_code}: {response.text[:200]}")
-
-        try:
-            data = response.json()
-        except ValueError as exc:
-            raise UDLClientError(f"UDL response was not valid JSON: {exc}") from exc
-
+    async def _get_list(self, path: str, params: dict[str, QueryValue]) -> list[UDLRecord]:
+        data = await self._get_json(path, params)
         if not isinstance(data, list):
-            raise UDLClientError(f"UDL response was not a list (got {type(data).__name__}).")
-
+            msg = f"UDL response was not a list (got {type(data).__name__})."
+            raise UDLClientError(msg)
         return data

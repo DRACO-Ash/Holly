@@ -1,69 +1,21 @@
+# A local PostgreSQL for developing Holly. On the App Store the POSTGRESQL add-on provides the
+# database; this stands in for it on a developer's machine, reachable only from localhost.
+#   POSTGRES_PASSWORD=<choose one> docker compose -f infra/docker-compose.yml up -d
+# then point Holly at it with DATABASE_URL in your local .env (see docs/developer/setup.md).
+# scripts/dev.sh starts it, applies the migrations and runs Holly with the dashboard.
 services:
   db:
-    image: postgres:15-alpine
+    # PostgreSQL 15.19, the version the container smoke rung tests against.
+    image: postgres:15-alpine@sha256:f7d23353e1b15400d22ebe31189f4d314b87a4c129cc400c8c2d8d4ca127bf81
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    networks:
-      - internal
-
-  backend:
-    build:
-      context: ../backend
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    env_file: ../.env
-    depends_on:
-      - db
-    networks:
-      # internal: DB connectivity. external: outbound calls to UDL
-      # and the Anthropic API (the assistant reasoning pipeline).
-      - internal
-      - external
-    volumes:
-      - ../backend:/app
-      # /workspace gives alembic access to alembic.ini and migrations/
-      # at the repo root (the dev.ps1 script runs migrations via
-      # `docker compose exec -w /workspace backend alembic upgrade head`).
-      - ..:/workspace
-      # Persistent storage for operator-uploaded procedures. The path
-      # matches PROCEDURE_STORAGE_PATH in config defaults.
-      - procedures_data:/data/procedures
-
-  frontend:
-    build:
-      context: ../frontend
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    networks:
-      - internal
-
-  nginx:
-    image: nginx:alpine
-    restart: unless-stopped
+      POSTGRES_DB: holly
+      POSTGRES_USER: holly
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD before starting the database}
     ports:
-      - "443:443"
+      - "127.0.0.1:5432:5432"
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./certs:/etc/nginx/certs:ro
-    depends_on:
-      - backend
-      - frontend
-    networks:
-      - internal
-      - external
+      - holly_db:/var/lib/postgresql/data
 
 volumes:
-  postgres_data:
-  procedures_data:
-
-networks:
-  internal:
-    driver: bridge
-    internal: true
-  external:
-    driver: bridge
+  holly_db:

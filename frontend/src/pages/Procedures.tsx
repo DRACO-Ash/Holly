@@ -1,6 +1,13 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { deleteProcedure, getProcedure, listProcedures, uploadProcedure } from "../api/procedures";
+import {
+  deleteProcedure,
+  downloadProcedure,
+  getProcedure,
+  listProcedures,
+  uploadProcedure,
+} from "../api/procedures";
 import type { Procedure, ProcedureContent } from "../types";
+import { extractErrorMessage } from "../utils/errors";
 
 function formatDateTime(value: string): string {
   return new Date(value).toISOString().replace("T", " ").slice(0, 19);
@@ -10,16 +17,6 @@ function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} kB`;
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
-}
-
-function extractErrorMessage(err: unknown, fallback: string): string {
-  if (err && typeof err === "object" && "response" in err) {
-    const response = (err as { response?: { data?: { detail?: unknown } } }).response;
-    const detail = response?.data?.detail;
-    if (typeof detail === "string") return detail;
-  }
-  if (err instanceof Error) return err.message;
-  return fallback;
 }
 
 export default function ProceduresPage() {
@@ -69,6 +66,15 @@ export default function ProceduresPage() {
       setError(extractErrorMessage(err, "Upload failed."));
     } finally {
       setUploading(false);
+    }
+  }
+
+  async function onDownload(procedure: Procedure) {
+    setError(null);
+    try {
+      await downloadProcedure(procedure.id, procedure.filename);
+    } catch (err) {
+      setError(extractErrorMessage(err, "Download failed."));
     }
   }
 
@@ -171,9 +177,9 @@ export default function ProceduresPage() {
                   <button type="button" onClick={() => onView(p.id)}>
                     View
                   </button>{" "}
-                  <a href={`/api/v1/procedures/${p.id}/download`} target="_blank" rel="noreferrer">
+                  <button type="button" onClick={() => void onDownload(p)}>
                     Download
-                  </a>{" "}
+                  </button>{" "}
                   <button type="button" onClick={() => onDelete(p.id)}>
                     Delete
                   </button>

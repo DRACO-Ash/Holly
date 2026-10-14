@@ -1,24 +1,22 @@
-"""Claude-driven polish and end-of-shift narrative for the ops-floor log.
+"""Claude's polish and end-of-shift narrative for the ops-floor log.
 
-Two distinct prompts:
+Two prompts:
 
-● polish: the operator types a raw observation (often a rant), Claude
-  rewrites it as a professional, factual single paragraph stripped of
-  opinion or controversy.
+● polish: the operator types a raw observation (often a rant); Claude rewrites it as a
+  professional, factual single paragraph stripped of opinion or controversy.
 
-● summarise: at end-of-shift, Claude reads the day's polished notes in
-  order and composes a handover narrative for the incoming crew.
+● summarise: at the end of a shift, Claude reads the day's polished notes in order and
+  composes a handover narrative for the incoming crew.
+
+Either may fail; the caller stores the note or summary anyway, with the error, so the raw
+observation is never lost.
 """
 
 import logging
-from typing import Optional
 
-import anthropic
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.config import settings
+from app.config import get_settings
 from app.models.shift_note import ShiftNote
-from app.services.assistant import AssistantError, is_persistent_anthropic_failure
+from app.services.claude import AssistantError, call_claude
 
 logger = logging.getLogger(__name__)
 
@@ -62,89 +60,47 @@ Plain markdown only. No HTML, no code fences, no preamble before
 section 1.
 """
 
-
-def _call_claude_text(system_prompt: str, user_message: str, max_tokens: int) -> str:
-    """Wrapper omitted here; see _async_call_claude_text. Synchronous
-    callers are not expected; this stub exists to anchor the import."""
-    raise NotImplementedError
+ClaudeText = tuple[str | None, str | None, str | None]
 
 
-async def _async_call_claude_text(
-    system_prompt: str,
-    user_message: str,
-    max_tokens: int,
-) -> tuple[str, str]:
-    if not settings.anthropic_api_key:
-        raise AssistantError("ANTHROPIC_API_KEY is not configured")
-    client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+async def polish_text(raw: str) -> ClaudeText:
+    """Return (polished_text, model, error): (text, model, None), or (None, model, message)."""
+    settings = get_settings()
     try:
-        response = await client.messages.create(
-            model=settings.anthropic_model,
-            max_tokens=max_tokens,
-            system=system_prompt,
-            messages=[{"role": "user", "content": user_message}],
-        )
-    except anthropic.APIError as exc:
-        raise AssistantError(f"Anthropic API error: {exc}") from exc
-    chunks: list[str] = []
-    for block in response.content:
-        text_value = getattr(block, "text", None)
-        if isinstance(text_value, str):
-            chunks.append(text_value)
-    if not chunks:
-        raise AssistantError("Model response contained no text blocks")
-    return "\n".join(chunks).strip(), settings.anthropic_model
-
-
-async def polish_text(raw: str) -> tuple[Optional[str], Optional[str], Optional[str]]:
-    """Return (polished_text, model, error).
-
-    On success: (polished, model, None).
-    On failure: (None, model, error_message). Caller is expected to
-    persist the row anyway so the raw observation is not lost.
-    """
-    try:
-        polished, model = await _async_call_claude_text(
-            _POLISH_SYSTEM_PROMPT, raw.strip(), max_tokens=settings.anthropic_max_tokens
+        reply = await call_claude(
+            _POLISH_SYSTEM_PROMPT,
+            raw.strip(),
+            max_tokens=settings.anthropic_max_tokens,
+            purpose="shift_log.polish",
         )
     except AssistantError as exc:
         logger.warning("Shift-note polish failed: %s", exc)
         return None, settings.anthropic_model, str(exc)
-    return polished, model, None
+    return reply.text, reply.model, None
 
 
 def _format_notes_for_summary(notes: list[ShiftNote]) -> str:
     lines: list[str] = []
-    for n in notes:
-        ts = n.created_at.isoformat() if n.created_at else "?"
-        body = (n.polished_text or n.raw_text).strip()
+    for note in notes:
+        ts = note.created_at.isoformat() if note.created_at else "?"
+        body = (note.polished_text or note.raw_text).strip()
         lines.append(f"- {ts}: {body}")
     return "\n".join(lines)
 
 
-async def summarise_shift(
-    db: AsyncSession,
-    notes: list[ShiftNote],
-) -> tuple[Optional[str], Optional[str], Optional[str]]:
+async def summarise_shift(notes: list[ShiftNote]) -> ClaudeText:
     """Return (narrative_markdown, model, error)."""
-    _ = db  # reserved for future cross-context lookups
+    settings = get_settings()
     if not notes:
         return None, settings.anthropic_model, "Cannot summarise an empty shift."
-    user_message = _format_notes_for_summary(notes)
     try:
-        narrative, model = await _async_call_claude_text(
+        reply = await call_claude(
             _SUMMARY_SYSTEM_PROMPT,
-            user_message,
+            _format_notes_for_summary(notes),
             max_tokens=settings.anthropic_max_tokens,
+            purpose="shift_log.summary",
         )
     except AssistantError as exc:
         logger.warning("Shift summary generation failed: %s", exc)
         return None, settings.anthropic_model, str(exc)
-    return narrative, model, None
-
-
-__all__ = [
-    "polish_text",
-    "summarise_shift",
-    "is_persistent_anthropic_failure",
-]
+    return reply.text, reply.model, None

@@ -4,28 +4,28 @@
 
 **Document classification:** Commercial in Confidence
 **Data classification:** Unclassified (per ADR-006)
-**Owner:** Daily Operations Dashboard Team, Bluestaq Limited
-**Version:** 0.2
-**Last updated:** 2026-05-28
+**Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned the edition this one replaces)
+**Version:** 0.3
+**Last updated:** 2026-10-14
 
 > **BLUF**
 >
-> Sovereign UK deployment carrying Unclassified data. Controls aim at integrity, audit, and operational hygiene rather than protecting classified material. JWT-gated routes, tamper-evident audit chain, TLS-everywhere, scanned dependencies, scanned secrets.
+> Holly carries Unclassified data on the Bluestaq App Store. Its controls aim at integrity, audit and operational hygiene: JSON Web Token (JWT) sign-in on every data route, an append-only and hash-chained audit log, strict response headers, request and cost limits that fail closed, settings validated at boot, and scanned dependencies. TLS is the platform's. Accepted positions and their trip-wires are in [SECURITY.md](../../SECURITY.md).
 
 **SECTION 01**
 
 ## Posture
 
-Sovereign UK deployment serving SDA analysts. All data processed is confirmed Unclassified (ADR-006), so the controls below are aimed at integrity, audit, and operational hygiene rather than at protecting classified material. The security model assumes a trusted operator network in front of nginx, with application-level controls layered behind that.
+Holly serves SDA watch analysts from one container on the Bluestaq App Store. All data it processes is recorded as Unclassified (ADR-006), so the controls below aim at integrity, audit and operational hygiene rather than at protecting classified material. The Daily Operations Dashboard assumed a sovereign UK host behind a trusted operator network; whether the App Store hosting meets that assumption is `TBC, re-verify`.
 
 **SECTION 02**
 
 ## Data classification
 
-● **Unclassified.** Confirmed by ADR-006. Applies to UDL TACREP_NOTSOs, elset records, Mattermost content, ClickUp exports, procedure documents, and analyst inputs.
-● No handling caveats apply. Commercial cloud providers and commercial AI APIs (Anthropic Claude) are permitted in Phase 2.
+● **Unclassified**, per ADR-006, which covers UDL notifications and element sets, Mattermost content, procedure documents and analyst inputs. UDL manoeuvre records are a UDL source like the others; ADR-006 does not name them.
+● ADR-006 permits commercial AI APIs (Anthropic Claude) for this data. Section 09 lists exactly what Holly sends to Anthropic.
 
-When new data sources are added, ADR-006 must be re-evaluated. Any source carrying a higher classification must be rejected at ingest until the system is uplifted.
+When a new data source is added, ADR-006 must be re-evaluated. A source carrying a higher classification must be refused at ingest until the system is uplifted.
 
 **SECTION 03**
 
@@ -33,114 +33,160 @@ When new data sources are added, ADR-006 must be re-evaluated. Any source carryi
 
 ### Current state
 
-● HS256 JWT bearer tokens issued by `/api/v1/auth/login` and refreshed at `/api/v1/auth/refresh` (ADR-010 and ADR-011).
-● Access tokens last 30 minutes; refresh tokens last 7 days. Every token carries a `jti` (JWT ID) claim.
-● Passwords hashed with bcrypt via `passlib`.
-● **Refresh-token rotation (ADR-011).** Every successful refresh issues a new access AND a new refresh token; the old refresh token's JTI is added to the `revoked_jti` block-list. A reused old refresh token is rejected with audit reason `revoked_token`.
-● **Server-side logout.** `POST /auth/logout` takes the refresh token in its body, revokes its JTI, and audits the action. No access-token header is required.
-● Frontend stores both tokens in `localStorage`. Axios injects the access token, refreshes once on 401 (storing the new refresh token returned by the server), and forces logout on refresh failure.
-● `get_current_user` validates the access token, confirms type is `access`, loads the user, rejects if inactive. Access-token revocation is not yet checked on every request (see below).
+● HS256 JWT bearer tokens, issued by `POST /api/v1/auth/login` and refreshed at `POST /api/v1/auth/refresh` (ADR-010 and ADR-011), signed with `APP_SECRET_KEY` through PyJWT. `JWT_ALGORITHM` may select HS384 or HS512. Decoding accepts the configured algorithm only and requires the `exp`, `sub`, `type` and `jti` claims, so an unsigned or differently signed token never verifies ([src/app/core/security.py](../../src/app/core/security.py)). The Daily Operations Dashboard's python-jose is gone.
+● Access tokens last 30 minutes and refresh tokens 7 days by default. Every token carries its own JWT ID (JTI).
+● **Refresh-token rotation (ADR-011).** Every successful refresh issues a new access token and a new refresh token, and the old refresh token's JTI joins the `revoked_jti` block-list. A reused refresh token is refused and audited with reason `revoked_token`.
+● **Server-side sign-out.** `POST /api/v1/auth/logout` takes the refresh token in its body, revokes its JTI and audits the action.
+● **Access tokens are not block-listed.** After sign-out, an access token stays valid until it expires, up to 30 minutes by default. Every request does check that the user still exists and is active.
+● **Passwords** are bcrypt hashes from the `bcrypt` library; only the first 72 bytes of a password count.
+● **Guessing is limited.** After 10 failed sign-ins for one username within 15 minutes, further attempts for it answer 429 with `Retry-After` and are audited with reason `rate_limited`; a success clears the count. An unknown username still costs a real bcrypt check against a dummy hash, so response time does not reveal which usernames exist ([src/app/api/v1/routes/auth.py](../../src/app/api/v1/routes/auth.py)).
+● **Bounded input.** Usernames are at most 50 characters, passwords 1,024 and tokens 4,096; anything longer is refused before any work.
+● **In the browser**, both tokens are kept in `localStorage` under `holly.auth.access` and `holly.auth.refresh`. Any script running in Holly's origin could read them; the dashboard's Content Security Policy (CSP), which allows scripts from Holly's own origin only and no inline script, is the mitigation.
 
 ### Bootstrap
 
 There is no public sign-up. The first admin is created with:
 
-```powershell
-cd backend
-python -m scripts.create_admin --username your.username --password '<choose-something-strong>'
+```sh
+python -m app.cli.create_admin --username <name>
 ```
 
-Subsequent users are created by administrators. A UI for that is on the backlog.
+The password comes from `ADMIN_PASSWORD` or a hidden prompt, never a command-line flag, and must be at least 12 characters. Each run writes an `auth.user.admin_upsert` audit row. No route or command creates an analyst or operator account; see the [operator manual](../runbook/operator-manual.md).
 
 **SECTION 04**
 
 ## Authorisation
 
-Role enum exists on the `User` model (`analyst`, `operator`, `admin`) and a `require_role(*roles)` factory lives in [backend/app/dependencies.py](../../backend/app/dependencies.py).
+The `User` model holds one of three roles (`analyst`, `operator`, `admin`), and `require_role(*roles)` in [src/app/dependencies.py](../../src/app/dependencies.py) gates a route by role.
 
-Currently gated routes:
+Currently gated:
 
 ● `GET /api/v1/audit` requires `operator` or `admin`. Analysts receive HTTP 403.
 
-All other routes are open to any authenticated user. Tighter gating lands with the user management UI.
+Every other signed-in route is open to any role. In particular, any signed-in user can delete any procedure, edit or delete any shift-log entry, and dismiss or delete any event timer; nothing checks ownership.
+
+The dashboard hides the **Audit log** link from analysts and sends a visitor without a token to the sign-in page. Both are conveniences: the server's checks are the control. [tests/test_app.py](../../tests/test_app.py) pins the routes open without sign-in: the probes, `/`, `/status`, `/api/v1/health`, `/api/v1/health/detailed`, and the login, refresh and logout routes. Any other route that does not demand a valid access token fails that test.
 
 **SECTION 05**
 
 ## Audit logging
 
-Every state-changing action writes an audit entry. The audit log is tamper-evident via a SHA-256 hash chain (ADR-008), with concurrent writes serialised by a Postgres advisory lock inside the transaction. Full details in [docs/audit/overview.md](../audit/overview.md).
+Every state-changing action writes an audit row. The log is tamper-evident through a SHA-256 hash chain over each row's stored fields (ADR-008), with concurrent writes serialised by a PostgreSQL advisory lock inside the transaction. A trigger refuses every UPDATE, DELETE and TRUNCATE on `audit.audit_log` (migration `0017_audit_append_only`). It is a trigger, not a permission: Holly's database user owns the table and could disable it deliberately (ADR-012). `python -m app.cli.verify_audit` recomputes the chain and names the first broken row. The hash uses no secret and nothing outside the database records the chain's head, so an edit made with the trigger disabled is detected unless every later hash is recomputed too.
 
-All Active action types are emitted today: `udl.elset.ingest`, `udl.notification.ingest`, `auth.user.login`, `auth.user.logout`, `auth.token.refresh`. The viewer at `GET /api/v1/audit` (operator + admin only) exposes them through the dashboard's **Audit log** page.
+The action types, what each records, and what is not recorded are in [docs/audit/overview.md](../audit/overview.md). The viewer at `GET /api/v1/audit` (operators and admins only) backs the dashboard's **Audit log** page.
 
 **SECTION 06**
 
 ## Transport security
 
-● TLS terminates at nginx. Self-signed certificate in local development, real certificates in deployed environments.
-● TLS is enforced even locally (ADR-004) to prevent posture regressions when moving to deployed environments.
-● `UDL_VERIFY_SSL` defaults to `true`. The escape hatch exists for corporate-proxy dev setups; do not disable in deployed environments.
-● The internal Docker network `internal` is `driver: bridge` with `internal: true`, so `db` is unreachable from outside the host.
+● **TLS** terminates at the App Store platform; its configuration is the platform's responsibility and `TBC, re-verify`. Holly serves plain HTTP inside the platform, on `0.0.0.0` and `PORT` or 8080. There is no nginx and no in-app TLS (ADR-012).
+● Holly sets no Strict-Transport-Security (HSTS) header; whether the platform adds one is `TBC, re-verify`.
+● **Outbound:** outside development, Holly refuses to start with a UDL or Mattermost URL that is not https, or with `UDL_VERIFY_SSL=false`. The Mattermost client verifies certificates; the Anthropic client uses its library's default endpoint.
+● **Database:** reached through the POSTGRESQL add-on's connection settings. Network isolation of the database is the platform's: `TBC, re-verify`. The Daily Operations Dashboard's internal Docker network is retired.
+● What Holly relies on the platform ingress for (host routing, malformed framing, slow clients) is listed in [SECURITY.md](../../SECURITY.md).
 
 **SECTION 07**
 
-## Secrets management
+## HTTP hardening
 
-### Current state
+From [src/app/factory.py](../../src/app/factory.py) and [src/app/core/](../../src/app/core/):
 
-● Local development uses a `.env` file. `.env*` is gitignored except for `.env.example`.
-● CI injects environment variables directly (see [.github/workflows/ci.yml](../../.github/workflows/ci.yml)). No real credentials are checked in.
-● `APP_SECRET_KEY` signs JWTs. Treat as a credential: do not log it, do not commit it, rotate on suspected compromise (forces all sessions to re-authenticate).
-● The `gitleaks` pre-commit hook and CI job scan the repository for accidental secret leaks on every commit and pull request.
-
-### Planned (Phase 2)
-
-● Cloud secret manager (AWS Secrets Manager, Azure Key Vault, or equivalent) replaces `.env` in deployed environments.
-● Per-service IAM identities replace the shared `.env` password approach.
+● **Headers on every response**, errors included: `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Cache-Control: no-store`, an `X-Request-ID`, and a CSP. HTML pages (the dashboard) get `default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`; every other response gets `default-src 'none'; frame-ancestors 'none'`.
+● **Body cap:** a request body over 11 MiB is refused with 413, at once when its declared length is too large, or the moment a streamed body passes the cap, so an oversized upload never fills memory or disk.
+● **Procedures:** uploads are capped at 10 MiB and stored as `<id><plain extension>`, so an uploaded file name never reaches the filesystem. Every download is an `application/octet-stream` attachment with a safely encoded file name, whatever type the uploader claimed, so a stored file cannot render as a page in Holly's origin.
+● **No interactive API documentation** (`/docs`, `/redoc` and `/openapi.json` answer 404), and no trailing-slash redirect, which would echo the request's `Host` header.
+● **No Cross-Origin Resource Sharing (CORS)** by default: `APP_ALLOWED_ORIGINS` is empty, and Holly refuses to start with `*`.
+● **Request ids** from a caller are kept only when they are a plain token of at most 128 characters, so a caller cannot write arbitrary text into logs or headers.
+● **Errors:** a 500 has a generic body, with the detail in the server log. A failed upstream call answers 502 with Holly's own short message; the upstream body goes to the server log, cut to 200 characters, never to the browser.
+● **Untrusted values in the dashboard:** a link that arrives in UDL data becomes clickable only when it is an absolute http or https URL, and every link that opens a new tab carries `rel="noopener noreferrer"`. The shift-log HTML export escapes every stored value.
 
 **SECTION 08**
 
-## Dependency and code scanning
+## Rate limits and cost caps
 
-CI gates and pre-commit hooks ([.pre-commit-config.yaml](../../.pre-commit-config.yaml)):
+All limits live in the one worker process and reset when the container restarts ([src/app/core/rate_limit.py](../../src/app/core/rate_limit.py), [src/app/services/claude.py](../../src/app/services/claude.py)):
 
-● **ruff** for lint, including import sorting (`I001`) and `ruff-format` for formatting.
-● **mypy** for type checking on `backend/app/`.
-● **bandit** at severity `-ll` for Python security smell detection.
-● **gitleaks** for secret patterns.
+| Limit | Applies to | Allowance |
+|-------|------------|-----------|
+| Coarse | Every request under `/api/` and `/status`, per client address | 600 in any 60 seconds |
+| Sign-in | Failed sign-ins, per username | 10 in any 15 minutes |
+| Assistant | Each request that calls the assistant, per user: evaluations, **Pull from UDL**, new shift-log entries, re-polish and the end-of-shift narrative | 30 in any 10 minutes |
+| Daily tokens | Every assistant call, across all users and the background cycle, per UTC day | `LLM_DAILY_TOKEN_CAP`, 2,000,000 by default |
 
-CI workflow ([.github/workflows/ci.yml](../../.github/workflows/ci.yml)):
+The first three answer 429 with `Retry-After`, except that a new shift-log entry made after the assistant allowance is spent is saved unpolished rather than refused. The probes and the dashboard's static files are never limited. Each limiter remembers at most 10,000 keys, dropping the stalest first, so a flood of distinct keys cannot grow memory without bound. Once the daily token cap is spent, every assistant call fails closed until the next UTC day.
 
-● The above, plus `pytest tests/backend` for backend test execution.
-● `npm run lint` and `npm run test` (vitest) for the frontend.
-● `gitleaks/gitleaks-action@v2` for repository-wide secret scanning on every pull request.
+**The client address** is the one the server sees. Behind the platform ingress that is the ingress's own address unless gunicorn is set to trust the ingress's forwarded headers through `FORWARDED_ALLOW_IPS`; by default gunicorn trusts only `127.0.0.1` and `::1` ([src/app/core/net.py](../../src/app/core/net.py)). Until that is confirmed (`TBC, re-verify`), assume every caller shares one coarse allowance and the audit log records the ingress's address.
 
 **SECTION 09**
+
+## The assistant
+
+Every call goes through one function, `call_claude` ([src/app/services/claude.py](../../src/app/services/claude.py)):
+
+● The API key is read server-side at call time; without it every call fails closed and the error is stored.
+● Model output is untrusted. An evaluation must parse as one JSON object of the expected shape, with bounded lengths and counts and an urgency of `high`, `medium` or `low` ([src/app/schemas/assistant.py](../../src/app/schemas/assistant.py)). A procedure id the model was not given is dropped. A reply that fails is retried once and then stored as an error, with no advice.
+● Each call writes one `llm.call` log line with its purpose, model and token count, never its content.
+● A persistent failure (a rejected key, no permission, rate limiting, exhausted credit, or the spent daily cap) stops the background phase early instead of retrying every notice.
+
+**What Holly sends to Anthropic:** for an evaluation, the notification's fields, up to 10 manoeuvre records for its satellites from the last 30 days, up to 30 team chat messages from the last 6 hours (each cut to 500 characters), and every uploaded procedure, with the text of those uploaded as plain text, Markdown, JSON or CSV (up to 64 KiB each). For an event narrative, the fields of each publication of the event. For the shift log, the analyst's raw entry (polish) or the day's entries (summary).
+
+**SECTION 10**
+
+## Secrets management
+
+● Every setting is read from the environment: App Store environment variables in deployment, and the shell or a local `.env` in development ([developer setup](../developer/setup.md) lists them). There is no `.env.example`.
+● Secrets are held as secret strings, so their values never appear in a log line. Holly's own configuration errors never repeat the database URL.
+● `/status` reports only whether four non-secret inputs are set, and their lengths: `PORT`, `APP_ENV`, `STORAGE_MOUNT_PATH` and `PROCEDURE_STORAGE_PATH`.
+● `APP_SECRET_KEY` signs the tokens and must be at least 32 characters. Treat it as a credential; rotating it signs every user out.
+● Environment files are ignored by Git (`.gitignore`) and kept out of the image's build context (`.dockerignore`).
+● The upload sent to the App Store is an allowlist of tracked paths, and every file in it passes a content scan with the secret-scan hook's rules before the package is written ([scripts/check-package.sh](../../scripts/check-package.sh)). [SECURITY.md](../../SECURITY.md) lists what that scan cannot see.
+● Claude Code's pre-write hook ([.claude/hooks/secret-scan.mjs](../../.claude/hooks/secret-scan.mjs)) blocks a credential-shaped string in any file Claude writes.
+● No repository-wide secret scanner, such as the Daily Operations Dashboard's gitleaks, runs in CI or as a commit hook.
+
+**SECTION 11**
+
+## Dependency, code and container scanning
+
+The verification loop, [scripts/verify.sh](../../scripts/verify.sh), runs on every change and in CI ([.github/workflows/verify.yml](../../.github/workflows/verify.yml)):
+
+● **ruff** for formatting and lint, including its `S` (security) rules.
+● **mypy** in strict mode over `src` and `tests`.
+● **complexipy** (cognitive complexity at most 15 per function) and **pylint**'s duplicate-code check, the local stand-ins for the platform's SonarQube quality gate.
+● **pytest** with coverage, failing under 80%.
+● **pip-audit** over both hash-pinned Python locks, and **npm audit** over the dashboard, which fails on any known vulnerability of any severity.
+
+Supply chain: Python installs only from the hash-pinned locks (`--require-hashes`), the dashboard installs from its lockfile with install scripts off, and both base images are pinned by digest. The image runs as the numeric user 10001, carries no pip and no setuid or setgid bit, and ships as one flattened layer. The App Store's own pipeline, quality gate and image scan are the binding checks.
+
+**SECTION 12**
 
 ## Threat surface
 
 | Vector | Mitigation |
 |--------|-----------|
-| External attacker reaches the application | nginx is the only public endpoint. Backend and DB are on an internal-only Docker network. TLS is enforced. |
-| Compromised analyst credentials | Audit log records every action. Hash chain detects retrospective tampering. 30-minute access token expiry limits blast radius. Stolen refresh token can be revoked individually via the `revoked_jti` block-list (ADR-011); rotation on every refresh means each refresh token has a single-use lifetime. |
-| Compromised UDL credentials | Stored in environment variables, not in source. Phase 2 moves these to a secret manager. Compromise of read-only UDL credentials does not enable writes against our system. |
-| SQL injection | SQLAlchemy parameterises every query. No raw string concatenation into SQL. |
-| Cross-site scripting (XSS) | React escapes by default. We do not use `dangerouslySetInnerHTML`. |
-| Cross-site request forgery (CSRF) | Tokens travel in the `Authorization` header rather than a cookie, removing the standard CSRF vector. |
-| Supply-chain compromise | Pinned versions in `requirements.txt` and `package-lock.json`. Dependabot or equivalent is a Phase 2 add. |
-| Insider modifies audit log | Application role has INSERT-only permissions on the audit schema. Hash chain detects modifications even by a DBA who bypasses the application. |
-| Accidental commit of secrets | gitleaks at pre-commit and in CI. `.env` family in `.gitignore`. |
+| External attacker reaches the application | TLS and routing at the platform ingress. Every data route needs a valid access token; the open routes are pinned by a test. Strict headers and CSP on every response. |
+| Password guessing | 10 failed sign-ins per username per 15 minutes, a constant bcrypt cost for unknown usernames, and every attempt audited with its reason. |
+| Compromised analyst credentials | Every state change is audited. Access tokens expire after 30 minutes. Refresh tokens rotate on every use, so a stolen one is single-use and its reuse is refused and audited. Deactivating the user stops their tokens at once. |
+| Compromised UDL, Mattermost or Anthropic credentials | Held in environment variables, never in source. Holly only reads from UDL and Mattermost. Holly's daily token cap does not limit use of a stolen key outside Holly; rotate it at the source. |
+| SQL injection | SQLAlchemy parameterises every query; no SQL is built by string concatenation. |
+| Cross-site scripting (XSS) | React escapes by default and the dashboard uses no `dangerouslySetInnerHTML`. The CSP allows no inline or third-party script. Links from UDL data are limited to http and https. |
+| Cross-site request forgery (CSRF) | Tokens travel in the `Authorization` header, not a cookie, which removes the standard CSRF vector. |
+| Prompt injection through UDL data, chat or procedures | Model output is validated, bounded and shown as advice; the assistant has no tools and cannot act. |
+| Cost exhaustion | Per-user assistant limit and a daily token cap that fails closed. |
+| Supply-chain compromise | Hash-pinned Python locks, a committed npm lockfile with install scripts off, digest-pinned base images, `pip-audit` and `npm audit` in every loop. |
+| Insider modifies the audit log | The append-only trigger refuses changes through the application's database user. The hash chain detects a change made by disabling the trigger or from outside the database, unless every later hash is recomputed too; nothing anchors the chain outside the database. |
+| Accidental commit of secrets | `.env` files ignored by Git and kept out of the image; the upload content scan; Claude Code's pre-write hook. No repository-wide scanner runs (section 10). |
 
-**SECTION 10**
+**SECTION 13**
 
 ## Incident response
 
-Phase 1 has no formal incident response runbook. Operational response is owned by the on-call engineer. When `/api/v1/health` returns non-200 or the dashboard is unreachable, follow [docs/runbook/operator-manual.md](../runbook/operator-manual.md).
+There is no formal incident response runbook. Operational response is owned by the on-call engineer, following the [operator manual](../runbook/operator-manual.md) when the probes or `/api/v1/health` fail or the dashboard is unreachable.
 
 > **KEY DECISION**
 >
-> A compromised refresh token can now be revoked individually via the `revoked_jti` block-list (ADR-011) instead of rotating `APP_SECRET_KEY`. The rotation hammer is still available for cases where every active session must be torn down at once. A formal incident response runbook lands once the per-user "revoke all my tokens" admin action exists.
+> A compromised refresh token is revoked when its holder signs out or when it is next used, through the `revoked_jti` block-list (ADR-011). Holly has no route that revokes another user's tokens. To stop one user at once, deactivate the account in the database; to stop everyone, rotate `APP_SECRET_KEY`.
 
-**SECTION 11**
+**SECTION 14**
 
 ## Review
 
@@ -148,8 +194,8 @@ This document is reviewed when a security-relevant change lands. Triggers includ
 
 ● New ingest sources.
 ● Authentication or authorisation changes.
-● Network or infrastructure changes.
+● Network, platform or infrastructure changes, including any change in what the App Store ingress provides.
 ● New external integrations (AI APIs, cloud providers).
 ● Findings from a penetration test or audit.
 
-Bluestaq Limited | Daily Operations Dashboard documentation | 2026 | **COMMERCIAL IN CONFIDENCE**
+Bluestaq Limited | Holly documentation | 2026 | **COMMERCIAL IN CONFIDENCE**

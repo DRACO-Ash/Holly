@@ -4,312 +4,297 @@
 
 **Document classification:** Commercial in Confidence
 **Data classification:** Unclassified (per ADR-006)
-**Owner:** Daily Operations Dashboard Team, Bluestaq Limited
-**Version:** 0.2
-**Last updated:** 2026-05-28
-**Audience:** Operators and on-call engineers responsible for keeping the Daily Operations Dashboard healthy.
+**Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned the edition this one replaces)
+**Version:** 0.3
+**Last updated:** 2026-10-14
+**Audience:** Operators and on-call engineers responsible for keeping Holly healthy on the Bluestaq App Store.
 
 > **BLUF**
 >
-> Four containers behind nginx. When something is wrong, find which of the four is unhappy, fix it, confirm. This is your playbook for daily checks, ingest triggering, log access, common failures, and disaster scenarios.
+> Holly is one container on the Bluestaq App Store, with its database and file store from platform add-ons. When something is wrong, check in this order: do the probes answer, can Holly reach its database, are its integrations configured, and what does the boot log say. This is your playbook for daily checks, releases, logs, on-demand pulls, accounts, common failures and disaster scenarios.
 
 **SECTION 01**
 
 ## At a glance
 
-The Daily Operations Dashboard runs as four containers behind nginx:
+● **One container:** a gunicorn master and one uvicorn worker, serving the dashboard, the API under `/api/v1` and the platform probes on `PORT` or 8080.
+● **Database:** PostgreSQL from the App Store POSTGRESQL add-on.
+● **Files:** uploaded procedures on the FILE_STORAGE add-on's volume (`/data/procedures` unless configured otherwise).
+● **TLS:** terminated by the platform before requests reach Holly.
+● **Outbound:** UDL, the team's Mattermost server and the Anthropic API, over HTTPS.
 
-● `nginx` (the only public service)
-● `frontend` (Vite-built static assets)
-● `backend` (FastAPI, served by uvicorn)
-● `db` (PostgreSQL 15)
-
-When something is wrong, the operator's job is to find which of those four is unhappy, fix it, and confirm.
+Holly's address is `https://<slug>.apps.bluestaq.com`; the slug is `TBC, re-verify`. Below, `<host>` stands for that address. There is no nginx and no Docker Compose deployment: the Daily Operations Dashboard's four-container stack is retired (ADR-012).
 
 **SECTION 02**
 
 ## Daily checks
 
 | Check | How | Healthy result |
-|-------|-----|---------------|
-| Dashboard reachable | Browse to `https://<host>` | Sign-in screen renders |
-| Backend health | `curl -k https://<host>/api/v1/health` | `{"status":"ok"}` HTTP 200 |
-| Component health | `curl -k https://<host>/api/v1/health/detailed` | Status `ok`, all components `ok`/`configured` |
-| Last ingest recent | See "Inspect ingest history" below | An audit row within expected cadence |
-| Containers up | `docker compose ps` | All four `Up` |
-| Disk space | `df -h` (Linux) or `Get-PSDrive C` (Windows) | Free space above local threshold |
+|-------|-----|----------------|
+| Dashboard reachable | Browse to `https://<host>` | The sign-in page renders |
+| Liveness | `curl -i https://<host>/healthz` | HTTP 200, body `ok` |
+| Status | `curl https://<host>/status` | `"storage": {"procedures": "ready"}` and the expected `version` |
+| Database and UDL credentials | `curl https://<host>/api/v1/health/detailed` | `"status": "ok"`, `"database": "ok"`, `"udl_credentials": "configured"` |
+| Notifications current | **Audit log** page, action type `udl.notification.ingest` | A row within the last hour, with `pulled` greater than 0 when UDL has new notices |
+| Manoeuvres current | **Audit log** page, action type `udl.maneuver.ingest` | A row within the last 10 minutes |
+| Assistant working | The Dashboard page's **Pending** count | Not growing from one hourly cycle to the next |
+| Platform state | The App Store's view of the app | `TBC, re-verify` where and what it shows |
+
+What the read-outs return:
+
+```
+GET /healthz                  ok
+GET /status                   {"service": "holly", "version": "<version>", "config": {"PORT": {"set": <true|false>, "length": <n>}, "APP_ENV": {...}, "STORAGE_MOUNT_PATH": {...}, "PROCEDURE_STORAGE_PATH": {...}}, "storage": {"procedures": "ready"}}
+GET /api/v1/health            {"status": "ok"}
+GET /api/v1/health/detailed   {"status": "ok", "version": "<version>", "environment": "production", "components": {"database": "ok", "udl_credentials": "configured"}}
+```
+
+The probes (`/healthz`, `/health`, `/readyz`, `/livez`, `/ping`) answer 200 without touching anything, so they show the process is up, not that it can serve data. `/status` reports each of four inputs as set or not, and its length, never its value. `/api/v1/health` and `/api/v1/health/detailed` query the database; the second reports `"status": "degraded"` and `"database": "down"` when it cannot. None of these needs sign-in.
 
 **SECTION 03**
 
-## Starting and stopping
+## Releases, settings and rollback
 
-```powershell
-cd infra
+Releases go through the App Store and are human-gated: they run through the `release-and-deploy` skill and the `deploy-gate` agent, never automatically. Before every upload, from a clean, committed checkout:
 
-# Bring everything up
-docker compose up -d
-
-# Stop without removing data
-docker compose stop
-
-# Tear down (volumes preserved)
-docker compose down
-
-# Tear down including the database volume (DESTRUCTIVE)
-docker compose down -v
+```sh
+sh scripts/verify.sh              # the verification loop; ends "VERIFY: PASS (...)"
+sh scripts/simulate-pipeline.sh   # package, check out and test the way the platform does
+sh scripts/smoke-container.sh     # build the image from the upload, run it with PostgreSQL, probe the contract
 ```
+
+`sh scripts/package-appstore.sh` writes the upload, `dist/appstore.zip`.
+
+**Settings** are App Store environment variables; the full reference is in [developer setup](../developer/setup.md). According to the platform reference in this repository, saving them replaces the whole set at once (at most 50 variables), and a separate step applies them ([.claude/skills/app-store-deployment/SKILL.md](../../.claude/skills/app-store-deployment/SKILL.md)); always save the complete set. Holly needs at least:
+
+● `APP_SECRET_KEY`, at least 32 characters.
+● The database settings. Whether the POSTGRESQL add-on provides `DATABASE_URL` or the `POSTGRES_*` parts is `TBC, re-verify`.
+● `UDL_USERNAME` and `UDL_PASSWORD` for UDL data, and `ANTHROPIC_API_KEY` for the assistant.
+● `MATTERMOST_URL`, `MATTERMOST_BOT_TOKEN` and `MATTERMOST_CHANNEL_IDS` if the Comms page is used.
+
+Leave `STORAGE_MOUNT_PATH` to the FILE_STORAGE add-on, which injects it; do not set it by hand. Leave `APP_ENV` at its default, `production`.
+
+**Starting, stopping and restarting** the app are platform operations: `TBC, re-verify` how. Rate-limit counters and the daily assistant token count start again from zero at every restart.
+
+**Rollback** is a resubmission of the previous package; the platform has no separate rollback (platform reference above). Migrations only move forward at start, so a package older than the database's newest migration stops at boot with Alembic's `Can't locate revision identified by '<revision>'`. Rolling back across a migration therefore needs the database restored to match the older package, or a fixed package that carries the newer migration.
 
 **SECTION 04**
 
-## Inspecting logs
+## What happens at start
 
-```powershell
-# Tail the backend
-docker compose -f infra/docker-compose.yml logs -f backend
+1. gunicorn reads its configuration. A malformed `PORT` stops it with `PORT must be a whole number from 1 to 65535, got '<value>'`.
+2. The master applies pending migrations under a PostgreSQL advisory lock, logging `{"event": "migrations", "status": "starting"}` and then `"applied"`. Reading the database URL here validates every setting, so a misconfiguration stops the container at this step with each problem named, for example `APP_SECRET_KEY must be at least 32 characters` or `UDL_BASE_URL must use https outside development`. A failed migration stops it here too, with Alembic's error.
+3. The worker starts and proves the procedure store accepts a write. On success it logs `{"event": "boot", "version": "<version>", "storage": "/data/procedures", "storage_writable": true, "background_refresh": true, ...}`. On failure it logs `"storage_writable": false` with the `errno` and `error`, and the container stops.
+4. The background loops start, each logging a line such as `Background notifications loop enabled: every 3600s`.
 
-# Last 200 lines from nginx
-docker compose -f infra/docker-compose.yml logs --tail 200 nginx
-
-# Database
-docker compose -f infra/docker-compose.yml logs db
-```
-
-Logs are not persisted outside the container by default. A log-shipping pattern (filebeat or vector to a central sink) is on the Phase 2 backlog.
+At shutdown Holly stops the loops, closes its database connections and logs `{"event": "shutdown", ...}`.
 
 **SECTION 05**
 
-## Triggering a UDL ingest
+## Logs
 
-The analyst-facing path is the dashboard:
+Holly writes one JSON object per line to standard output. Named events (`boot`, `migrations`, `shutdown`, `llm.call`) carry an `event` field; everything else carries `time`, `level`, `logger` and `message`. Every line carries `"service": "holly"` and a `request_id`, which is `-` outside a request. Holly does not log each request: the access log is set to warnings only. No line carries a secret value. Where the App Store shows container logs is `TBC, re-verify`.
 
-1. Sign in.
-2. Navigate to **Element sets**.
-3. Set **Epoch since** to the desired lower bound.
-4. Optionally set a satellite number or a maximum result count.
-5. Click **Pull from UDL**.
-6. Wait for the success banner. The table reloads automatically.
+**Correlating a request.** Every response carries an `X-Request-ID` header. Capture it (browser developer tools, `curl -i`, or your client's logs) and search the logs for `"request_id": "<id>"`. A caller's own `X-Request-ID` is kept and echoed when it is a plain token of at most 128 letters, digits, `.`, `_`, `:` or `-`; anything else is replaced with a fresh id.
 
-The operator-facing path is the API. You need a bearer token; either sign in via the UI and copy the access token from `localStorage`, or call `/auth/login` first.
+**Lines worth knowing:**
 
-```powershell
-$login = Invoke-RestMethod `
-  -Uri "https://<host>/api/v1/auth/login" `
-  -Method POST `
-  -Body (@{ username = "ops"; password = "<secret>" } | ConvertTo-Json) `
-  -ContentType "application/json" `
-  -SkipCertificateCheck
-
-$token = $login.access_token
-
-$body = @{
-  epoch_gte = "2026-05-20T00:00:00Z"
-  sat_no = 25544
-  max_results = 100
-} | ConvertTo-Json
-
-Invoke-RestMethod `
-  -Uri "https://<host>/api/v1/elsets/ingest" `
-  -Method POST `
-  -Body $body `
-  -ContentType "application/json" `
-  -Headers @{ Authorization = "Bearer $token" } `
-  -SkipCertificateCheck
-```
-
-Response shape:
-
-```json
-{ "pulled": 17, "inserted": 12, "updated": 5, "skipped": 0 }
-```
+● `llm.call`: one per assistant call, with `purpose` (`assistant.evaluate`, `assistant.event_summary`, `shift_log.polish` or `shift_log.summary`), `model`, `tokens` and `stop_reason`.
+● `Notification ingest complete (window: last 120h)` and `Maneuver ingest complete (window: last 48h)`: a background pull succeeded.
+● `Notification ingest skipped: UDL auth failed (...)` or `Notification ingest failed: ...`: see section 10.
+● `Stopping auto-evaluate cycle early: ...`: a persistent assistant failure; see section 10.
+● `Mattermost channel <id> skipped: ...`: the bot cannot read that channel.
 
 **SECTION 06**
 
-## Inspecting ingest history
+## Pulling data on demand
 
-The dashboard does not yet surface ingest history. Query the audit log directly:
+**Notifications.** On the Notifications page, **Pull from UDL** runs the whole notification cycle at once: the UDL pull, the assistant's evaluations of new notices, and the event narratives. It answers when the cycle completes, joins a cycle already running, and counts against the caller's assistant allowance (30 requests in any 10 minutes). The ingest audit row it produces carries no user id.
 
-```powershell
-docker compose -f infra/docker-compose.yml exec db psql -U ops_user -d ops_dashboard
+**Through the API.** Sign in to get a token. Put the credentials in a file rather than on the command line, and delete it afterwards:
+
+```sh
+# login.json holds {"username": "<name>", "password": "[REDACTED:password]"}
+curl -s https://<host>/api/v1/auth/login -H 'Content-Type: application/json' -d @login.json
 ```
 
-In `psql`:
+The answer is `{"access_token": "<token>", "refresh_token": "<token>", "token_type": "bearer"}`. The access token lasts 30 minutes by default.
+
+```sh
+export TOKEN=<the access_token value>
+curl -s -X POST https://<host>/api/v1/notifications/ingest \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"msg_type": "TACREP_NOTSO", "created_at_gte": "<ISO 8601 time>", "data_mode": "REAL", "source": "JCO", "max_results": 100}'
+```
+
+The answer is `{"pulled": <n>, "inserted": <n>, "updated": <n>, "skipped": <n>}`, and the audit row records your user id and address. `POST /api/v1/elsets/ingest` takes `{"epoch_gte": "<ISO 8601 time>", "sat_no": <number>, "max_results": <number>}` and answers the same way; it is the only way element sets arrive. Manoeuvres and Mattermost chat are pulled only by the background loops.
+
+**SECTION 07**
+
+## Inspecting ingest history
+
+The **Audit log** page (operators and admins) filters by action type: `udl.notification.ingest`, `udl.maneuver.ingest`, `udl.elset.ingest` or `mattermost.ingest`. Each row's detail holds the request and the counts. Through the API, with an operator's or admin's token:
+
+```sh
+curl -s 'https://<host>/api/v1/audit?action_type=udl.notification.ingest&limit=20' -H "Authorization: Bearer $TOKEN"
+```
+
+Rows come newest first. With a database shell (on the App Store, `TBC, re-verify`):
 
 ```sql
-SELECT timestamp, user_id, ip_address, detail::text
+SELECT timestamp, user_id, ip_address, detail
   FROM audit.audit_log
- WHERE action_type = 'udl.elset.ingest'
+ WHERE action_type = 'udl.notification.ingest'
  ORDER BY timestamp DESC
  LIMIT 20;
 ```
 
-**SECTION 07**
-
-## Database operations
-
-### Open a database shell
-
-```powershell
-docker compose -f infra/docker-compose.yml exec db psql -U ops_user -d ops_dashboard
-```
-
-### Inspect tables
-
-```sql
-\dt public.*
-\dt audit.*
-\d public.elset
-\d public.app_user
-```
-
-### Apply pending migrations
-
-```powershell
-alembic upgrade head
-```
-
-### Roll back the last migration
-
-```powershell
-alembic downgrade -1
-```
-
-Only do this if you understand the data impact. Downgrades drop tables.
-
-### Reset an admin password
-
-```powershell
-cd backend
-python -m scripts.create_admin --username your.username --password '<new-secret>'
-```
-
-The script is idempotent; running it for an existing user resets the password and ensures the role stays `admin`.
-
-### Manual integrity check on the audit chain
-
-There is no helper utility yet. To spot-check, walk the chain by `timestamp ASC`, recompute `sha256(previous_hash || canonical_json(payload))`, compare against `entry_hash`. Full mechanics in [docs/audit/overview.md](../audit/overview.md).
-
 **SECTION 08**
+
+## Accounts
+
+### Create or reset an admin
+
+```sh
+python -m app.cli.create_admin --username <name>
+```
+
+Run it in the running container, or on any machine with Holly's database settings. It takes the password from `ADMIN_PASSWORD` in that shell's environment, or prompts for it without echo; it never accepts one as a flag, and refuses one shorter than 12 characters. It prints `Admin user '<name>' created.` or `updated.` and writes an `auth.user.admin_upsert` audit row. For an existing username it resets the password and makes the account an active admin, whatever its role was. Whether the App Store offers a shell in the running container, and whether the add-on database is reachable from outside the platform, are both `TBC, re-verify`.
+
+### Analyst and operator accounts
+
+No route or command creates an `analyst` or `operator` account, changes a role, or deactivates a user: `create_admin` creates admins only. Until one exists, these need a direct change to the `app_user` table, and the procedure for that is `TBC, re-verify`. Setting `is_active` to false stops a user at once: every request checks it, so the user's tokens stop working too.
+
+### Sign everyone out
+
+Rotate `APP_SECRET_KEY` (at least 32 characters) and apply the settings. Every access and refresh token stops verifying, and every user signs in again. A user's own **Sign out** revokes only their refresh token; their access token stays valid until it expires, up to 30 minutes by default.
+
+**SECTION 09**
+
+## Database and storage
+
+● **Migrations** apply themselves at every start. Do not run Alembic by hand against the App Store database, and never edit `alembic_version`.
+● **Database shell:** whether the App Store offers one for the POSTGRESQL add-on is `TBC, re-verify`.
+● **Backups** of the add-on database and of the FILE_STORAGE volume, their frequency and their retention are the platform's: `TBC, re-verify`.
+● **Audit chain:** run `python -m app.cli.verify_audit` wherever the database settings are available. It prints `Audit chain intact: <n> entries verified.` and exits 0, or names the first broken row on standard error and exits 1. Rows written by the Daily Operations Dashboard before Holly V0.2 cannot be verified. Full mechanics are in [docs/audit/overview.md](../audit/overview.md).
+
+**SECTION 10**
 
 ## Common failures and fixes
 
-### Symptom: dashboard returns 502 Bad Gateway
+### Symptom: the container restarts or never becomes ready
 
-Likely cause: nginx is up but the backend is not.
+Read the start of its log (section 04). The causes Holly names itself:
 
-```powershell
-docker compose -f infra/docker-compose.yml ps backend
-docker compose -f infra/docker-compose.yml logs --tail 200 backend
-```
+● `PORT must be a whole number ...`: fix or remove the `PORT` variable.
+● A settings validation error: fix each named setting. A missing or short `APP_SECRET_KEY`, missing database settings, a `*` origin, an http UDL or Mattermost URL, `UDL_VERIFY_SSL=false` or a relative procedure path each stops the start.
+● An Alembic error: a migration failed. If it reads `Can't locate revision identified by ...`, the package is older than the database (section 03). Escalate any other migration failure to engineering.
+● `"storage_writable": false`: the procedure store refused a write. The `errno` and `error` say why; check the FILE_STORAGE add-on and `PROCEDURE_STORAGE_PATH`.
 
-Look for stack traces, missing environment variables, or database connection failures.
+### Symptom: `/api/v1/health` answers 500, or `/api/v1/health/detailed` shows `"database": "down"`
 
-### Correlating logs to a specific request
+Holly cannot reach its database. Check the POSTGRESQL add-on's state and the database settings Holly receives.
 
-Every response carries an `X-Request-ID` header. Capture it (browser devtools, `curl -i`, or your client logs) and grep the backend logs for the same value to pull the full trace of that request.
+### Symptom: every signed-in request answers 401
 
-```powershell
-docker compose -f infra/docker-compose.yml logs backend | Select-String "request_id=<your-id>"
-```
+`APP_SECRET_KEY` changed, which invalidates every token: expected after a rotation, and users sign in again. Otherwise the user's access token expired and the refresh failed; the same answer applies.
 
-If a client supplies its own `X-Request-ID` header, the backend honours it and echoes it back. Useful when your monitoring layer already tags requests upstream.
+### Symptom: HTTP 429 `Too many requests` or `Too many failed sign-ins`
 
-### Symptom: `/api/v1/health` returns 500
+Holly's limits, all counted in the one worker and reset when the container restarts ([src/app/core/rate_limit.py](../../src/app/core/rate_limit.py)):
 
-Likely cause: the backend cannot reach the database.
+| Limit | Applies to | Allowance |
+|-------|------------|-----------|
+| Coarse | Every request under `/api/` and `/status`, per client address | 600 in any 60 seconds |
+| Sign-in | Failed sign-ins, per username; a success clears the count | 10 in any 15 minutes |
+| Assistant | Evaluations, **Pull from UDL**, new shift-log entries, re-polish and the end-of-shift narrative, per user | 30 in any 10 minutes |
+| Daily tokens | Every assistant call, across all users, per UTC day | `LLM_DAILY_TOKEN_CAP`, 2,000,000 by default |
 
-```powershell
-docker compose -f infra/docker-compose.yml ps db
-docker compose -f infra/docker-compose.yml logs --tail 200 db
-```
+The first three answer 429 with `Retry-After`, with one exception: a new shift-log entry made after the assistant allowance is spent is still saved, unpolished, with `Not polished: the assistant limit is reached. Re-polish in <n> seconds.` The daily token cap refuses nothing at the door: once it is spent, each assistant call fails and its error is stored, until the next UTC day. The probes and the dashboard's static files are never limited. Behind the platform ingress, the client address may be the ingress's own for every caller (see the [security overview](../security/overview.md)); if so, all users share one coarse allowance.
 
-If the database is up, check that the backend's `POSTGRES_*` environment variables match the database's actual credentials.
+### Symptom: HTTP 413 `Request body too large`
 
-### Symptom: every protected endpoint returns 401
+A request body over 11 MiB is refused before it is read. A procedure upload over 10 MiB is refused with `File exceeds 10MB limit`.
 
-Likely cause: `APP_SECRET_KEY` was rotated, invalidating every issued JWT. Expected behaviour. Tell users to sign in again.
+### Symptom: UDL pulls fail
 
-If you did not rotate the key, the user's token may have expired naturally (30 minutes) and the refresh token is also gone. Same answer: sign in again.
+A pull through the API (`/api/v1/notifications/ingest` or `/api/v1/elsets/ingest`) answers HTTP 502 with Holly's own message. The background loops, and **Pull from UDL**, which runs the background cycle, log the same message as a warning and complete without new data:
 
-### Symptom: UDL ingest returns HTTP 502 with "UDL rejected credentials"
+| Message | Meaning and fix |
+|---------|-----------------|
+| `UDL credentials are not configured (UDL_USERNAME / UDL_PASSWORD).` | Set both settings and apply. |
+| `UDL rejected credentials (401).` | The credentials are wrong or were rotated. Confirm them with the UDL account owner, update the settings and apply. |
+| `UDL request failed: <error type>` | UDL is unreachable: outbound access from the platform (`TBC, re-verify`), DNS or a UDL outage. |
+| `UDL returned HTTP <code>.` | UDL refused the request; the response body is in Holly's log, cut to 200 characters. |
+| `UDL response was not valid JSON.` | UDL answered with something unexpected; check UDL's status. |
 
-The `UDL_USERNAME` or `UDL_PASSWORD` is wrong, or has been rotated.
+`UDL_VERIFY_SSL=false` is refused outside development, so it is not a workaround on the App Store.
 
-1. Confirm the credential pair with the UDL administrator.
-2. Update `.env` (or the cloud secret store in Phase 2).
-3. Restart the backend: `docker compose restart backend`.
-4. Retry the ingest.
+### Symptom: the Dashboard's **Pending** count does not clear
 
-### Symptom: UDL ingest returns HTTP 502 with "UDL request failed"
+A notice stays **Awaiting analysis** until it has a successful evaluation. The background cycle evaluates only notices that have no evaluation at all, so a notice whose evaluation failed is not retried automatically: open it and select **Re-evaluate**. The panel shows the stored error. Common causes:
 
-Network egress to UDL is blocked, or UDL is down.
+● `ANTHROPIC_API_KEY is not configured`: set the key and apply.
+● `The daily assistant token cap is spent; assistant calls resume tomorrow (UTC).`: wait, or raise `LLM_DAILY_TOKEN_CAP` and apply.
+● `Anthropic API error: ...`: a rejected key, missing permission, rate limiting or exhausted credit stops the background phase early, logged as `Stopping auto-evaluate cycle early`.
+● `Model response was truncated at <n> tokens ... Raise ANTHROPIC_MAX_TOKENS.`: raise it and re-evaluate.
 
-1. Check connectivity from the backend container:
+### Symptom: the Comms page stays empty
 
-   ```powershell
-   docker compose -f infra/docker-compose.yml exec backend curl -I https://unifieddatalibrary.com
-   ```
+Check `MATTERMOST_URL` (https), `MATTERMOST_BOT_TOKEN` and `MATTERMOST_CHANNEL_IDS`, and that the bot account is a member of every listed channel. A channel the bot cannot read is logged as `Mattermost channel <id> skipped: Mattermost denied access (403): is the bot in the channel?`. A wrong token logs `Mattermost rejected the bot token (401).`
 
-2. Confirm UDL's status via your usual channel.
-3. If a corporate proxy is in the path and TLS verification is failing, the temporary escape hatch is `UDL_VERIFY_SSL=false` in `.env`. Do not leave this off; address the proxy properly.
+### Symptom: a procedure upload is refused
 
-### Symptom: pre-commit hook keeps rewriting a file
+● `A procedure with identical content already exists` (409): the same file is already uploaded.
+● `Uploaded file is empty` (400), or `File exceeds 10MB limit` (413).
 
-The file has formatting or import-sorting issues that ruff fixes automatically. Re-stage the file and commit again. Do not bypass hooks with `--no-verify`.
+### Symptom: event timers are silent
 
-### Symptom: alembic complains about an out-of-date head
+Browsers play sound only after the analyst interacts with the page: each time Holly loads, sound starts after the first click or key press, and until then the banner offers **Enable alerts**. Browser notifications also need the browser's permission; without it the banner says `Browser notifications denied; audio only.` A pre-alert sounds once, in the first open Holly page that notices it, because Holly then records it as acknowledged.
 
-```powershell
-alembic current      # what the database thinks it is on
-alembic heads        # what the codebase declares
-alembic history      # the chain between them
-```
-
-If the database is behind, `alembic upgrade head`. If the codebase is ahead by more than one revision, walk forward with `alembic upgrade +1` to spot any single migration that misbehaves.
-
-**SECTION 09**
+**SECTION 11**
 
 ## Disaster scenarios
 
 > **KEY DECISION**
 >
-> If audit log integrity is ever in doubt, stop the backend before doing anything else. Take a database snapshot before any remediation. The hash chain is forensic evidence; preserve it.
-
-### Database container will not start
-
-1. `docker compose logs db`.
-2. If the volume is corrupted, the only path back may be `docker compose down -v` and a restore from backup.
-3. Phase 1 has no automated backups. Take this seriously when restoring.
+> If audit log integrity is ever in doubt, stop Holly before doing anything else and preserve the database. The hash chain is forensic evidence; do not delete or modify any row.
 
 ### Audit log integrity in doubt
 
-If a `previous_hash` does not match the prior row's `entry_hash`:
+1. Stop Holly, so nothing more is written (`TBC, re-verify` how on the App Store).
+2. Preserve the database: a snapshot or backup through the add-on (`TBC, re-verify`).
+3. Run `python -m app.cli.verify_audit` against it and record its output.
+4. Escalate to engineering and to the security point of contact for Holly (`TBC, re-verify` who that is).
+5. Do not delete or modify any row, and do not disable the append-only trigger.
 
-1. Stop further audit writes (stop the backend).
-2. Take a database snapshot.
-3. Escalate to engineering and to the customer's security point of contact.
-4. Do not delete or modify any rows. The chain is forensic evidence.
+### Database lost or corrupted
+
+Restore it from the add-on's backups (`TBC, re-verify` how). Then start Holly, which applies any missing migrations, and run `python -m app.cli.verify_audit`. Procedure rows whose files are missing from the store still list; see the next scenario.
+
+### Procedure store lost
+
+The rows stay and still list, but a download answers 404 `The file for this procedure is missing; upload it again.`, previews are empty and the assistant reads nothing from those files. For each one, delete the procedure in the dashboard (a missing file is not an error) and upload it again. Uploading the same content without deleting first is refused as a duplicate. A procedure uploaded to the Daily Operations Dashboard before Holly V0.2 can show the same symptom, because the dashboard wrote every upload with the same extension to one file.
 
 ### Suspected secret leak
 
-If a real credential lands in a commit:
+1. Rotate the credential at its source: `APP_SECRET_KEY`, the UDL password, the Mattermost bot token, the Anthropic key, or the database password through the add-on (`TBC, re-verify` how).
+2. Update the App Store settings and apply them.
+3. Treat the old value as compromised; rewriting Git history does not un-leak it.
+4. Record an incident.
 
-1. Rotate the credential immediately at the source.
-2. Force-rewrite history is rarely the right move; treat the credential as already compromised.
-3. File an incident note in the team channel.
+### Suspected stolen token
 
-### Suspected stolen refresh token
+Holly has no route that revokes another user's tokens. Deactivating the user (section 08) stops that user at once. Rotating `APP_SECRET_KEY` stops every token for every user.
 
-Today, the only way to invalidate every issued JWT is to rotate `APP_SECRET_KEY` and restart the backend. Every active user will need to sign in again.
-
-A revocation list landing on the Phase 1 backlog removes this hammer in favour of targeted forced sign-out.
-
-**SECTION 10**
+**SECTION 12**
 
 ## See also
 
 ● [Architecture overview](../architecture/overview.md)
 ● [Security overview](../security/overview.md)
 ● [Audit logging overview](../audit/overview.md)
+● [Developer setup](../developer/setup.md), for the settings reference
 ● [Analyst training manual](../user-handbook/training-manual.md)
 
-Bluestaq Limited | Daily Operations Dashboard documentation | 2026 | **COMMERCIAL IN CONFIDENCE**
+Bluestaq Limited | Holly documentation | 2026 | **COMMERCIAL IN CONFIDENCE**

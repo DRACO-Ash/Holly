@@ -1,43 +1,34 @@
 from datetime import datetime
-from typing import Any, Optional
-from uuid import UUID
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, Field
+
+from app.schemas.common import UDLEnvelopeRead
 
 
-class NotificationRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+class NotificationRead(UDLEnvelopeRead):
+    msg_type: str | None = None
 
-    id: UUID
-    udl_id: Optional[str] = None
-    msg_type: Optional[str] = None
-    data_mode: Optional[str] = None
-    source: Optional[str] = None
-    classification_marking: Optional[str] = None
-    created_by: Optional[str] = None
-    orig_network: Optional[str] = None
-    udl_created_at: Optional[datetime] = None
+    notso_identifier: str | None = None
+    notice_id: str | None = None
+    event_id: str | None = None
 
-    notso_identifier: Optional[str] = None
-    notice_id: Optional[str] = None
-    event_id: Optional[str] = None
+    event_class: str | None = None
+    event_type: str | None = None
+    status: str | None = None
 
-    event_class: Optional[str] = None
-    event_type: Optional[str] = None
-    status: Optional[str] = None
+    subject: str | None = None
+    description: str | None = None
+    region: str | None = None
+    notso_link: str | None = None
+    company_name: str | None = None
 
-    subject: Optional[str] = None
-    description: Optional[str] = None
-    region: Optional[str] = None
-    notso_link: Optional[str] = None
-    company_name: Optional[str] = None
+    publish_date: datetime | None = None
+    effective_from: datetime | None = None
+    effective_until: datetime | None = None
 
-    publish_date: Optional[datetime] = None
-    effective_from: Optional[datetime] = None
-    effective_until: Optional[datetime] = None
-
-    sat_no: Optional[int] = None
-    sat_ids: Optional[list[str]] = None
+    sat_no: int | None = None
+    sat_ids: list[str] | None = None
 
     created_at: datetime
     updated_at: datetime
@@ -55,11 +46,12 @@ class NotificationPage(BaseModel):
 
 
 class NotificationIngestRequest(BaseModel):
-    msg_type: Optional[str] = "TACREP_NOTSO"
-    created_at_gte: Optional[datetime] = None
-    data_mode: Optional[str] = None
-    source: Optional[str] = None
-    max_results: Optional[int] = None
+    msg_type: str | None = "TACREP_NOTSO"
+    created_at_gte: datetime | None = None
+    data_mode: str | None = None
+    source: str | None = None
+    # Holly's own cap on one manual pull, so a request cannot ask UDL for an unbounded page.
+    max_results: int | None = Field(default=None, ge=1, le=10_000)
 
 
 class NotificationIngestResponse(BaseModel):

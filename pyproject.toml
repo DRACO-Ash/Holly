@@ -1,7 +1,7 @@
 [project]
 name = "holly"
-version = "0.1.0"
-description = "Holly: Daily Ops Dashboard"
+version = "0.2.0"
+description = "Holly: the daily operations dashboard for SDA watch analysts"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 # Dependencies are not declared here. The manifests are requirements.in (runtime) and
@@ -19,6 +19,11 @@ testpaths = ["tests"]
 # `coverage run -m pytest && coverage xml`. A bare `pytest` runs the tests without coverage.
 addopts = ["--strict-markers", "--strict-config"]
 xfail_strict = true
+# The route and service tests are coroutines; pytest-asyncio runs each in its own event loop.
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+asyncio_default_test_loop_scope = "function"
+filterwarnings = ["error"]
 
 [tool.coverage.run]
 source = ["src"]
@@ -28,6 +33,8 @@ relative_files = true
 [tool.coverage.report]
 fail_under = 80
 show_missing = true
+# A command-line module's entry guard runs only under `python -m`, never on import.
+exclude_also = ['if __name__ == "__main__":']
 
 [tool.coverage.xml]
 output = "coverage.xml"
@@ -50,13 +57,19 @@ select = [
 [tool.ruff.lint.mccabe]
 max-complexity = 10
 
+[tool.ruff.lint.pylint]
+# Matches SonarQube python:S107 (at most 13 parameters), the rule the platform gate applies.
+# FastAPI reads every query filter and form field as a handler parameter.
+max-args = 13
+max-positional-args = 13
+
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101", "S104", "PLR2004"]
 
 [tool.mypy]
 python_version = "3.12"
 strict = true
-mypy_path = "src"
+mypy_path = "src:tests"
 files = ["src", "tests"]
 explicit_package_bases = true
 

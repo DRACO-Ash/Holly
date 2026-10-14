@@ -1,26 +1,39 @@
 #!/bin/sh
 # smoke-container.sh :: the local rung for the platform's container build and deploy stages.
 # It builds the image from the UPLOAD ARTEFACT (dist/appstore.zip, the context the platform
-# builds from, never the working tree), runs it the way the platform does, and fails on:
+# builds from, never the working tree), runs it the way the platform does (a PostgreSQL
+# database, the FILE_STORAGE add-on's writable mount at /data, the settings Holly requires),
+# and fails on:
 #   1. a non-200 from / or a health path, with PORT unset (8080) and with PORT injected
-#   2. an ERROR line or a traceback in the boot log
-#   3. a malformed PORT that does not stop the container with the validation message
+#   2. an error line or a traceback in the boot log
+#   3. migrations that did not reach the newest revision, an audit log that accepts an UPDATE,
+#      or a dashboard that is not served
+#   4. a malformed PORT, a store that refuses writes, or a missing signing key that does not
+#      stop the container with a clear message
 # Requires Docker and curl. Behind a TLS-intercepting proxy, point DOCKERFILE at a copy whose
-# pip step trusts the proxy's certificate authority, and pass the build flags it needs:
+# pip and npm steps trust the proxy's certificate authority, and pass the build flags it needs:
 #   DOCKERFILE=/path/to/copy DOCKER_BUILD_FLAGS='--network host --secret id=...' sh scripts/smoke-container.sh
-# Its containers and build context are removed afterwards, also on Ctrl-C; KEEP_SMOKE=1 keeps
-# the context. Green means necessary conditions met; the platform's build, scan and deploy are
-# binding.
+# PG_IMAGE overrides the database image (for a registry mirror of the same digest). The
+# database password and signing key are generated per run and never written to disk.
+# Its containers, network and build context are removed afterwards, also on Ctrl-C;
+# KEEP_SMOKE=1 keeps the context. Green means necessary conditions met; the platform's build,
+# scan and deploy are binding.
 set -eu
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 TAG="${TAG:-holly-smoke}"
+# PostgreSQL 15.19, the major version the dashboard was built against. TBC, re-verify: the
+# version the App Store POSTGRESQL add-on provides.
+PG_IMAGE="${PG_IMAGE:-postgres:15-alpine@sha256:f7d23353e1b15400d22ebe31189f4d314b87a4c129cc400c8c2d8d4ca127bf81}"
 CTX="$(mktemp -d "${TMPDIR:-/tmp}/holly-smoke.XXXXXX")"
+NET="holly-smoke-$(basename "$CTX" | tr -dc 'A-Za-z0-9')"
 CIDS=""
+NET_MADE=0
 
 cleanup() {
   if [ -n "$CIDS" ]; then docker rm -f $CIDS >/dev/null 2>&1 || true; fi
+  if [ "$NET_MADE" = 1 ]; then docker network rm "$NET" >/dev/null 2>&1 || true; fi
   if [ "${KEEP_SMOKE:-0}" != 1 ]; then rm -rf -- "$CTX"; else echo "kept $CTX"; fi
 }
 trap cleanup EXIT
@@ -33,38 +46,71 @@ fail() {
   exit 1
 }
 
-wait_until_stopped() {  # $1: container id. Prints the exit code; fails after 30 seconds.
+random_hex() {  # $1: bytes of randomness
+  od -An -N"$1" -tx1 /dev/urandom | tr -d ' \n'
+}
+
+wait_until_stopped() {  # $1: container id. Prints the exit code; fails after 60 seconds.
   tries=0
   while [ "$(docker inspect -f '{{.State.Running}}' "$1")" = true ]; do
     tries=$((tries + 1))
-    [ "$tries" -lt 30 ] || return 1
+    [ "$tries" -lt 60 ] || return 1
     sleep 1
   done
   docker inspect -f '{{.State.ExitCode}}' "$1"
 }
 
+# Start Holly as the platform would and print its id. Extra docker run arguments follow the
+# first two.
+run_holly() {  # $1: PORT value to inject, or empty for unset. $2: storage mount options.
+  port_env="$1"
+  storage="$2"
+  shift 2
+  set -- --network "$NET" --tmpfs "/data:$storage" \
+    -e "DATABASE_URL=postgresql://holly:$DB_SECRET@db:5432/holly" \
+    -e "APP_SECRET_KEY=$SIGNING_KEY" -e STORAGE_MOUNT_PATH=/data \
+    -e BACKGROUND_REFRESH_ENABLED=false "$@"
+  if [ -n "$port_env" ]; then set -- -e "PORT=$port_env" "$@"; fi
+  docker run -d "$@" "$TAG"
+}
+
+WRITABLE="rw,uid=10001,gid=10001,mode=0700"
+
 probe() {  # $1: PORT value to inject, or empty for unset. $2: the port the container listens on.
-  if [ -n "$1" ]; then
-    cid="$(docker run -d -e "PORT=$1" -p "127.0.0.1::$2" "$TAG")"
-  else
-    cid="$(docker run -d -p "127.0.0.1::$2" "$TAG")"
-  fi
+  cid="$(run_holly "$1" "$WRITABLE" -p "127.0.0.1::$2")"
   CIDS="$CIDS $cid"
   host_port="$(docker port "$cid" "$2/tcp" | head -n 1 | sed 's/.*://')"
+  base="http://127.0.0.1:$host_port"
   tries=0
-  until curl -fsS -o /dev/null "http://127.0.0.1:$host_port/healthz" 2>/dev/null; do
+  until curl -fsS -o /dev/null "$base/healthz" 2>/dev/null; do
     tries=$((tries + 1))
-    [ "$tries" -lt 30 ] || { docker logs "$cid"; fail "no answer on port $2 after 30 seconds"; }
+    [ "$tries" -lt 60 ] || { docker logs "$cid"; fail "no answer on port $2 after 60 seconds"; }
     sleep 1
   done
   for path in / /healthz /health /readyz /livez /ping; do
-    code="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$host_port$path")"
+    code="$(curl -s -o /dev/null -w '%{http_code}' "$base$path")"
     [ "$code" = 200 ] || fail "GET $path answered $code on port $2"
   done
-  if docker logs "$cid" 2>&1 | grep -E '\[ERROR\]|Traceback'; then
+  curl -fsS "$base/api/v1/health/detailed" | grep -q '"database":"ok"' \
+    || fail "the database is not reachable from the container on port $2"
+  curl -fsS "$base/" | grep -q '<title>Holly</title>' || fail "/ does not serve the dashboard"
+  curl -fsS -H 'Accept: text/html' "$base/notifications" | grep -q '<title>Holly</title>' \
+    || fail "a dashboard page does not load on its own address"
+  curl -fsSI "$base/" | grep -qi "^content-security-policy: default-src 'none'; script-src 'self'" \
+    || fail "the dashboard is served without its content security policy"
+  if docker logs "$cid" 2>&1 | grep -E '\[ERROR\]|"level": "ERROR"|Traceback'; then
     fail "an error in the boot log on port $2"
   fi
-  echo "port $2: / and every health path answer 200, and the boot log is clean"
+  docker logs "$cid" 2>&1 | grep -q '"event": "migrations", .*"status": "applied"' \
+    || fail "the boot log does not show the migrations applied on port $2"
+  echo "port $2: / and every health path answer 200, migrations applied, the dashboard is served, the boot log is clean"
+}
+
+refused() {  # $1: container id. $2: text the log must hold. $3: what was refused.
+  code="$(wait_until_stopped "$1")" || fail "$3 left the container running"
+  [ "$code" != 0 ] || fail "$3 exited 0 instead of refusing to start"
+  docker logs "$1" 2>&1 | grep -q "$2" || fail "$3 stopped without the expected message"
+  echo "$3: refused at boot (exit $code) with the expected message"
 }
 
 # 1. Build from the artefact the platform receives.
@@ -73,19 +119,45 @@ unzip -q "$ROOT/dist/appstore.zip" -d "$CTX"
 # DOCKER_BUILD_FLAGS is split into separate flags on purpose.
 docker build ${DOCKER_BUILD_FLAGS:-} -f "${DOCKERFILE:-$CTX/Dockerfile}" -t "$TAG" "$CTX"
 
-# 2. Run and probe with PORT unset, then with PORT injected as the platform does.
+# 2. A database on a private network, as the POSTGRESQL add-on provides one. Both values are
+#    random for this run only.
+DB_SECRET=$(random_hex 16)
+SIGNING_KEY=$(random_hex 32)
+docker network create "$NET" >/dev/null
+NET_MADE=1
+db="$(docker run -d --network "$NET" --network-alias db \
+  -e POSTGRES_DB=holly -e POSTGRES_USER=holly -e "POSTGRES_PASSWORD=$DB_SECRET" "$PG_IMAGE")"
+CIDS="$CIDS $db"
+tries=0
+until docker exec "$db" pg_isready -q -U holly -d holly 2>/dev/null; do
+  tries=$((tries + 1))
+  [ "$tries" -lt 60 ] || { docker logs "$db"; fail "the database did not start"; }
+  sleep 1
+done
+
+# 3. Run and probe with PORT unset, then with PORT injected as the platform does. The second
+#    container finds the schema already at head.
 probe "" 8080
 probe 9090 9090
+head="$(docker exec "$db" psql -U holly -d holly -qtAc 'SELECT version_num FROM alembic_version')"
+[ "$head" = "$(ls "$CTX/src/app/migrations/versions" | sed -n 's/\.py$//p' | sort | tail -n 1)" ] \
+  || fail "the database is at $head, not the newest migration"
+if docker exec "$db" psql -U holly -d holly -qtAc 'UPDATE audit.audit_log SET action_type = action_type' >/dev/null 2>&1; then
+  fail "the audit log accepted an UPDATE"
+fi
+echo "the schema is at $head and the audit log refuses an UPDATE"
 
-# 3. A malformed PORT must stop the container at boot, never bind somewhere else.
+# 4. Each of these must stop the container at boot, never run in a degraded state.
 for bad in 0 "8080 --check-config"; do
   cid="$(docker run -d -e "PORT=$bad" "$TAG")"
   CIDS="$CIDS $cid"
-  code="$(wait_until_stopped "$cid")" || fail "PORT='$bad' left the container running"
-  [ "$code" != 0 ] || fail "PORT='$bad' exited 0 instead of refusing to start"
-  docker logs "$cid" 2>&1 | grep -q "PORT must be a whole number" \
-    || fail "PORT='$bad' stopped without the validation message"
-  echo "PORT='$bad' refused at boot (exit $code) with the validation message"
+  refused "$cid" "PORT must be a whole number" "PORT='$bad'"
 done
+cid="$(run_holly "" "ro")"
+CIDS="$CIDS $cid"
+refused "$cid" '"storage_writable": false' "a read-only store"
+cid="$(docker run -d --network "$NET" -e "DATABASE_URL=postgresql://holly:$DB_SECRET@db:5432/holly" "$TAG")"
+CIDS="$CIDS $cid"
+refused "$cid" "APP_SECRET_KEY" "a missing APP_SECRET_KEY"
 
 echo "SMOKE: PASS (necessary conditions met for the container build and deploy stages)"

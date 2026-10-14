@@ -4,13 +4,54 @@
 
 **Document classification:** Commercial in Confidence
 **Data classification:** Unclassified (per ADR-006)
-**Owner:** Daily Operations Dashboard Team, Bluestaq Limited
-**Version:** 0.2
-**Last updated:** 2026-05-28
+**Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned the history below)
+**Version:** 0.3
+**Last updated:** 2026-10-14
 
-All notable changes to the Daily Operations Dashboard are recorded here. The format follows the spirit of [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) without strict adherence. Versions follow [Semantic Versioning](https://semver.org/) once a first tagged release lands; until then, the **Unreleased** section captures work on `main`.
+All notable changes to Holly are recorded here, newest first. Holly V0.2 is the Daily Operations Dashboard fused into the Holly App Store project and renamed; the sections after it are the Daily Operations Dashboard's own record, kept as written. Holly's releases are numbered V<major>.<minor>, and each has a row in `docs/AUDIT-LOG.md` with the checks that ran.
 
-## [Unreleased]
+## Holly V0.2 (2026-10-14)
+
+### Added
+
+● **One App Store container.** The React dashboard is compiled in the image and served at `/`, beside the API under `/api/v1`, the platform probes and a secret-free `/status`. Migrations run at container start in the gunicorn master, under a PostgreSQL advisory lock. One worker runs the background refresh, so it runs once.
+● **Limits.** A coarse rate limit per client address on the API and `/status`; failed sign-ins limited per username; assistant calls limited per user; a daily assistant token cap (`LLM_DAILY_TOKEN_CAP`) that fails closed; an 11 MiB request body cap.
+● **`python -m app.cli.verify_audit`**, which recomputes the audit chain and names the first broken link. Migration 0017 refuses every UPDATE, DELETE and TRUNCATE on the audit log, the insert-only rule ADR-005 recorded but no migration enforced.
+● **Recurrence anchor for event timers** (migration 0016): a monthly timer set for the 31st now returns to the 31st after a shorter month.
+● **Unit tests for the dashboard's logic** (Vitest), and a server suite of 870 tests at 99% line coverage.
+● **`scripts/dev.sh`**, the local run: PostgreSQL from `infra/docker-compose.yml`, migrations, the API on 8080 and the dashboard on 3000.
+
+### Changed
+
+● **Renamed to Holly**: the page title and header, the browser storage keys (`holly.*`, so every analyst signs in once more), the service name in the logs and the package names.
+● **Settings are validated at boot and fail closed**: a signing key of at least 32 characters, no `*` origin, https for UDL and Mattermost outside development, and an absolute, writable procedure store (proved with a real write at boot).
+● **Sign-in tokens use PyJWT** in place of python-jose, whose ecdsa dependency carries an advisory with no fixed release. Decoding accepts the configured algorithm only and requires every claim.
+● **The audit chain hashes each row's stored timestamp and stored detail**, so every row Holly writes can be recomputed. Rows the Daily Operations Dashboard wrote hashed a timestamp it never stored and cannot be verified.
+● **The admin command takes its password** from `ADMIN_PASSWORD` or a hidden prompt; the `--password` flag is gone, so a password never lands in shell history or the process list.
+● **Downloads and exports** fetch with the analyst's token; the plain links before could not carry it.
+● **Dashboard dependencies**: axios 1.20.0, react-router-dom 7.18.4, Vite 7, Vitest 4 and ESLint 10, exactly pinned; `npm audit` reports no known vulnerability.
+● **The interactive API documentation is off**, and every response carries a strict Content Security Policy (a dashboard policy for the page itself), `nosniff`, `no-referrer`, `no-store` and a request id.
+
+### Fixed
+
+● Every uploaded procedure was stored in one file per extension, named after an id the row did not have yet, so a later upload replaced an earlier one's content and refusing a duplicate deleted the original's file. An upload that fails for any reason now removes its own file, a blank name is refused, and a download whose file is missing answers 404 instead of failing.
+● Event summaries: a summary is refreshed only when the window holds a publication it has not seen, and from the event's full history, so it never shrinks as older publications age out; a timestamp tie no longer triggers a fresh narrative every hour; the newest events are summarised first when the per-cycle cap applies. The assistant is shown at most 20 publications of one event, the first and the newest, so a long-lived event costs no more to summarise than a busy one.
+● The hourly loop survives a cycle cancelled by another caller, and stopping the loops no longer swallows the caller's own cancellation.
+● A spent assistant limit no longer refuses a shift note: the note is kept as written and can be re-polished later.
+● The dashboard did not compile as uploaded: `SortDirection` was imported in three files and defined in none.
+● A failed re-polish no longer discards a note's polished text, including an analyst's own edit; a failed summary no longer hides an earlier good one.
+● Mattermost: a malformed post is skipped and counted instead of aborting the run, or stalling every later run on the same post; an answer that is not a JSON object is a client error; ids are checked before they reach a request path.
+● Satellite ids that UDL sends as numbers no longer crash evaluations and event summaries.
+● Event timers: a whitespace-only label is refused, targets are bounded to the years 2000 to 2099, and an unknown recurrence value is dismissed once instead of looping. The pre-alert badge and browser notification give the timer's own lead time, not a fixed 5 minutes.
+● A manual UDL ingest may ask for at most 10,000 records in one pull. The element-set ingest's audit entry now records the data mode it asked for.
+● The empty Comms page no longer tells analysts to edit a local `.env` file.
+● Links from UDL records become clickable only for http and https, and every new-tab link carries `noopener noreferrer`.
+
+### Removed
+
+● The nginx configuration and certificates, the development Dockerfiles, `scripts/dev.ps1`, `.env.example` (`docs/developer/setup.md` lists every setting), the `/ws` development proxy, and the unused `EventSummaryRead` schema.
+
+## Daily Operations Dashboard: [Unreleased]
 
 ### Added
 

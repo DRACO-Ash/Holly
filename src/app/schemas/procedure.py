@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
@@ -10,12 +9,12 @@ class ProcedureRead(BaseModel):
 
     id: UUID
     name: str
-    description: Optional[str] = None
+    description: str | None = None
     filename: str
     content_type: str
     size_bytes: int
     file_hash: str
-    uploaded_by: Optional[UUID] = None
+    uploaded_by: UUID | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -23,7 +22,7 @@ class ProcedureRead(BaseModel):
 class ProcedureContent(ProcedureRead):
     """Procedure metadata plus inlined file content for previewable types."""
 
-    content: Optional[str] = None
+    content: str | None = None
     content_truncated: bool = False
 
 

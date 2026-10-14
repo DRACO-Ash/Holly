@@ -1,34 +1,25 @@
 from datetime import datetime
-from typing import Any, Optional
-from uuid import UUID
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
+
+from app.schemas.common import UDLEnvelopeRead
 
 
-class ManeuverRead(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+class ManeuverRead(UDLEnvelopeRead):
+    origin: str | None = None
 
-    id: UUID
-    udl_id: Optional[str] = None
-    data_mode: Optional[str] = None
-    source: Optional[str] = None
-    classification_marking: Optional[str] = None
-    created_by: Optional[str] = None
-    orig_network: Optional[str] = None
-    origin: Optional[str] = None
-    udl_created_at: Optional[datetime] = None
-
-    sat_no: Optional[int] = None
-    event_start_time: Optional[datetime] = None
-    event_stop_time: Optional[datetime] = None
-    mnvr_type: Optional[str] = None
-    description: Optional[str] = None
-    delta_v: Optional[float] = None
-    thrust_magnitude: Optional[float] = None
-    thrust_duration: Optional[float] = None
-    propulsion_type: Optional[str] = None
-    maneuver_status: Optional[str] = None
-    responsible_nation: Optional[str] = None
+    sat_no: int | None = None
+    event_start_time: datetime | None = None
+    event_stop_time: datetime | None = None
+    mnvr_type: str | None = None
+    description: str | None = None
+    delta_v: float | None = None
+    thrust_magnitude: float | None = None
+    thrust_duration: float | None = None
+    propulsion_type: str | None = None
+    maneuver_status: str | None = None
+    responsible_nation: str | None = None
 
     created_at: datetime
     updated_at: datetime

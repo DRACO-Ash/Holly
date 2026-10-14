@@ -1,8 +1,9 @@
 import { FormEvent, useState } from "react";
 import { useEventTimers } from "../context/EventTimersContext";
 import type { EventTimer, TimerRecurrence } from "../types";
+import { extractErrorMessage } from "../utils/errors";
 
-const COLLAPSE_STORAGE_KEY = "ops-dashboard.event-timers.collapsed";
+const COLLAPSE_STORAGE_KEY = "holly.event-timers.collapsed";
 
 function loadCollapsed(): boolean {
   if (typeof window === "undefined") return false;
@@ -74,7 +75,9 @@ function TimerRow({ timer, variant }: TimerRowProps) {
       </div>
       <div className="event-timer-meta">
         {variant === "upcoming" && <span>{formatDelta(timer.target_time)}</span>}
-        {variant === "pre" && <span className="urgency-pill urgency-medium">5-min alert</span>}
+        {variant === "pre" && (
+          <span className="urgency-pill urgency-medium">{timer.pre_alert_minutes}-min alert</span>
+        )}
         {variant === "firing" && <span className="urgency-pill urgency-high">Firing</span>}
         {variant === "dismissed" && <span className="muted">Dismissed</span>}
         {timer.recurrence && timer.recurrence !== "none" && (
@@ -134,7 +137,7 @@ export default function EventTimersPanel() {
       setPreMinutes("5");
       setRecurrence("none");
     } catch (err) {
-      setCreateError(err instanceof Error ? err.message : "Could not create timer.");
+      setCreateError(extractErrorMessage(err, "Could not create timer."));
     } finally {
       setSubmitting(false);
     }

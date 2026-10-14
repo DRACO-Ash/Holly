@@ -1,29 +1,33 @@
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.user import UserRole
 
+# Bounds on what a caller may send. bcrypt reads only the first 72 bytes of a password and a
+# Holly token is a few hundred characters, so anything longer is refused before any work.
+MAX_PASSWORD_LENGTH = 1024
+MAX_TOKEN_LENGTH = 4096
+
 
 class LoginRequest(BaseModel):
     username: str = Field(..., min_length=1, max_length=50)
-    password: str = Field(..., min_length=1)
+    password: str = Field(..., min_length=1, max_length=MAX_PASSWORD_LENGTH)
 
 
 class TokenResponse(BaseModel):
     access_token: str
     refresh_token: str
-    token_type: str = "bearer"
+    token_type: str = "bearer"  # noqa: S105  the OAuth 2 token type, not a secret
 
 
 class RefreshRequest(BaseModel):
-    refresh_token: str
+    refresh_token: str = Field(..., min_length=1, max_length=MAX_TOKEN_LENGTH)
 
 
 class LogoutRequest(BaseModel):
-    refresh_token: str
+    refresh_token: str = Field(..., min_length=1, max_length=MAX_TOKEN_LENGTH)
 
 
 class UserRead(BaseModel):
@@ -31,7 +35,7 @@ class UserRead(BaseModel):
 
     id: UUID
     username: str
-    email: Optional[str] = None
+    email: str | None = None
     role: UserRole
     is_active: bool
     created_at: datetime

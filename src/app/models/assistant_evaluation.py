@@ -1,15 +1,15 @@
 import uuid
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 from sqlalchemy import DateTime, ForeignKey, Index, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.db.base import Base
+from app.db.base import Base, UUIDPrimaryKeyMixin
 
 
-class AssistantEvaluation(Base):
+class AssistantEvaluation(Base, UUIDPrimaryKeyMixin):
     """Cached Claude evaluation of a notification against current procedures.
 
     Stored per-notification so the analyst can pull up the assistant's
@@ -21,11 +21,6 @@ class AssistantEvaluation(Base):
 
     __tablename__ = "assistant_evaluation"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid.uuid4,
-    )
     notification_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("notification.id", ondelete="CASCADE"),
@@ -35,7 +30,7 @@ class AssistantEvaluation(Base):
     structured: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     procedures_used: Mapped[list[str]] = mapped_column(JSONB, nullable=False)
     model: Mapped[str] = mapped_column(String(100), nullable=False)
-    error: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
     evaluated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

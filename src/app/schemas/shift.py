@@ -1,5 +1,4 @@
 from datetime import date, datetime
-from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -7,23 +6,23 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class ShiftNoteCreate(BaseModel):
     raw_text: str = Field(min_length=1, max_length=10_000)
-    shift_date: Optional[date] = None
+    shift_date: date | None = None
 
 
 class ShiftNoteUpdate(BaseModel):
-    polished_text: Optional[str] = Field(default=None, max_length=10_000)
+    polished_text: str | None = Field(default=None, max_length=10_000)
 
 
 class ShiftNoteRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
-    author_id: Optional[UUID] = None
+    author_id: UUID | None = None
     shift_date: date
     raw_text: str
-    polished_text: Optional[str] = None
-    polish_error: Optional[str] = None
-    model: Optional[str] = None
+    polished_text: str | None = None
+    polish_error: str | None = None
+    model: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -38,11 +37,11 @@ class ShiftSummaryRead(BaseModel):
 
     id: UUID
     shift_date: date
-    generated_by: Optional[UUID] = None
+    generated_by: UUID | None = None
     narrative: str
     source_note_ids: list[str]
-    model: Optional[str] = None
-    error: Optional[str] = None
+    model: str | None = None
+    error: str | None = None
     created_at: datetime
     updated_at: datetime
 

@@ -1,21 +1,12 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { listMattermostMessages } from "../api/mattermost";
 import type { MattermostMessage } from "../types";
+import { extractErrorMessage } from "../utils/errors";
 
 const PAGE_SIZE = 100;
 
 function formatDateTime(value: string): string {
   return new Date(value).toISOString().replace("T", " ").slice(0, 19);
-}
-
-function extractErrorMessage(err: unknown, fallback: string): string {
-  if (err && typeof err === "object" && "response" in err) {
-    const response = (err as { response?: { data?: { detail?: unknown } } }).response;
-    const detail = response?.data?.detail;
-    if (typeof detail === "string") return detail;
-  }
-  if (err instanceof Error) return err.message;
-  return fallback;
 }
 
 export default function MattermostPage() {
@@ -100,8 +91,8 @@ export default function MattermostPage() {
 
         {!loading && items.length === 0 && (
           <p className="muted">
-            No messages yet. Configure <code>MATTERMOST_CHANNEL_IDS</code> in your .env and make
-            sure the bot account is a member of those channels.
+            No messages yet. Set <code>MATTERMOST_CHANNEL_IDS</code> in Holly&apos;s environment
+            settings and make sure the bot account is a member of those channels.
           </p>
         )}
 

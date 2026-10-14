@@ -1,15 +1,14 @@
-import uuid
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 from sqlalchemy import DateTime, Float, Index, Integer, String, Text, UniqueConstraint
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.db.base import Base, TimestampMixin
+from app.db.base import Base, TimestampMixin, UDLEnvelopeMixin, UUIDPrimaryKeyMixin
 
 
-class Maneuver(Base, TimestampMixin):
+class Maneuver(Base, UUIDPrimaryKeyMixin, UDLEnvelopeMixin, TimestampMixin):
     """UDL maneuver record uploaded by fusion providers.
 
     Typed columns mirror the commonly-queried fields of the UDL
@@ -19,41 +18,25 @@ class Maneuver(Base, TimestampMixin):
 
     __tablename__ = "maneuver"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        primary_key=True,
-        default=uuid.uuid4,
-    )
-    udl_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    origin: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
-    data_mode: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
-    source: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    classification_marking: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    created_by: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    orig_network: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    origin: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    udl_created_at: Mapped[Optional[datetime]] = mapped_column(
+    sat_no: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    event_start_time: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
     )
-
-    sat_no: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    event_start_time: Mapped[Optional[datetime]] = mapped_column(
+    event_stop_time: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
     )
-    event_stop_time: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True),
-        nullable=True,
-    )
-    mnvr_type: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
-    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    delta_v: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    thrust_magnitude: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    thrust_duration: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    propulsion_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    maneuver_status: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    responsible_nation: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    mnvr_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    delta_v: Mapped[float | None] = mapped_column(Float, nullable=True)
+    thrust_magnitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    thrust_duration: Mapped[float | None] = mapped_column(Float, nullable=True)
+    propulsion_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    maneuver_status: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    responsible_nation: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     raw: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 

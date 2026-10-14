@@ -1,79 +1,74 @@
-"""Create or update an admin user.
+"""Create or update an admin user, and record it in the audit chain.
 
-Run from the `backend/` directory:
+Inside the container (or any environment with the database settings):
 
-    python -m scripts.create_admin --username alice --password 'secret'
+    python -m app.cli.create_admin --username alice
 
-Or via environment variables:
-
-    ADMIN_USERNAME=alice ADMIN_PASSWORD=secret python -m scripts.create_admin
-
-If neither flags nor env vars are supplied, the script prompts interactively.
+The password comes from the ADMIN_PASSWORD environment variable, or is prompted for. It is
+never accepted as a command-line argument, which would leave it in the shell history and the
+process list. Running it again for an existing username resets the password and the admin role.
 """
-
-from __future__ import annotations
 
 import argparse
 import asyncio
 import os
 import sys
 from getpass import getpass
-from typing import Optional
+
+from sqlalchemy import select
 
 from app.core.security import hash_password
 from app.db.session import get_session_factory
 from app.models.user import User, UserRole
-from sqlalchemy import select
+from app.services.audit import write_audit
+
+MIN_PASSWORD_LENGTH = 12
 
 
-async def upsert_admin(
-    username: str,
-    password: str,
-    email: Optional[str] = None,
-) -> str:
-    session_factory = get_session_factory()
-    async with session_factory() as session:
+async def upsert_admin(username: str, password: str, email: str | None = None) -> str:
+    async with get_session_factory()() as session:
         username = username.strip().lower()
         result = await session.execute(select(User).where(User.username == username))
-        existing = result.scalar_one_or_none()
-        if existing is None:
-            session.add(
-                User(
-                    username=username,
-                    email=email,
-                    password_hash=hash_password(password),
-                    role=UserRole.ADMIN.value,
-                    is_active=True,
-                )
-            )
+        user = result.scalar_one_or_none()
+        action = "updated"
+        if user is None:
+            user = User(username=username, email=email)
+            session.add(user)
             action = "created"
-        else:
-            existing.password_hash = hash_password(password)
-            existing.role = UserRole.ADMIN.value
-            existing.is_active = True
-            if email is not None:
-                existing.email = email
-            action = "updated"
+        user.password_hash = hash_password(password)
+        user.role = UserRole.ADMIN.value
+        user.is_active = True
+        if email is not None:
+            user.email = email
+        await session.flush()
+        await write_audit(
+            session,
+            action_type="auth.user.admin_upsert",
+            entity_type="user",
+            entity_id=str(user.id),
+            detail={"username": username, "action": action},
+        )
         await session.commit()
     return action
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Create or update an admin user.")
     parser.add_argument("--username", default=os.environ.get("ADMIN_USERNAME"))
-    parser.add_argument("--password", default=os.environ.get("ADMIN_PASSWORD"))
     parser.add_argument("--email", default=os.environ.get("ADMIN_EMAIL"))
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
-    username = args.username or input("Username: ").strip()
-    password = args.password or getpass("Password: ")
-
+    username = (args.username or input("Username (admin): ")).strip()
+    password = os.environ.get("ADMIN_PASSWORD") or getpass("Admin password (hidden): ")
     if not username or not password:
-        print("Username and password are required.", file=sys.stderr)
+        sys.stderr.write("A username and a password are both required.\n")
+        return 2
+    if len(password) < MIN_PASSWORD_LENGTH:
+        sys.stderr.write(f"Use at least {MIN_PASSWORD_LENGTH} characters for the admin password.\n")
         return 2
 
     action = asyncio.run(upsert_admin(username, password, args.email))
-    print(f"Admin user '{username}' {action}.")
+    sys.stdout.write(f"Admin user '{username.lower()}' {action}.\n")
     return 0
 
 

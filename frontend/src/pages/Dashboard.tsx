@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getFeed } from "../api/assistant";
 import type { AssistantFeedItem } from "../types";
+import { extractErrorMessage } from "../utils/errors";
 
 const REFRESH_INTERVAL_MS = 60_000;
 
@@ -42,16 +43,6 @@ function feedBucketsByUrgency(items: AssistantFeedItem[]): Map<string, Assistant
     map.get(key)!.push(item);
   }
   return map;
-}
-
-function extractErrorMessage(err: unknown, fallback: string): string {
-  if (err && typeof err === "object" && "response" in err) {
-    const response = (err as { response?: { data?: { detail?: unknown } } }).response;
-    const detail = response?.data?.detail;
-    if (typeof detail === "string") return detail;
-  }
-  if (err instanceof Error) return err.message;
-  return fallback;
 }
 
 export default function Dashboard() {

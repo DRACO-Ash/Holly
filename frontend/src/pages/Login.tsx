@@ -1,6 +1,7 @@
 import { FormEvent, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { extractErrorMessage } from "../utils/errors";
 
 export default function Login() {
   const { login } = useAuth();
@@ -18,7 +19,7 @@ export default function Login() {
       await login(username, password);
       navigate("/");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Sign in failed.");
+      setError(extractErrorMessage(err, "Sign in failed."));
     } finally {
       setSubmitting(false);
     }
