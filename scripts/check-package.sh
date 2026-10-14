@@ -3,12 +3,16 @@
 # Usage: sh scripts/check-package.sh <zip>
 #   1. Required members at the root: requirements.txt, Dockerfile and pyproject.toml (the pytest
 #      configuration the platform's test stage depends on).
-#   2. Name net: no virtualenv, tool cache, coverage output, environment file (.env, .env.*,
-#      .env-*, .envrc, *.env) or archive (zip, jar, wheel, tar and the like) at any depth, and
-#      no member name holding a control character (unzip lists one as ^X, so any ^ refuses).
-#   3. Content net: every extracted file is scanned with the secret-scan hook's rules
-#      (scan-package.mjs). Cannot see: secret shapes the hook has no rule for, and encodings
-#      other than UTF-8 and UTF-16LE.
+#   2. Name net, matched without regard to case: no virtualenv, tool cache, coverage output,
+#      environment file (.env, .env.*, .env-*, .envrc, *.env), or archive or compressed file by
+#      extension (zip and its family such as docx, xlsx, jar and apk; tar, gz, xz, 7z and the
+#      like) at any depth, and no member name holding a control character (unzip lists one as
+#      ^X, so any ^ refuses). Extensions are defence in depth: the content net decides by bytes.
+#   3. Content net: every extracted file is read by scan-package.mjs. A file whose leading bytes
+#      mark an archive or compressed stream is refused whatever its name; every other file is
+#      scanned with the secret-scan hook's rules, as UTF-8 and as UTF-16 in either byte order.
+#      Cannot see: secret shapes the hook has no rule for, other encodings, or compressed
+#      streams embedded inside other formats (a PDF, a Parquet file, an image).
 # Needs unzip and node; without them it refuses. scripts/test-package-nets.sh proves each net.
 set -eu
 
@@ -33,7 +37,7 @@ fi
 
 # Anchor each banned component at the start of a name or just after a slash, so a root-level
 # file is caught, not only a nested one.
-if printf '%s\n' "$names" | grep -qE '(^|/)(\.venv|venv|__pycache__|\.pytest_cache|\.mypy_cache|\.ruff_cache|\.complexipy_cache|coverage|htmlcov)/|(^|/)(\.env[^/]*|[^/]+\.env)$|(^|/)(coverage\.xml|\.coverage(\..+)?)$|\.(zip|jar|whl|egg|tar|tgz|gz|bz2|xz|zst|7z|rar)$'; then
+if printf '%s\n' "$names" | grep -iqE '(^|/)(\.venv|venv|__pycache__|\.pytest_cache|\.mypy_cache|\.ruff_cache|\.complexipy_cache|coverage|htmlcov)/|(^|/)(\.env[^/]*|[^/]+\.env)$|(^|/)(coverage\.xml|\.coverage(\..+)?)$|\.(zip|jar|war|ear|apk|whl|egg|nupkg|docx|xlsx|pptx|odt|ods|odp|epub|npz|tar|tgz|gz|bz2|xz|zst|7z|rar|lz|lzma|lz4|z|br)$'; then
   echo "package contains a banned path (a virtualenv, a tool cache, coverage output, an environment file or an archive). Fix .gitignore and untrack it."; exit 1
 fi
 

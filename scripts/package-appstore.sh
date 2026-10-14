@@ -39,6 +39,7 @@ git archive --format=zip -o "$TMP" HEAD -- \
 
 sh scripts/check-package.sh "$TMP"
 
+chmod 644 "$TMP"   # mktemp creates it private; the upload zip is an ordinary readable file
 mv -f -- "$TMP" "$OUT"
 packaged=1
 echo "wrote $OUT"
