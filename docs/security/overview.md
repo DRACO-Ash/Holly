@@ -1,8 +1,7 @@
-**BLUESTAQ LIMITED** | Security Overview | **COMMERCIAL IN CONFIDENCE**
+**BLUESTAQ LIMITED** | Security Overview
 
 # Security Overview
 
-**Document classification:** Commercial in Confidence
 **Data classification:** Unclassified (per ADR-006)
 **Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned the edition this one replaces)
 **Version:** 0.3
@@ -206,4 +205,4 @@ This document is reviewed when a security-relevant change lands. Triggers includ
 ● New external integrations (AI APIs, cloud providers).
 ● Findings from a penetration test or audit.
 
-Bluestaq Limited | Holly documentation | 2026 | **COMMERCIAL IN CONFIDENCE**
+Bluestaq Limited | Holly documentation | 2026

@@ -1,8 +1,7 @@
-**BLUESTAQ LIMITED** | Operator Manual | **COMMERCIAL IN CONFIDENCE**
+**BLUESTAQ LIMITED** | Operator Manual
 
 # Operator Manual
 
-**Document classification:** Commercial in Confidence
 **Data classification:** Unclassified (per ADR-006)
 **Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned the edition this one replaces)
 **Version:** 0.3
@@ -314,4 +313,4 @@ Holly has no route that revokes another user's tokens. Deactivating the user (se
 ● [Developer setup](../developer/setup.md), for the settings reference
 ● [Analyst training manual](../user-handbook/training-manual.md)
 
-Bluestaq Limited | Holly documentation | 2026 | **COMMERCIAL IN CONFIDENCE**
+Bluestaq Limited | Holly documentation | 2026

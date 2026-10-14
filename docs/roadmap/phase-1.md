@@ -1,8 +1,7 @@
-**BLUESTAQ LIMITED** | Phase 1 Roadmap | **COMMERCIAL IN CONFIDENCE**
+**BLUESTAQ LIMITED** | Phase 1 Roadmap
 
 # Phase 1 Roadmap
 
-**Document classification:** Commercial in Confidence
 **Data classification:** Unclassified (per ADR-006)
 **Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned the plan below)
 **Version:** 0.4
@@ -135,4 +134,4 @@ Phase 2 scope will be expanded once Phase 1 ships.
 
 This roadmap is reviewed at the end of every sprint. Owners update the **Completed** and **In progress** sections in real time as work moves.
 
-Bluestaq Limited | Holly documentation | 2026 | **COMMERCIAL IN CONFIDENCE**
+Bluestaq Limited | Holly documentation | 2026

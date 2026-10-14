@@ -1,8 +1,7 @@
-**BLUESTAQ LIMITED** | Analyst Training Manual | **COMMERCIAL IN CONFIDENCE**
+**BLUESTAQ LIMITED** | Analyst Training Manual
 
 # Analyst Training Manual
 
-**Document classification:** Commercial in Confidence
 **Data classification:** Unclassified (per ADR-006)
 **Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned the edition this one replaces)
 **Version:** 0.3
@@ -273,4 +272,4 @@ The operator-facing playbook for these is in [docs/runbook/operator-manual.md](.
 
 Holly exists to make the watch easier. If anything here is unclear, or a workflow is missing, tell the team; the channel for feedback is `TBC, re-verify`.
 
-Bluestaq Limited | Holly documentation | 2026 | **COMMERCIAL IN CONFIDENCE**
+Bluestaq Limited | Holly documentation | 2026

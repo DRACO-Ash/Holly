@@ -1,8 +1,7 @@
-**BLUESTAQ LIMITED** | Developer Setup | **COMMERCIAL IN CONFIDENCE**
+**BLUESTAQ LIMITED** | Developer Setup
 
 # Developer Setup
 
-**Document classification:** Commercial in Confidence
 **Data classification:** Unclassified (per ADR-006)
 **Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned the edition this one replaces)
 **Version:** 0.3
@@ -316,4 +315,4 @@ When a commit hook rejects a change, fix the cause and commit again. Do not bypa
 ● [Data model](../architecture/data-model.md)
 ● [Operator manual](../runbook/operator-manual.md)
 
-Bluestaq Limited | Holly documentation | 2026 | **COMMERCIAL IN CONFIDENCE**
+Bluestaq Limited | Holly documentation | 2026

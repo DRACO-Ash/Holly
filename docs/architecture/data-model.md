@@ -1,8 +1,7 @@
-**BLUESTAQ LIMITED** | Data Model | **COMMERCIAL IN CONFIDENCE**
+**BLUESTAQ LIMITED** | Data Model
 
 # Data Model
 
-**Document classification:** Commercial in Confidence
 **Data classification:** Unclassified (per ADR-006)
 **Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned the edition this one replaces)
 **Version:** 0.3
@@ -401,4 +400,4 @@ Downgrades drop tables and their data, and downgrading `0017` removes the append
 ● Every state change writes an audit row ([src/app/services/audit.py](../../src/app/services/audit.py)).
 ● A new route must be added to the reviewed inventory in [tests/test_app.py](../../tests/test_app.py), which fails until it is.
 
-Bluestaq Limited | Holly documentation | 2026 | **COMMERCIAL IN CONFIDENCE**
+Bluestaq Limited | Holly documentation | 2026

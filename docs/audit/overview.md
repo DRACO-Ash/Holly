@@ -1,8 +1,7 @@
-**BLUESTAQ LIMITED** | Audit Logging Overview | **COMMERCIAL IN CONFIDENCE**
+**BLUESTAQ LIMITED** | Audit Logging Overview
 
 # Audit Logging Overview
 
-**Document classification:** Commercial in Confidence
 **Data classification:** Unclassified (per ADR-006)
 **Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned the edition this one replaces)
 **Version:** 0.3
@@ -202,4 +201,4 @@ Audit data is part of the PostgreSQL database, which the App Store POSTGRESQL ad
 ● Whether the recorded `ip_address` is the analyst's or the ingress's depends on platform configuration: `TBC, re-verify`.
 ● The Mattermost loop writes a `mattermost.ingest` row every cycle while channels are configured: up to 1,440 rows a day at the default 60-second interval.
 
-Bluestaq Limited | Holly documentation | 2026 | **COMMERCIAL IN CONFIDENCE**
+Bluestaq Limited | Holly documentation | 2026

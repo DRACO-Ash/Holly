@@ -1,8 +1,7 @@
-**BLUESTAQ LIMITED** | Architectural Decision Log | **COMMERCIAL IN CONFIDENCE**
+**BLUESTAQ LIMITED** | Architectural Decision Log
 
 # Architectural Decision Log
 
-**Document classification:** Commercial in Confidence
 **Data classification:** Unclassified (per ADR-006)
 **Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned ADR-001 to ADR-011)
 **Version:** 0.3
@@ -131,4 +130,4 @@
 ● The first admin is created with `python -m app.cli.create_admin --username <name>` inside the running container, or anywhere with the database settings. The password comes from `ADMIN_PASSWORD` or a hidden prompt; the `--password` flag in ADR-010's operational note is gone. Whether the platform offers a shell in the running container is `TBC, re-verify`.
 ● Behind the platform ingress, the client address Holly writes to the audit log and rate-limits by is the ingress's own, unless gunicorn is set to trust the ingress's forwarded headers (`FORWARDED_ALLOW_IPS`). Whether the platform provides those headers, and which address to trust, is `TBC, re-verify`.
 
-Bluestaq Limited | Holly documentation | 2026 | **COMMERCIAL IN CONFIDENCE**
+Bluestaq Limited | Holly documentation | 2026

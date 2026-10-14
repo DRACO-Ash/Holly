@@ -1,8 +1,7 @@
-**BLUESTAQ LIMITED** | Changelog | **COMMERCIAL IN CONFIDENCE**
+**BLUESTAQ LIMITED** | Changelog
 
 # Changelog
 
-**Document classification:** Commercial in Confidence
 **Data classification:** Unclassified (per ADR-006)
 **Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned the history below)
 **Version:** 0.3
@@ -138,4 +137,4 @@ All notable changes to Holly are recorded here, newest first. Holly V0.2 is the 
 
 Captured in git log up to `18fff46` (Merge pull request #1, CI pipeline check).
 
-Bluestaq Limited | Daily Operations Dashboard documentation | 2026 | **COMMERCIAL IN CONFIDENCE**
+Bluestaq Limited | Daily Operations Dashboard documentation | 2026

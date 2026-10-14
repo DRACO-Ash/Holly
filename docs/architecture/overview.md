@@ -1,8 +1,7 @@
-**BLUESTAQ LIMITED** | Architecture Overview | **COMMERCIAL IN CONFIDENCE**
+**BLUESTAQ LIMITED** | Architecture Overview
 
 # Architecture Overview
 
-**Document classification:** Commercial in Confidence
 **Data classification:** Unclassified (per ADR-006)
 **Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned the edition this one replaces)
 **Version:** 0.3
@@ -161,4 +160,4 @@ A fuller treatment is in [docs/security/overview.md](../security/overview.md).
 ● [Audit logging overview](../audit/overview.md) for the hash-chain mechanics.
 ● [Operator manual](../runbook/operator-manual.md) for running Holly on the App Store.
 
-Bluestaq Limited | Holly documentation | 2026 | **COMMERCIAL IN CONFIDENCE**
+Bluestaq Limited | Holly documentation | 2026
