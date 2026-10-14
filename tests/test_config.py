@@ -86,6 +86,21 @@ class TestDatabaseUrl:
         with pytest.raises(ValueError, match="DATABASE_URL must be a postgres"):
             asyncpg_url(url)
 
+    @pytest.mark.parametrize(
+        ("query", "expected"),
+        [
+            ("?sslmode=require", "?ssl=require"),
+            ("?sslmode=verify-full&connect_timeout=10", "?ssl=verify-full&connect_timeout=10"),
+            ("?ssl=require", "?ssl=require"),
+            ("", ""),
+        ],
+    )
+    def test_libpq_sslmode_becomes_asyncpg_ssl(self, query: str, expected: str) -> None:
+        url = f"postgres://holly:p%40ss@db.example:5432/holly{query}"
+        assert (
+            asyncpg_url(url) == f"postgresql+asyncpg://holly:p%40ss@db.example:5432/holly{expected}"
+        )
+
     def test_the_message_never_repeats_the_url(self) -> None:
         with pytest.raises(ValueError, match="DATABASE_URL") as raised:
             asyncpg_url("mysql://holly:pw-in-url@db.example/holly")

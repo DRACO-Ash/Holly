@@ -1,5 +1,6 @@
 import axios, { AxiosError, AxiosRequestConfig } from "axios";
 import { filenameFromDisposition, saveBlob } from "../utils/download";
+import { withJsonErrorBody } from "../utils/errors";
 
 export const ACCESS_TOKEN_KEY = "holly.auth.access";
 export const REFRESH_TOKEN_KEY = "holly.auth.refresh";
@@ -96,7 +97,12 @@ export async function downloadFile(
   fallbackName: string,
   params?: Record<string, string>,
 ): Promise<void> {
-  const response = await apiClient.get<Blob>(path, { params, responseType: "blob" });
+  let response;
+  try {
+    response = await apiClient.get<Blob>(path, { params, responseType: "blob" });
+  } catch (err) {
+    throw await withJsonErrorBody(err);
+  }
   const disposition = response.headers["content-disposition"];
   const name = filenameFromDisposition(
     typeof disposition === "string" ? disposition : null,

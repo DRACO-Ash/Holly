@@ -11,7 +11,7 @@ from collections.abc import Mapping
 from functools import lru_cache
 from pathlib import PurePosixPath
 from typing import Literal, Self
-from urllib.parse import quote, urlsplit
+from urllib.parse import parse_qsl, quote, urlencode, urlsplit
 
 from pydantic import Field, SecretStr, ValidationError, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict, SettingsError
@@ -60,7 +60,21 @@ def asyncpg_url(url: str) -> str:
     if not separator or scheme.lower() not in _POSTGRES_SCHEMES or not urlsplit(url).hostname:
         msg = "DATABASE_URL must be a postgres:// or postgresql:// URL with a host"
         raise ValueError(msg)
-    return f"{ASYNCPG_SCHEME}://{rest}"
+    return f"{ASYNCPG_SCHEME}://{_asyncpg_options(rest)}"
+
+
+def _asyncpg_options(rest: str) -> str:
+    """The URL after its scheme, with libpq's sslmode renamed to asyncpg's ssl, which takes the
+    same values. SQLAlchemy hands every query parameter to asyncpg, which has no sslmode and
+    would refuse the first connection."""
+    location, mark, query = rest.partition("?")
+    if not mark:
+        return rest
+    options = [
+        ("ssl" if key == "sslmode" else key, value)
+        for key, value in parse_qsl(query, keep_blank_values=True)
+    ]
+    return f"{location}?{urlencode(options)}"
 
 
 def _https_problem(name: str, value: str) -> str | None:
