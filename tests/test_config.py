@@ -4,6 +4,7 @@ incomplete setting stops the container with a clear message (fail closed).
 Expected values are literals, never the module's own constants, so a changed bound fails here.
 """
 
+import runpy
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,7 @@ import pytest
 from pydantic import SecretStr, ValidationError
 
 from app.config import InvalidSettingsError, Settings, asyncpg_url, get_settings, resolve_port
+from app.factory import create_app
 
 # Non-ASCII digits, built from code points so the source stays plain ASCII.
 # str.isdigit() is true for both, so the ASCII check is what must refuse them.
@@ -239,6 +241,58 @@ class TestABadEnvironmentStopsTheBootClearly:
         assert message.startswith("Holly cannot start: ")
         assert "app_allowed_origins" in message
         assert "not-a-json-list" not in message
+
+    def test_a_value_of_the_wrong_type_is_named(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("POSTGRES_PORT", "abc")
+        assert self.refusal().startswith(
+            "Holly cannot start: POSTGRES_PORT: Input should be a valid integer"
+        )
+
+    @pytest.mark.parametrize(
+        ("problem", "named"),
+        [
+            ({"POSTGRES_PORT": "abc"}, "POSTGRES_PORT: Input should be a valid integer"),
+            ({"UDL_BASE_URL": "http://udl.example"}, "UDL_BASE_URL must use https"),
+        ],
+        ids=["a field of the wrong type", "a setting the boot check refuses"],
+    )
+    def test_no_fragment_of_any_secret_reaches_the_message(
+        self, monkeypatch: pytest.MonkeyPatch, problem: dict[str, str], named: str
+    ) -> None:
+        # Synthetic secrets, each distinctive, set beside one problem on each error path.
+        secrets = {
+            "DATABASE_URL": "postgresql://holly:Zq7xSYNTHETICpw9X@pg:5432/holly",
+            "APP_SECRET_KEY": "synthetic-signing-key-ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            "ANTHROPIC_API_KEY": "synthetic-anthropic-key-0123456789abcdef",
+            "UDL_PASSWORD": "synthetic-udl-pass-XYZ987",
+            "MATTERMOST_BOT_TOKEN": "synthetic-bot-token-QRS654",
+        }
+        for name, value in (secrets | problem).items():
+            monkeypatch.setenv(name, value)
+        message = self.refusal()
+        assert named in message
+        fragments = {
+            value[start : start + 5]
+            for value in secrets.values()
+            for start in range(len(value) - 4)
+        }
+        assert sorted(each for each in fragments if each in message) == []
+
+    def test_the_worker_refuses_as_the_master_does(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("APP_SECRET_KEY")
+        with pytest.raises(InvalidSettingsError, match="APP_SECRET_KEY: Field required"):
+            create_app()
+
+    def test_the_master_refuses_before_any_migration_connects(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # The real gunicorn hook and the real Alembic environment, up to the settings read that
+        # precedes the database connection.
+        monkeypatch.delenv("APP_SECRET_KEY")
+        on_starting = runpy.run_module("app.gunicorn_conf")["on_starting"]
+        monkeypatch.setitem(on_starting.__globals__, "configure_logging", lambda: None)
+        with pytest.raises(InvalidSettingsError, match="APP_SECRET_KEY: Field required"):
+            on_starting(object())
 
     def test_gunicorn_prints_the_refusal_as_one_line(self) -> None:
         # gunicorn's BaseApplication.run catches RuntimeError around the master's start, where
