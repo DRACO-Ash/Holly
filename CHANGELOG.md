@@ -15,11 +15,11 @@ All notable changes to Holly are recorded here, newest first. Holly V0.2 is the 
 ### Added
 
 ● **One App Store container.** The React dashboard is compiled in the image and served at `/`, beside the API under `/api/v1`, the platform probes and a secret-free `/status`. Migrations run at container start in the gunicorn master, under a PostgreSQL advisory lock. One worker runs the background refresh, so it runs once.
-● **Limits.** A coarse rate limit per client address on the API and `/status`; sign-in attempts limited per client address, before any password is checked, and failed sign-ins per username; at most 4 password checks at once, on worker threads, so a burst of sign-ins cannot stall the worker; assistant calls limited per user; a daily assistant token cap (`LLM_DAILY_TOKEN_CAP`) that fails closed and holds each call's largest possible cost before it is sent; request bodies capped at 256 KiB, 11 MiB for a procedure upload, whose form is read only after sign-in.
-● **`ASSISTANT_CLEARED_MARKINGS`**: the UDL classification markings whose notifications, and the manoeuvre records sent with them, may be sent to the assistant, `["U"]` by default. Any other marking, or none, never leaves Holly; the dashboard says which notices were not sent. Each background evaluation and event narrative is written to the audit chain, and the cycle stops sending if it cannot be.
+● **Limits.** A coarse rate limit per client address on the API and `/status`; sign-in attempts limited per client address, before any password is checked, and checked sign-ins per username, each counted before its check so guesses sent together cannot pass the limit; at most 4 password checks at once, on worker threads, so a burst of sign-ins cannot stall the worker; assistant calls limited per user; a daily assistant token cap (`LLM_DAILY_TOKEN_CAP`) that fails closed and holds each call's largest possible cost before it is sent; request bodies capped at 256 KiB, 11 MiB for a procedure upload, whose form is read only after sign-in.
+● **`ASSISTANT_CLEARED_MARKINGS`**: the UDL classification markings whose notifications, and the manoeuvre records sent with them, may be sent to the assistant, `["U"]` by default. Any other marking, or none, never leaves Holly; the dashboard says which notices were not sent. Each background evaluation and event narrative is written to the audit chain; once a sending may have gone, any failure to store it or its row stops that phase for the cycle.
 ● **`python -m app.cli.verify_audit`**, which recomputes the audit chain and names the first broken link. Migration 0017 refuses every UPDATE, DELETE and TRUNCATE on the audit log, the insert-only rule ADR-005 recorded but no migration enforced.
 ● **Recurrence anchor for event timers** (migration 0016): a monthly timer set for the 31st now returns to the 31st after a shorter month.
-● **Unit tests for the dashboard's logic** (Vitest), and a server suite of 928 tests at 99% line coverage.
+● **Unit tests for the dashboard's logic** (Vitest), and a server suite of 956 tests at 99% line coverage.
 ● **`scripts/dev.sh`**, the local run: PostgreSQL from `infra/docker-compose.yml`, migrations, the API on 8080 and the dashboard on 3000.
 
 ### Changed
@@ -48,10 +48,10 @@ All notable changes to Holly are recorded here, newest first. Holly V0.2 is the 
 ● Satellite ids that UDL sends as numbers no longer crash evaluations and event summaries.
 ● Event timers: a whitespace-only label is refused, targets are bounded to the years 2000 to 2099, and an unknown recurrence value is dismissed once instead of looping. The pre-alert badge and browser notification give the timer's own lead time, not a fixed 5 minutes.
 ● A manual UDL ingest may ask for at most 10,000 records in one pull. The element-set ingest's audit entry now records the data mode it asked for.
-● One UDL record that its table cannot store, such as text longer than its column, no longer fails the whole pull: it is skipped, counted and logged by column.
+● One UDL record that its table cannot store, such as text longer than its column, a NUL or lone surrogate in any text, or NaN in its raw JSON, no longer fails the whole pull: it is skipped, counted and logged by column.
 ● Each refused request built a new traceback onto one shared exception, so memory grew with every 401; each refusal is now a new exception.
 ● An upload whose file write fails part-way, or whose request is cancelled, no longer leaves a file behind.
-● An assistant reply nested too deeply to read is an assistant error, not a crash that re-billed the notice every cycle.
+● An assistant reply nested too deeply to read is an assistant error, not a crash that re-billed the notice every cycle; the parser tries at most 20 opening braces, so a crafted reply cannot hold the worker.
 ● Audit rows are timed after the newest row, so two containers whose clocks differ cannot make the verifier report a break.
 ● A failed download shows the server's message, such as a missing procedure file, not the bare status code.
 ● A 500 response carries the request id.

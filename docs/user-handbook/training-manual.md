@@ -77,7 +77,7 @@ The Dashboard answers one question: what needs your attention. It covers the TAC
 
 ● **The counts** across the top show how many notices sit at **High**, **Medium** and **Low** urgency, how many are **Pending**, and how many are **Info only**.
 ● **The feed** groups notices by urgency, most urgent first and newest first within each group. A notice's urgency is the most urgent of the actions the assistant recommends. **Informational** means the assistant recommended no action. **Awaiting analysis** means there is no evaluation yet, or the last one failed. A notice marked `Not sent to the assistant: its classification marking is not cleared.` stays there: Holly does not send it to the assistant.
-● **Each notice** shows its identifier, its UDL creation time, its event class, the **Event evolution** narrative (with the number of publications when there is more than one), the assistant's summary and its top action, marked **Next:**.
+● **Each notice** shows its identifier, its UDL creation time, its event class, the **Event evolution** narrative (with the number of publications when there is more than one), the assistant's summary and its top action, marked **Next:**. The narrative is written only from publications whose marking is cleared for the assistant, so it can lag a notice whose newest publication is not cleared.
 ● **Select a notice** to open its detail page.
 
 The page refreshes itself every 60 seconds; **Refresh** reloads it at once. New notices arrive with the hourly pull, or sooner when someone selects **Pull from UDL** on the Notifications page.

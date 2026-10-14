@@ -103,10 +103,11 @@ Holly writes one JSON object per line to standard output. Named events (`boot`, 
 ● `Anthropic API error (<type>): ...`: the Anthropic API's own error text. Analysts see only a fixed message for its class (section 10).
 ● `Notification ingest complete (window: last 120h)` and `Maneuver ingest complete (window: last 48h)`: a background pull succeeded.
 ● `Notification ingest skipped: UDL auth failed (...)` or `Notification ingest failed: ...`: see section 10.
-● `Skipping UDL record <id>: <column> <problem>`, for example `status is longer than 20 characters`: a record its table cannot store, skipped and counted in `skipped`; the rest of the pull is stored. The line names the column, never the value.
+● `Skipping UDL record <id>: <column> <problem>`, for example `status is longer than 20 characters`, `description holds a character PostgreSQL cannot store` (a NUL or a lone surrogate) or `raw holds a number PostgreSQL JSON cannot store` (NaN or an infinity): a record its table cannot store, skipped and counted in `skipped`; the rest of the pull is stored. The line names the column, never the value.
 ● `Stopping auto-evaluate cycle early: ...`: a persistent assistant failure; see section 10.
-● `Could not audit the evaluation of <id>; stopping`: a background evaluation's audit row could not be written, so no further notice was sent for evaluation in that cycle.
-● `Could not record the narrative of <event key>; stopping`: a background narrative's audit row, or the commit that stores it with the narrative, failed, so no further event was sent in that cycle.
+● `Auto-evaluate of notification <id> failed; stopping`, followed by a traceback: evaluating that notice, storing its evaluation or writing its audit row failed once the notice may have been sent, so no further notice was sent for evaluation in that cycle.
+● `Event summary for <event key> failed; stopping`, followed by a traceback: the narrative, its audit row or the commit that stores both failed once the event's publications may have been sent, so no further event was sent in that cycle.
+● `Event summary failed for <event key>`: the event's stored publications could not be read, so nothing was sent for it; the next event still runs.
 ● `Sign-in refused: too many attempts from <address>` or `Sign-in refused: 4 password checks already running`: see section 10.
 ● `Mattermost channel <id> skipped: ...`: the bot cannot read that channel.
 
@@ -212,15 +213,15 @@ Holly's limits, all counted in the one worker and reset when the container resta
 |-------|------------|-----------|
 | Coarse | Every request under `/api/` and `/status`, per client address | 600 in any 60 seconds |
 | Sign-in attempts | Every sign-in attempt, per client address, counted before any password check | 30 in any 60 seconds |
-| Sign-in | Failed sign-ins, per username; a success clears the count | 10 in any 15 minutes |
+| Sign-in | Checked sign-ins, per username, each counted before its check; a success clears the count | 10 in any 15 minutes |
 | Assistant | Evaluations, **Pull from UDL**, new shift-log entries, re-polish and the end-of-shift narrative, per user | 30 in any 10 minutes |
 | Daily tokens | Every assistant call, across all users, per UTC day | `LLM_DAILY_TOKEN_CAP`, 2,000,000 by default |
 
-The first four answer 429 with `Retry-After`, with one exception: a new shift-log entry made after the assistant allowance is spent is still saved, unpolished, with `Not polished: the assistant limit is reached. Re-polish in <n> seconds.` The daily token cap refuses nothing at the door: each assistant call holds its output allowance and an estimate of its input against the cap before it is sent, and a call the rest of the day's cap cannot cover fails. An evaluation, polish or end-of-shift narrative then stores the error; an event narrative keeps its earlier text. The probes and the dashboard's static files are never limited. Behind the platform ingress, the client address may be the ingress's own for every caller (see the [security overview](../security/overview.md)); if so, all users share one coarse allowance and one allowance of sign-in attempts.
+The first four answer 429 with `Retry-After`, with one exception: a new shift-log entry made after the assistant allowance is spent is still saved, unpolished, with `Not polished: the assistant limit is reached. Re-polish in <n> seconds.` The daily token cap refuses nothing at the door: each assistant call holds its output allowance and an estimate of its input against the cap before it is sent, and a call the rest of the day's cap cannot cover fails. An evaluation, polish or end-of-shift narrative then stores the error; an event narrative keeps its earlier text. The probes and the dashboard's static files are never limited. Behind the platform ingress, the client address may be the ingress's own for every caller (see the [security overview](../security/overview.md)); if so, all users share one coarse allowance and one allowance of sign-in attempts, which anyone who can reach Holly can spend, with no credentials, by one attempt every 2 seconds. Setting `FORWARDED_ALLOW_IPS` to the ingress's addresses ends the sharing.
 
 ### Symptom: sign-in answers HTTP 503 `Sign-in is busy. Try again in a moment.`
 
-At most 4 password checks run at once, each on a worker thread, so a burst of sign-ins cannot stall the one worker. A sign-in beyond them is refused at once, with `Retry-After: 1`, logged as `Sign-in refused: 4 password checks already running` and not audited. It clears as the running checks finish.
+At most 4 password checks run at once, each on a worker thread, so a burst of sign-ins cannot stall the one worker. A sign-in beyond them is refused at once, with `Retry-After: 1`, logged as `Sign-in refused: 4 password checks already running`, not audited and not counted against the username. It clears as the running checks finish.
 
 ### Symptom: HTTP 413 `Request body too large`
 
