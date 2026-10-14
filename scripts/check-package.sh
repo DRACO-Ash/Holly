@@ -8,19 +8,20 @@
 #      extension (zip and its family such as docx, xlsx, jar and apk; tar, gz, xz, 7z and the
 #      like) at any depth, and no member name holding a control character (unzip lists one as
 #      ^X, so any ^ refuses). Extensions are defence in depth: the content net decides by bytes.
-#   3. Content net: scan-package.mjs scans only readable text (strict UTF-8, or UTF-16 with a
-#      byte-order mark, without control characters) with the secret-scan hook's rules, and
-#      refuses every other file whatever its name, unless scripts/upload-binaries.txt names it
-#      with a reason; those are named as unscanned on every run. Cannot see: secret shapes the
-#      hook has no rule for, secrets encoded inside text (base64, a data: URI), or anything
-#      inside an allowlisted binary.
+#   3. Content net: scan-package.mjs scans only readable text (strict UTF-8 without control
+#      characters) with the secret-scan hook's rules, and refuses every other file whatever its
+#      name, unless scripts/upload-binaries.txt, read from HEAD, pins it by SHA-256 with a
+#      reason; an allowlisted binary's readable runs are still scanned, and every run names it.
+#      Cannot see: secret shapes the hook has no rule for, secrets encoded inside text (base64,
+#      a data: URI), or secrets encoded inside an allowlisted binary.
 # Needs unzip and node; without them it refuses. scripts/test-package-nets.sh proves each net.
 set -eu
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ZIP="$1"
 SCAN="$(mktemp -d "${TMPDIR:-/tmp}/holly-package-scan.XXXXXX")"
-trap 'rm -rf -- "$SCAN"' EXIT
+ALLOW="$(mktemp "${TMPDIR:-/tmp}/holly-allowlist.XXXXXX")"
+trap 'rm -rf -- "$SCAN"; rm -f -- "$ALLOW"' EXIT
 # dash runs the EXIT trap on a normal exit or a set -e failure, not on a signal: exit first.
 trap 'exit 130' INT
 trap 'exit 143' TERM
@@ -43,7 +44,10 @@ if printf '%s\n' "$names" | grep -iqE '(^|/)(\.venv|venv|__pycache__|\.pytest_ca
 fi
 
 command -v node >/dev/null 2>&1 || { echo "node is required for the package secret scan"; exit 1; }
+# The binary allowlist comes from HEAD, the commit being packaged, so an uncommitted entry can
+# never exempt a file.
+git -C "$ROOT" show HEAD:scripts/upload-binaries.txt > "$ALLOW" \
+  || { echo "could not read scripts/upload-binaries.txt from HEAD"; exit 1; }
 unzip -q "$ZIP" -d "$SCAN"
 files="$(printf '%s\n' "$names" | grep -vc '/$' || true)"
-node "$ROOT/scripts/scan-package.mjs" "$SCAN" "$files" "$ROOT/.claude/hooks/secret-scan.mjs" \
-  "$ROOT/scripts/upload-binaries.txt"
+node "$ROOT/scripts/scan-package.mjs" "$SCAN" "$files" "$ROOT/.claude/hooks/secret-scan.mjs" "$ALLOW"

@@ -3,10 +3,10 @@
 # upload. Synthetic upload zips each carry one planted problem, covering every shape that once
 # slipped past the nets: bracketed and control-character names; archives under an upper-case or
 # unlisted name; compressed streams with or without a signature (zlib, raw deflate, LZMA-alone,
-# brotli, a zipapp); and UTF-16 without a byte-order mark. Direct runs of the scanner prove that
-# a hook which crashes, floods or hangs refuses, and that the binary allowlist names what it
-# lets through. A last case packages HEAD for real. Run by verify.sh; needs python3, unzip and
-# node.
+# brotli, a zipapp); and ASCII behind a stray UTF-16 byte-order mark. Direct runs of the scanner
+# prove that a hook which crashes, floods or hangs refuses, and that the binary allowlist waives
+# only the text requirement for a pinned, unchanged binary. A last case packages HEAD for real
+# in a throwaway clone. Run by verify.sh; needs git, python3, unzip and node.
 set -eu
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -65,11 +65,23 @@ def raw_deflate(text):
     return compressor.compress(text.encode()) + compressor.flush()
 
 
+def even_ascii(text):
+    data = text.encode()
+    return data if len(data) % 2 == 0 else data + b" "
+
+
 ENCODERS = {
+    "utf8bom": lambda t: codecs.BOM_UTF8 + t.encode(),
     "utf16": lambda t: t.encode("utf-16-le"),
     "utf16bom": lambda t: codecs.BOM_UTF16_LE + t.encode("utf-16-le"),
     "utf16bebom": lambda t: codecs.BOM_UTF16_BE + t.encode("utf-16-be"),
     "oddutf16": lambda t: b"\x01" + t.encode("utf-16-le"),
+    "strayff": lambda t: b"\xff\xfe" + even_ascii(t),
+    "strayfe": lambda t: b"\xfe\xff" + even_ascii(t),
+    "powershell": lambda t: codecs.BOM_UTF16_LE + "Header\r\n".encode("utf-16-le")
+    + even_ascii(t).decode().encode("cp1252"),
+    # The text arrives with backslash escapes (for example caf\xe9), which are interpreted here.
+    "latin1": lambda t: t.encode().decode("unicode_escape").encode("latin-1"),
     "gzip": lambda t: gzip.compress(t.encode()),
     "zlib": lambda t: zlib.compress(t.encode()),
     "deflate": raw_deflate,
@@ -100,6 +112,10 @@ with zipfile.ZipFile(out, "w") as archive:
 PY
 }
 
+sha256_of() {
+  python3 -c 'import hashlib, sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' "$1"
+}
+
 expect() {  # $1: pass or refuse, $2: text the output must hold, $3: label, $4: exit status, $5: output
   n=$((n + 1))
   if [ "$4" = 0 ]; then got=pass; else got=refuse; fi
@@ -112,7 +128,7 @@ expect() {  # $1: pass or refuse, $2: text the output must hold, $3: label, $4: 
   esac
 }
 
-# An upload with the required members plus the planted members given.
+# An upload with the required members plus the planted members given, through check-package.sh.
 check() {  # $1: pass or refuse, $2: text the output must hold, $3: label, then planted members
   expected="$1"
   fragment="$2"
@@ -133,9 +149,12 @@ scan() {  # $1: pass or refuse, $2: text, $3: label, $4: dir, $5: expected count
 
 # Names and plain text.
 check pass "text files scanned, clean" "a clean upload"
+check pass "text files scanned, clean" "UTF-8 text with a byte-order mark" docs.txt 'utf8bom:plain notes'
 check pass "text files scanned, clean" "a text file that begins like a bzip2 signature" \
   docs.txt 'BZh is how a bzip2 stream starts'
 check refuse "secret-scan rules matched" "a key in an ordinary file" src/app/leak.py "$LINE"
+check refuse "secret-scan rules matched" "a key in UTF-8 text with a byte-order mark" \
+  src/app/leak.py "utf8bom:$LINE"
 check refuse "secret-scan rules matched" "a key behind a bracketed name" "src/app/[leak].py" "$LINE"
 check refuse "secret-scan rules matched" "a bracketed name beside a clean namesake" \
   src/app/x.py 'X = 1' "src/app/[x].py" "$LINE"
@@ -147,13 +166,16 @@ check refuse "banned path" "an archive with an upper-case extension" tests/DATA.
 check refuse "banned path" "a zip container named as a spreadsheet" tests/report.xlsx "zip:$LINE"
 check refuse "could not scan" "a symlink member" tests/link.txt 'symlink:/etc/hostname'
 
-# UTF-16 is text only with a byte-order mark; without one it cannot be read safely.
-check refuse "secret-scan rules matched" "a key in UTF-16LE text with a byte-order mark" \
-  tests/fixture.txt "utf16bom:$LINE"
-check refuse "secret-scan rules matched" "a key in UTF-16BE text with a byte-order mark" \
-  tests/fixture.txt "utf16bebom:$LINE"
-check refuse "is not text" "UTF-16LE text without a byte-order mark" tests/fixture.txt "utf16:$LINE"
-check refuse "is not text" "UTF-16 text after one leading byte" tests/fixture.txt "oddutf16:$LINE"
+# Only strict UTF-8 is text. UTF-16 of any kind, and ASCII behind a stray UTF-16 byte-order
+# mark, would decode into characters the rules cannot read, so it is refused.
+check refuse "is not text" "a key in UTF-16LE text with a byte-order mark" tests/f.txt "utf16bom:$LINE"
+check refuse "is not text" "a key in UTF-16BE text with a byte-order mark" tests/f.txt "utf16bebom:$LINE"
+check refuse "is not text" "UTF-16LE text without a byte-order mark" tests/f.txt "utf16:$LINE"
+check refuse "is not text" "UTF-16 text after one leading byte" tests/f.txt "oddutf16:$LINE"
+check refuse "is not text" "a key behind a stray FF FE" tests/f.txt "strayff:$LINE"
+check refuse "is not text" "a key behind a stray FE FF" tests/f.txt "strayfe:$LINE"
+check refuse "is not text" "a PowerShell mixed UTF-16 and ANSI file" tests/f.txt "powershell:$LINE"
+check refuse "is not text" "Latin-1 text, which is not valid UTF-8" tests/f.txt 'latin1:caf\xe9 = 1'
 
 # Anything that is not text is refused under a neutral name, with or without a signature.
 check refuse "holds zip content" "a zip container under an unlisted extension" \
@@ -182,20 +204,15 @@ status=0
 out="$(sh "$HERE/check-package.sh" "$WORK/bare.zip" 2>&1)" || status=$?
 expect refuse "missing pyproject.toml" "a missing pyproject.toml" "$status" "$out"
 
-# The scanner itself: hooks that fail, and the binary allowlist.
-mkdir "$WORK/clean" "$WORK/binary"
+# The scanner itself: hooks that fail.
+mkdir "$WORK/clean"
 printf 'X = 1\n' > "$WORK/clean/a.py"
-python3 -c 'import random, sys; open(sys.argv[1], "wb").write(random.Random(2).randbytes(128))' \
-  "$WORK/binary/logo.png"
 : > "$WORK/empty-allowlist.txt"
-printf 'logo.png # the brand mark, a PNG image\n' > "$WORK/allowlist.txt"
-printf 'logo.png\n' > "$WORK/allowlist-no-reason.txt"
+EMPTY="$WORK/empty-allowlist.txt"
 printf 'process.exit(1);\n' > "$WORK/hook-exits-1.mjs"
 printf "process.kill(process.pid, 'SIGKILL');\n" > "$WORK/hook-killed.mjs"
 printf "process.stdout.write('x'.repeat(2 * 1024 * 1024));\n" > "$WORK/hook-floods.mjs"
 printf 'setInterval(() => {}, 1000);\n' > "$WORK/hook-hangs.mjs"
-EMPTY="$WORK/empty-allowlist.txt"
-
 scan refuse "could not scan" "a missing secret-scan hook" "$WORK/clean" 1 "$WORK/none.mjs" "$EMPTY"
 scan refuse "could not scan" "a hook that exits 1" "$WORK/clean" 1 "$WORK/hook-exits-1.mjs" "$EMPTY"
 scan refuse "could not scan" "a hook stopped by a signal" "$WORK/clean" 1 "$WORK/hook-killed.mjs" "$EMPTY"
@@ -206,17 +223,43 @@ out="$(SCAN_HOOK_TIMEOUT_MS=500 node "$HERE/scan-package.mjs" "$WORK/clean" 1 "$
   || status=$?
 expect refuse "could not scan" "a hook that hangs, past the timeout" "$status" "$out"
 scan refuse "could not scan" "fewer files than the archive lists" "$WORK/clean" 2 "$HOOK" "$EMPTY"
-scan refuse "is not text" "a binary file not on the allowlist" "$WORK/binary" 1 "$HOOK" "$EMPTY"
-scan pass "Unscanned, by the binary allowlist: logo.png (the brand mark, a PNG image)" \
-  "an allowlisted binary passes and is named" "$WORK/binary" 1 "$HOOK" "$WORK/allowlist.txt"
-scan refuse "gives no reason" "an allowlist entry without a reason" \
-  "$WORK/binary" 1 "$HOOK" "$WORK/allowlist-no-reason.txt"
 
-# The real package from HEAD: it passes the nets and lands at the upload path, readable.
+# The binary allowlist waives only the text requirement, for a pinned and unchanged binary.
+mkdir "$WORK/binary" "$WORK/keyed" "$WORK/text"
+python3 -c 'import random, sys; open(sys.argv[1], "wb").write(random.Random(2).randbytes(128))' \
+  "$WORK/binary/logo.png"
+python3 -c 'import random, sys; r = random.Random(3); open(sys.argv[1], "wb").write(r.randbytes(64) + sys.argv[2].encode() + r.randbytes(64))' \
+  "$WORK/keyed/logo.png" "
+$LINE
+"
+printf 'X = 1\n' > "$WORK/text/notes.py"
+LOGO="$(sha256_of "$WORK/binary/logo.png")"
+printf 'logo.png %s # the brand mark, a PNG image\n' "$LOGO" > "$WORK/allow-logo.txt"
+printf 'logo.png %s # the brand mark, a PNG image\n' "$(sha256_of "$WORK/keyed/logo.png")" > "$WORK/allow-keyed.txt"
+printf 'notes.py %s # not really binary\n' "$(sha256_of "$WORK/text/notes.py")" > "$WORK/allow-text.txt"
+printf 'logo.png %s # the brand mark\nmodel.bin %s # a model that is not there\n' "$LOGO" "$LOGO" > "$WORK/allow-missing.txt"
+printf 'logo.png %s\n' "$LOGO" > "$WORK/allow-no-reason.txt"
+printf 'logo.png # the brand mark\n' > "$WORK/allow-no-hash.txt"
+scan refuse "is not text" "a binary not on the allowlist" "$WORK/binary" 1 "$HOOK" "$EMPTY"
+scan pass "Allowlisted binaries, scanned only for readable runs: logo.png (the brand mark, a PNG image)" \
+  "a pinned binary passes and is named" "$WORK/binary" 1 "$HOOK" "$WORK/allow-logo.txt"
+scan refuse "changed" "an allowlisted binary whose content changed" "$WORK/keyed" 1 "$HOOK" "$WORK/allow-logo.txt"
+scan refuse "rules matched in the readable runs" "a key in an allowlisted binary's readable runs" \
+  "$WORK/keyed" 1 "$HOOK" "$WORK/allow-keyed.txt"
+scan refuse "needs no allowlist entry" "an allowlisted file that is text" "$WORK/text" 1 "$HOOK" "$WORK/allow-text.txt"
+scan refuse "does not carry" "an allowlist entry for a file the upload lacks" \
+  "$WORK/binary" 1 "$HOOK" "$WORK/allow-missing.txt"
+scan refuse "gives no reason" "an allowlist entry without a reason" "$WORK/binary" 1 "$HOOK" "$WORK/allow-no-reason.txt"
+scan refuse "is not" "an allowlist entry without a hash" "$WORK/binary" 1 "$HOOK" "$WORK/allow-no-hash.txt"
+
+# The real package from HEAD, in a throwaway clone carrying this working tree's nets, so the
+# loop never rewrites this repository's dist/appstore.zip.
+git clone -q "$ROOT" "$WORK/repo"
+cp "$HERE/package-appstore.sh" "$HERE/check-package.sh" "$HERE/scan-package.mjs" "$WORK/repo/scripts/"
 status=0
-out="$(sh "$HERE/package-appstore.sh" 2>&1)" || status=$?
+out="$(sh "$WORK/repo/scripts/package-appstore.sh" 2>&1)" || status=$?
 expect pass "wrote dist/appstore.zip" "the real package from HEAD" "$status" "$out"
-mode="$(ls -l "$ROOT/dist/appstore.zip" | cut -c1-10)"
+mode="$(ls -l "$WORK/repo/dist/appstore.zip" | cut -c1-10)"
 [ "$mode" = "-rw-r--r--" ] || { echo "FAIL: the upload zip has mode $mode, not -rw-r--r--"; exit 1; }
 echo "ok: the upload zip is mode 0644"
 
