@@ -1,6 +1,6 @@
 # A local PostgreSQL for developing Holly. On the App Store the POSTGRESQL add-on provides the
 # database; this stands in for it on a developer's machine, reachable only from localhost.
-#   POSTGRES_PASSWORD=<choose one> docker compose -f infra/docker-compose.yml up -d
+#   POSTGRES_PASSWORD=<choose one> docker compose -f infra/docker-compose.yml up -d --wait db
 # then point Holly at it with DATABASE_URL in your local .env (see docs/developer/setup.md).
 # scripts/dev.sh starts it, applies the migrations and runs Holly with the dashboard.
 services:
@@ -14,6 +14,14 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD before starting the database}
     ports:
       - "127.0.0.1:5432:5432"
+    healthcheck:
+      # Through TCP, not the Unix socket: on a fresh volume the image first runs a temporary
+      # server on the socket alone, so a socket check would pass, and `up --wait` return, before
+      # anything listens on port 5432.
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "holly", "-d", "holly"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
     volumes:
       - holly_db:/var/lib/postgresql/data
 

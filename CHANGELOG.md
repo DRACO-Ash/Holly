@@ -4,10 +4,16 @@
 
 **Data classification:** Unclassified (per ADR-006)
 **Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned the history below)
-**Version:** 0.3
-**Last updated:** 2026-10-14
+**Version:** 0.4
+**Last updated:** 2026-10-15
 
 All notable changes to Holly are recorded here, newest first. Holly V0.2 is the Daily Operations Dashboard fused into the Holly App Store project and renamed; the sections after it are the Daily Operations Dashboard's own record, kept as written. Holly's releases are numbered V<major>.<minor>, and each has a row in `docs/AUDIT-LOG.md` with the checks that ran.
+
+## Holly V0.3 (2026-10-15)
+
+### Fixed
+
+● **The local database is ready when `--wait` returns.** `infra/docker-compose.yml` gives PostgreSQL a health check over TCP, so `docker compose up --wait` and `scripts/dev.sh` hold until the published port takes connections. Without it, on a fresh volume, `--wait` returned while the image's temporary first-start server listened on its Unix socket alone, and the migrations' first connection was reset.
 
 ## Holly V0.2 (2026-10-14)
 

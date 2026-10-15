@@ -4,8 +4,8 @@
 
 **Data classification:** Unclassified (per ADR-006)
 **Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned the edition this one replaces)
-**Version:** 0.3
-**Last updated:** 2026-10-14
+**Version:** 0.4
+**Last updated:** 2026-10-15
 
 > **BLUF**
 >
@@ -158,6 +158,8 @@ A setting that is added to `Settings` belongs in this reference, and in `tests/c
 export POSTGRES_PASSWORD=[REDACTED:password]
 docker compose -f infra/docker-compose.yml up -d --wait db
 ```
+
+`--wait` returns once the database takes connections on `127.0.0.1:5432`: its health check connects over TCP, so it holds through the first start's initialisation. Without `--wait`, `up -d` returns at once, and a migration run straight after can have its connection reset.
 
 Point Holly at it in `.env`, using the same password:
 
