@@ -67,7 +67,7 @@ SECURITY.md             the accepted security positions and their trip-wires
 
 ## Naming and versioning
 
-- Releases are `V<major>.<minor>`; the current stamp is V0.2 (`__version__` in `src/app/__init__.py`, held equal to `pyproject.toml` by a test; `frontend/package.json` carries the same). Bump the in-app version stamp and add one audit row to `docs/AUDIT-LOG.md` on every change.
+- Releases are `V<major>.<minor>`; the current stamp is V0.3 (`__version__` in `src/app/__init__.py`, held equal to `pyproject.toml` by a test; `frontend/package.json` carries the same). Bump the in-app version stamp and add one audit row to `docs/AUDIT-LOG.md` on every change.
 - Static delivery copies (static archetype only, so not used here) follow `Bluestaq_Limited_-_<product>_-_V<major>_<minor>_-_<date>.html`.
 - The App Store app name (slug) is lowercase, hyphenated, starts and ends alphanumeric, unique in the store: `TBC, re-verify`.
 
