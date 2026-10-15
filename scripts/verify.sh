@@ -15,13 +15,13 @@ echo "pinned $want, the venv runs $have"
 [ "$have" = "$want" ] || { echo "FAIL: rebuild the venv on Python $want"; exit 1; }
 
 step "Local database: the health check asks over TCP, and dev.sh waits for it before migrating"
-echo "Reads: infra/docker-compose.yml and scripts/dev.sh, as text. A check through the Unix socket passes before PostgreSQL listens on TCP. Cannot see: a check turned off with disable: true, or a socket fallback inside a shell-form check."
+echo "Reads: infra/docker-compose.yml and scripts/dev.sh, as text. A check through the Unix socket passes before PostgreSQL listens on TCP. Cannot see: a check turned off with disable: true, or a fallback (||) inside a shell-form check."
 grep -Eq '^ +test: [^#]*pg_isready[^#]*-h[", ]+127\.0\.0\.1' infra/docker-compose.yml \
   || { echo "FAIL: the db health check must run pg_isready over TCP (-h 127.0.0.1)"; exit 1; }
 waits="$(grep -n '^[^#]*up -d --wait db[[:space:]]*$' scripts/dev.sh | head -n 1 | cut -d: -f1)"
 migrates="$(grep -n '^[^#]*run_migrations()' scripts/dev.sh | head -n 1 | cut -d: -f1)"
 [ -n "$waits" ] && [ -n "$migrates" ] && [ "$waits" -lt "$migrates" ] \
-  || { echo "FAIL: scripts/dev.sh must run 'up -d --wait db' before the migrations"; exit 1; }
+  || { echo "FAIL: scripts/dev.sh must run 'up -d --wait db', with nothing after it on the line, before the migrations"; exit 1; }
 echo "pg_isready asks over TCP; dev.sh waits at line $waits and migrates at line $migrates"
 
 step "Format (ruff format --check)"
