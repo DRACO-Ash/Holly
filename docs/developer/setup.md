@@ -159,7 +159,7 @@ export POSTGRES_PASSWORD=[REDACTED:password]
 docker compose -f infra/docker-compose.yml up -d --wait db
 ```
 
-`--wait` returns once the database takes connections on `127.0.0.1:5432`: its health check connects over TCP, so it holds through the first start's initialisation. Without `--wait`, `up -d` returns at once, and a migration run straight after can have its connection reset. If the database is not ready within about a minute, `--wait` exits 1 and names the container unhealthy: `docker compose -f infra/docker-compose.yml logs db` shows why, and after a slow first start the same command succeeds once the database is up.
+`--wait` returns once the database takes connections on `127.0.0.1:5432`: its health check connects over TCP, so it holds through the first start's initialisation. Without `--wait`, `up -d` returns at once, and a migration run straight after can have its connection reset. If the database is not ready within about a minute, `--wait` exits 1 and names the container unhealthy: `docker compose -f infra/docker-compose.yml logs db` shows why, and after a slow first start, re-running `up -d --wait db` succeeds once the database is up.
 
 Point Holly at it in `.env`, using the same password:
 
