@@ -13,7 +13,7 @@ All notable changes to Holly are recorded here, newest first. Holly V0.2 is the 
 
 ### Fixed
 
-● **The local database is ready when `--wait` returns.** `infra/docker-compose.yml` gives PostgreSQL a health check over TCP, so `docker compose up --wait` and `scripts/dev.sh` hold until the published port takes connections. Without it, on a fresh volume, `--wait` returned while the image's temporary first-start server listened on its Unix socket alone, and the migrations' first connection was reset.
+● **The local database is ready when `--wait` returns.** `infra/docker-compose.yml` gives PostgreSQL a health check over TCP, so `docker compose up --wait` and `scripts/dev.sh` hold until the published port takes connections, and the verification loop fails if the check stops asking over TCP or `dev.sh` stops waiting for it. Without it, `--wait` returned as soon as the container started; on a fresh volume nothing listens on TCP until the image has initialised the database, with initdb and then a temporary server on its Unix socket alone, so the migrations' first connection was reset.
 
 ## Holly V0.2 (2026-10-14)
 
