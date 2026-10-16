@@ -1,12 +1,15 @@
 #!/bin/sh
 # test-package-nets.sh :: proves the upload nets refuse what they claim to and accept a clean
 # upload. Synthetic upload zips each carry one planted problem, covering every shape that once
-# slipped past the nets: bracketed and control-character names; archives under an upper-case or
-# unlisted name; compressed streams with or without a signature (zlib, raw deflate, LZMA-alone,
-# brotli, a zipapp); and ASCII behind a stray UTF-16 byte-order mark. Direct runs of the scanner
-# prove that a hook which crashes, floods or hangs refuses, and that the binary allowlist waives
-# only the text requirement for a pinned, unchanged binary listed once. The last cases package
-# HEAD for real in a throwaway clone, and prove that only a committed allowlist entry counts.
+# slipped past the nets: bracketed, control-character and hidden-byte names (a DEL extraction
+# drops), a doubled slash and a backslash; archives under an upper-case or unlisted name;
+# compressed streams with or without a signature (zlib, raw deflate, LZMA-alone, brotli, a
+# zipapp); and ASCII behind a stray UTF-16 byte-order mark. A stand-in grep proves a failing
+# name check refuses. Direct runs of the scanner prove that a hook which crashes, floods or hangs
+# refuses, and that the binary allowlist waives only the text requirement for a pinned,
+# unchanged binary listed once. The last cases package HEAD for real in a throwaway clone, prove
+# that only a committed allowlist entry counts, and refuse committed names with a byte above
+# 0x7E, an executable's among them, packaged under C.UTF-8.
 # Run by verify.sh; needs git, python3, unzip and node.
 set -eu
 
@@ -185,6 +188,7 @@ check refuse "outside printable ASCII" "a DEL hidden in an environment file's na
 check refuse "outside printable ASCII" "a DEL hidden in a .claude/ directory" \
   "src/.cl${DEL}aude/settings.json" '{}'
 check refuse "change on extraction" "a doubled slash in a name" 'src//x.py' 'X = 1'
+check refuse "backslash" "a backslash standing in for a slash" 'tests/.claude\settings.json' '{}'
 check refuse "could not scan" "a symlink member" tests/link.txt 'symlink:/etc/hostname'
 
 # Only strict UTF-8 is text. UTF-16 of any kind, and ASCII behind a stray UTF-16 byte-order
@@ -334,5 +338,18 @@ commit_in_clone "$high" "a name with a byte above 0x7E"
 status=0
 out="$(sh "$WORK/repo/scripts/package-appstore.sh" 2>&1)" || status=$?
 expect refuse "outside printable ASCII" "a committed name with a byte above 0x7E" "$status" "$out"
+rm -- "$WORK/repo/$high"
+commit_in_clone "$high" "drop the name with a byte above 0x7E"
+
+# The same for an executable, which git archive marks as made on Unix, so unzip keeps its byte,
+# packaged under C.UTF-8, where grep sees an invalid byte only if the net reads names in C.
+latin="tests/caf$(printf '\351').py"
+printf 'X = 1\n' > "$WORK/repo/$latin"
+chmod +x "$WORK/repo/$latin"
+commit_in_clone "$latin" "an executable with a byte above 0x7E"
+status=0
+out="$(LC_ALL=C.UTF-8 sh "$WORK/repo/scripts/package-appstore.sh" 2>&1)" || status=$?
+expect refuse "outside printable ASCII" "an executable with a byte above 0x7E, under C.UTF-8" \
+  "$status" "$out"
 
 echo "upload nets: all $n cases behaved"

@@ -17,7 +17,7 @@ All notable changes to Holly are recorded here, newest first. Holly V0.2 is the 
 
 ### Fixed
 
-● **A hidden byte could carry a refused name past the upload nets.** `unzip` lists a DEL or a byte above 0x7E as it stands, and extraction drops or changes it, so `prod.en<DEL>v` passed every name check and landed as `prod.env`. Member names must now be printable ASCII, every file must land under its listed name, and a `grep` error refuses rather than reading as no match.
+● **A hidden byte could carry a refused name past the upload nets.** `unzip` lists a DEL or a byte above 0x7E as it stands, and an extractor may drop or change it: Info-ZIP drops a DEL, so `prod.en<DEL>v` passed every name check and landed as `prod.env`. Member names must now be printable ASCII without a backslash, every file must land under its listed name, and a `grep` error refuses rather than reading as no match.
 
 ● **The local database is ready when `--wait` returns.** `infra/docker-compose.yml` gives PostgreSQL a health check over TCP, so `docker compose up --wait` and `scripts/dev.sh` hold until the published port takes connections, and the verification loop checks that the health check asks over TCP and that `dev.sh` waits for it. Without it, `--wait` returned as soon as the container started; on a fresh volume nothing listens on TCP until the image has initialised the database, with initdb and then a temporary server on its Unix socket alone, so the migrations' first connection was reset.
 

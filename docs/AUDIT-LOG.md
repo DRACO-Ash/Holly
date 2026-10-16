@@ -1,6 +1,6 @@
 # Audit log
 
-One row per release, newest first. CLAUDE.md (Naming and versioning) says when a change opens a new row and when it is recorded in the current release's row. Record only checks that have actually run, and each gate verdict with the commit it judged.
+One row per release, newest first. CLAUDE.md (Naming and versioning) says when a change opens a new row and when it is recorded in the current release's row. A commit that only records verdicts is judged by the next gate round, whose delta starts at the last judged commit. Record only checks that have actually run, and each gate verdict with the commit it judged.
 
 | Version | Date | Change | Verified by |
 |---|---|---|---|

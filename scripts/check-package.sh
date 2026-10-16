@@ -10,9 +10,10 @@
 #      The agent configuration (CLAUDE.md, CLAUDE.local.md, .mcp.json, anything under .claude/)
 #      is refused by name too: it is tracked on purpose, so its fix is the path list, not
 #      .gitignore. Every name must be printable ASCII (unzip lists a control character as ^X,
-#      so any ^ refuses; it lists a DEL or a byte above 0x7E as it stands, and extraction would
-#      drop or change it), and every file must land under the name it is listed by, so no name
-#      passes the net in one form and lands in another. A grep error refuses.
+#      so any ^ refuses; it lists a DEL or a byte above 0x7E as it stands, and an extractor may
+#      drop or change it) without a backslash (which an extractor may read as a separator), and
+#      every file must land under the name it is listed by, so no name passes the net in one
+#      form and lands in another. A grep error refuses.
 #   3. Content net: scan-package.mjs scans only readable text (strict UTF-8 without control
 #      characters) with the secret-scan hook's rules, and refuses every other file whatever its
 #      name, unless scripts/upload-binaries.txt, read from HEAD, pins it by SHA-256 with a
@@ -51,10 +52,16 @@ if names_match '\^'; then
   echo "package has a member name with a control character (or a ^). Rename it."; exit 1
 fi
 
-# unzip lists a DEL or a byte above 0x7E as it stands, and extraction drops or changes it, so
-# CLAUDE<DEL>.md would pass every pattern below and land as CLAUDE.md.
+# unzip lists a DEL or a byte above 0x7E as it stands, and an extractor may drop or change it:
+# Info-ZIP drops a DEL, so CLAUDE<DEL>.md would pass every pattern below and land as CLAUDE.md.
 if names_match '[^ -~]'; then
   echo "package has a member name with a byte outside printable ASCII. Rename it."; exit 1
+fi
+
+# An extractor that reads a backslash as a separator would land .claude\settings.json as
+# .claude/settings.json, past the patterns below.
+if names_match '\\'; then
+  echo "package has a member name with a backslash, which an extractor may read as a separator. Rename it."; exit 1
 fi
 
 # Anchor each banned component at the start of a name or just after a slash, so a root-level
@@ -75,8 +82,8 @@ git -C "$ROOT" show HEAD:scripts/upload-binaries.txt > "$ALLOW" \
 unzip -q "$ZIP" -d "$SCAN"
 # Every file must land under the name the listing gave it: a name extraction changes, such as a
 # doubled slash, ./ or a byte the extractor drops, could carry what the name net refused.
-listed="$(printf '%s\n' "$names" | grep -v '/$' | LC_ALL=C sort)"
+listed="$(printf '%s\n' "$names" | LC_ALL=C grep -v '/$' | LC_ALL=C sort)"
 written="$(cd "$SCAN" && find . ! -type d | sed 's|^\./||' | LC_ALL=C sort)"
 [ "$listed" = "$written" ] || { echo "package member names change on extraction. Rename them."; exit 1; }
-files="$(printf '%s\n' "$names" | grep -vc '/$' || true)"
+files="$(printf '%s\n' "$names" | LC_ALL=C grep -vc '/$' || true)"
 node "$ROOT/scripts/scan-package.mjs" "$SCAN" "$files" "$ROOT/.claude/hooks/secret-scan.mjs" "$ALLOW"
