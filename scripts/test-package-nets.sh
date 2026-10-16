@@ -4,12 +4,12 @@
 # slipped past the nets: bracketed, control-character and hidden-byte names (a DEL extraction
 # drops), a doubled slash, a VMS version suffix and a backslash; archives under an upper-case
 # or unlisted name; compressed streams with or without a signature (zlib, raw deflate,
-# LZMA-alone, brotli, a zipapp); and ASCII behind a stray UTF-16 byte-order mark. A stand-in grep proves a failing
-# name check refuses. Direct runs of the scanner prove that a hook which crashes, floods or hangs
-# refuses, and that the binary allowlist waives only the text requirement for a pinned,
-# unchanged binary listed once. The last cases package HEAD for real in a throwaway clone, prove
-# that only a committed allowlist entry counts, and refuse committed names with a byte above
-# 0x7E, an executable's among them, packaged under C.UTF-8.
+# LZMA-alone, brotli, a zipapp); and ASCII behind a stray UTF-16 byte-order mark. A stand-in
+# grep proves a failing name check refuses. Direct runs of the scanner prove that a hook which
+# crashes, floods or hangs refuses, and that the binary allowlist waives only the text
+# requirement for a pinned, unchanged binary listed once. The last cases package HEAD for real
+# in a throwaway clone, prove that only a committed allowlist entry counts, and refuse
+# committed names with a byte above 0x7E, an executable's among them, packaged under C.UTF-8.
 # Run by verify.sh; needs git, python3, unzip and node.
 set -eu
 
