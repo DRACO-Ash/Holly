@@ -60,14 +60,14 @@ scripts/                verify.sh (the loop), package-appstore.sh with check-pac
                         simulate-pipeline.sh, smoke-container.sh
 tests/                  the pytest suite (coverage.xml, 80% floor); tests/fakes.py holds the session fake
 docs/                   architecture, runbook, user handbook, security and developer setup (settings reference)
-docs/AUDIT-LOG.md       one row per change
+docs/AUDIT-LOG.md       one row per release
 SECURITY.md             the accepted security positions and their trip-wires
 .claude/                this baseline (skills, agents, output style, hooks, settings)
 ```
 
 ## Naming and versioning
 
-- Releases are `V<major>.<minor>`; the current stamp is `__version__` in `src/app/__init__.py`, never restated here, so a bump leaves this file alone. `tests/test_version.py` holds `pyproject.toml`, `frontend/package.json` and both root version fields of `frontend/package-lock.json` equal to it. Bump the in-app version stamp and add one audit row to `docs/AUDIT-LOG.md` on every change.
+- Releases are `V<major>.<minor>`; the current stamp is `__version__` in `src/app/__init__.py`, never restated here, so a bump leaves this file alone. `tests/test_version.py` holds `pyproject.toml`, `frontend/package.json` and both root version fields of `frontend/package-lock.json` equal to it. A change that alters the upload (anything under the paths `scripts/package-appstore.sh` packages, or that list) bumps the in-app version stamp and opens a new row in `docs/AUDIT-LOG.md`; any other change keeps the stamp and is recorded in the current release's row.
 - Static delivery copies (static archetype only, so not used here) follow `Bluestaq_Limited_-_<product>_-_V<major>_<minor>_-_<date>.html`.
 - The App Store app name (slug) is lowercase, hyphenated, starts and ends alphanumeric, unique in the store: `TBC, re-verify`.
 
