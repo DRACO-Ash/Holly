@@ -171,6 +171,10 @@ check refuse "agent configuration" "a CLAUDE.local.md" CLAUDE.local.md '# notes'
 check refuse "agent configuration" "a file under .claude/" .claude/settings.json '{}'
 check refuse "agent configuration" "a nested .Claude/ directory" src/app/.Claude/agents/x.md '# agent'
 check pass "text files scanned, clean" "a module only named claude" src/app/services/claude.py 'X = 1'
+check pass "text files scanned, clean" "a name that only ends in claude.md" src/app/myclaude.md 'notes'
+check pass "text files scanned, clean" "a directory that only ends in .claude" src/app/x.claude/y.txt 'notes'
+check pass "text files scanned, clean" "a claude.mdx file" src/app/claude.mdx 'notes'
+check pass "text files scanned, clean" "a .claude-cache directory" src/app/.claude-cache/x.txt 'notes'
 check refuse "could not scan" "a symlink member" tests/link.txt 'symlink:/etc/hostname'
 
 # Only strict UTF-8 is text. UTF-16 of any kind, and ASCII behind a stray UTF-16 byte-order

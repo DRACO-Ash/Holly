@@ -46,7 +46,7 @@ if printf '%s\n' "$names" | grep -iqE '(^|/)(\.venv|venv|__pycache__|\.pytest_ca
 fi
 
 if printf '%s\n' "$names" | grep -iqE '(^|/)\.claude/|(^|/)claude(\.local)?\.md$'; then
-  echo "package contains the agent configuration (CLAUDE.md, CLAUDE.local.md or .claude/). Keep it off the path list in scripts/package-appstore.sh."; exit 1
+  echo "package contains the agent configuration (CLAUDE.md, CLAUDE.local.md or .claude/). Keep it off the path list in scripts/package-appstore.sh (exclude a nested one with a :(exclude)<path> pathspec)."; exit 1
 fi
 
 command -v node >/dev/null 2>&1 || { echo "node is required for the package secret scan"; exit 1; }
