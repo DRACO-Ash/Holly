@@ -25,6 +25,7 @@ LINE="K = \"$KEY\""
 NL='
 '
 TAB="$(printf '\t')"
+DEL="$(printf '\177')"
 n=0
 
 # $1: output zip, then member name and content pairs. A content of KIND:TEXT encodes TEXT as
@@ -170,11 +171,20 @@ check refuse "agent configuration" "a lower-case claude.md, nested" frontend/cla
 check refuse "agent configuration" "a CLAUDE.local.md" CLAUDE.local.md '# notes'
 check refuse "agent configuration" "a file under .claude/" .claude/settings.json '{}'
 check refuse "agent configuration" "a nested .Claude/ directory" src/app/.Claude/agents/x.md '# agent'
+check refuse "agent configuration" "a .mcp.json" .mcp.json '{}'
 check pass "text files scanned, clean" "a module only named claude" src/app/services/claude.py 'X = 1'
 check pass "text files scanned, clean" "a name that only ends in claude.md" src/app/myclaude.md 'notes'
 check pass "text files scanned, clean" "a directory that only ends in .claude" src/app/x.claude/y.txt 'notes'
 check pass "text files scanned, clean" "a claude.mdx file" src/app/claude.mdx 'notes'
 check pass "text files scanned, clean" "a .claude-cache directory" src/app/.claude-cache/x.txt 'notes'
+# unzip lists a DEL as it stands and extraction drops it, so each of these would land as the
+# name it hides; a name extraction normalises would land under another name.
+check refuse "outside printable ASCII" "a DEL hidden in CLAUDE.md" "frontend/CLAUDE${DEL}.md" '# rules'
+check refuse "outside printable ASCII" "a DEL hidden in an environment file's name" \
+  "src/app/prod.en${DEL}v" 'X=1'
+check refuse "outside printable ASCII" "a DEL hidden in a .claude/ directory" \
+  "src/.cl${DEL}aude/settings.json" '{}'
+check refuse "change on extraction" "a doubled slash in a name" 'src//x.py' 'X = 1'
 check refuse "could not scan" "a symlink member" tests/link.txt 'symlink:/etc/hostname'
 
 # Only strict UTF-8 is text. UTF-16 of any kind, and ASCII behind a stray UTF-16 byte-order
@@ -214,6 +224,17 @@ zip_of "$WORK/bare.zip" Dockerfile 'FROM scratch' requirements.txt ''
 status=0
 out="$(sh "$HERE/check-package.sh" "$WORK/bare.zip" 2>&1)" || status=$?
 expect refuse "missing pyproject.toml" "a missing pyproject.toml" "$status" "$out"
+
+# A grep that fails reads as a refusal, never as "no match": a stand-in grep that errors on the
+# case-blind name patterns refuses a clean upload.
+mkdir "$WORK/badgrep"
+printf '#!/bin/sh\ncase " $* " in *" -iE "*) exit 2 ;; esac\nexec %s "$@"\n' "$(command -v grep)" \
+  > "$WORK/badgrep/grep"
+chmod +x "$WORK/badgrep/grep"
+zip_of "$WORK/grepfail.zip" Dockerfile 'FROM scratch' requirements.txt '' pyproject.toml ''
+status=0
+out="$(PATH="$WORK/badgrep:$PATH" sh "$HERE/check-package.sh" "$WORK/grepfail.zip" 2>&1)" || status=$?
+expect refuse "could not check the member names" "a grep that fails on the name patterns" "$status" "$out"
 
 # The scanner itself: hooks that fail.
 mkdir "$WORK/clean"
@@ -304,5 +325,14 @@ status=0
 out="$(sh "$WORK/repo/scripts/package-appstore.sh" 2>&1)" || status=$?
 expect pass "Allowlisted binaries, scanned only for readable runs: tests/fixtures/logo.dat (a fixture image)" \
   "the same entry once committed" "$status" "$out"
+
+# A committed name with a byte above 0x7E, which git archive writes as it stands and extraction
+# would change, is refused before it can land under another name.
+high="tests/CLAUDE.local$(printf '\377').md"
+printf '# notes\n' > "$WORK/repo/$high"
+commit_in_clone "$high" "a name with a byte above 0x7E"
+status=0
+out="$(sh "$WORK/repo/scripts/package-appstore.sh" 2>&1)" || status=$?
+expect refuse "outside printable ASCII" "a committed name with a byte above 0x7E" "$status" "$out"
 
 echo "upload nets: all $n cases behaved"
