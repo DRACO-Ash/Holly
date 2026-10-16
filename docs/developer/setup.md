@@ -286,7 +286,7 @@ The smoke rung needs Docker and `curl`. It fails on a non-200 probe, an error in
 ## Changes and commits
 
 ● Every change runs the verification loop, then passes the `engineering-reviewer` and `security-reviewer` gates (`CLAUDE.md`).
-● Every change bumps the version stamp (`__version__` in `src/app/__init__.py`, which a test holds equal to `pyproject.toml`) and adds one row to `docs/AUDIT-LOG.md`.
+● `CLAUDE.md` (Naming and versioning) says when a change bumps the version stamp, `__version__` in `src/app/__init__.py`, and opens a row in `docs/AUDIT-LOG.md`, and when it is recorded in the current release's row. `tests/test_version.py` holds the stamp's other copies equal to it.
 ● Commit messages: an imperative summary line, then what changed and why.
 ● Whether `main` requires a pull request to land is `TBC, re-verify`.
 
