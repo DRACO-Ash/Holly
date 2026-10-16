@@ -10,10 +10,11 @@
 #      The agent configuration (CLAUDE.md, CLAUDE.local.md, .mcp.json, anything under .claude/)
 #      is refused by name too: it is tracked on purpose, so its fix is the path list, not
 #      .gitignore. Every name must be printable ASCII (unzip lists a control character as ^X,
-#      so any ^ refuses; it lists a DEL or a byte above 0x7E as it stands, and an extractor may
-#      drop or change it) without a backslash (which an extractor may read as a separator), and
-#      every file must land under the name it is listed by, so no name passes the net in one
-#      form and lands in another. A grep error refuses.
+#      so any ^ refuses; it lists a DEL or a byte above 0x7E as it stands, or converted from
+#      CP437 in a UTF-8 locale, and an extractor may drop or change it) without a backslash
+#      (which an extractor may read as a separator), and every file must land under the name it
+#      is listed by, so no name passes the net in one form and lands in another (Info-ZIP also
+#      strips a VMS version suffix such as ;1). A grep error refuses.
 #   3. Content net: scan-package.mjs scans only readable text (strict UTF-8 without control
 #      characters) with the secret-scan hook's rules, and refuses every other file whatever its
 #      name, unless scripts/upload-binaries.txt, read from HEAD, pins it by SHA-256 with a
@@ -52,8 +53,9 @@ if names_match '\^'; then
   echo "package has a member name with a control character (or a ^). Rename it."; exit 1
 fi
 
-# unzip lists a DEL or a byte above 0x7E as it stands, and an extractor may drop or change it:
-# Info-ZIP drops a DEL, so CLAUDE<DEL>.md would pass every pattern below and land as CLAUDE.md.
+# unzip lists a DEL or a byte above 0x7E as it stands, or converted from CP437 in a UTF-8 locale,
+# and an extractor may drop or change it: Info-ZIP drops a DEL, so CLAUDE<DEL>.md would pass
+# every pattern below and land as CLAUDE.md.
 if names_match '[^ -~]'; then
   echo "package has a member name with a byte outside printable ASCII. Rename it."; exit 1
 fi

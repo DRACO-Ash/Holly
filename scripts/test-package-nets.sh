@@ -2,9 +2,9 @@
 # test-package-nets.sh :: proves the upload nets refuse what they claim to and accept a clean
 # upload. Synthetic upload zips each carry one planted problem, covering every shape that once
 # slipped past the nets: bracketed, control-character and hidden-byte names (a DEL extraction
-# drops), a doubled slash and a backslash; archives under an upper-case or unlisted name;
-# compressed streams with or without a signature (zlib, raw deflate, LZMA-alone, brotli, a
-# zipapp); and ASCII behind a stray UTF-16 byte-order mark. A stand-in grep proves a failing
+# drops), a doubled slash, a VMS version suffix and a backslash; archives under an upper-case
+# or unlisted name; compressed streams with or without a signature (zlib, raw deflate,
+# LZMA-alone, brotli, a zipapp); and ASCII behind a stray UTF-16 byte-order mark. A stand-in grep proves a failing
 # name check refuses. Direct runs of the scanner prove that a hook which crashes, floods or hangs
 # refuses, and that the binary allowlist waives only the text requirement for a pinned,
 # unchanged binary listed once. The last cases package HEAD for real in a throwaway clone, prove
@@ -188,6 +188,7 @@ check refuse "outside printable ASCII" "a DEL hidden in an environment file's na
 check refuse "outside printable ASCII" "a DEL hidden in a .claude/ directory" \
   "src/.cl${DEL}aude/settings.json" '{}'
 check refuse "change on extraction" "a doubled slash in a name" 'src//x.py' 'X = 1'
+check refuse "change on extraction" "a VMS version suffix on CLAUDE.md" 'frontend/CLAUDE.md;1' '# rules'
 check refuse "backslash" "a backslash standing in for a slash" 'tests/.claude\settings.json' '{}'
 check refuse "could not scan" "a symlink member" tests/link.txt 'symlink:/etc/hostname'
 
