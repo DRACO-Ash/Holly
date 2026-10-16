@@ -67,7 +67,7 @@ SECURITY.md             the accepted security positions and their trip-wires
 
 ## Naming and versioning
 
-- Releases are `V<major>.<minor>`; the current stamp is `__version__` in `src/app/__init__.py`, never restated here, so a bump leaves this file alone. `tests/test_version.py` holds `pyproject.toml`, `frontend/package.json` and both root version fields of `frontend/package-lock.json` equal to it. A change that alters the upload (anything under the paths `scripts/package-appstore.sh` packages, or that list) bumps the in-app version stamp and opens a new row in `docs/AUDIT-LOG.md`; any other change keeps the stamp and is recorded in the current release's row.
+- Releases are `V<major>.<minor>`; the current stamp is `__version__` in `src/app/__init__.py`, never restated here, so a bump leaves this file alone. `tests/test_version.py` holds `pyproject.toml`, `frontend/package.json` and both root version fields of `frontend/package-lock.json` equal to it. A change is a piece of work together with the fixes its gate rounds ask for. One that alters the upload, meaning anything that changes what `scripts/package-appstore.sh` writes (a file under its paths, its path list or archive command, or a `.gitattributes`), bumps the in-app version stamp and opens a new row in `docs/AUDIT-LOG.md`; one that leaves the upload alone keeps the stamp and is recorded in the current release's row.
 - Static delivery copies (static archetype only, so not used here) follow `Bluestaq_Limited_-_<product>_-_V<major>_<minor>_-_<date>.html`.
 - The App Store app name (slug) is lowercase, hyphenated, starts and ends alphanumeric, unique in the store: `TBC, re-verify`.
 
