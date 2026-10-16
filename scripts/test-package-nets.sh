@@ -165,6 +165,12 @@ check refuse "banned path" "an environment file by name" src/app/prod.env 'X=1'
 check refuse "banned path" "an archive inside the upload" tests/data.zip 'PK'
 check refuse "banned path" "an archive with an upper-case extension" tests/DATA.ZIP 'PK'
 check refuse "banned path" "a zip container named as a spreadsheet" tests/report.xlsx "zip:$LINE"
+check refuse "agent configuration" "a CLAUDE.md at the root" CLAUDE.md '# rules'
+check refuse "agent configuration" "a lower-case claude.md, nested" frontend/claude.md '# rules'
+check refuse "agent configuration" "a CLAUDE.local.md" CLAUDE.local.md '# notes'
+check refuse "agent configuration" "a file under .claude/" .claude/settings.json '{}'
+check refuse "agent configuration" "a nested .Claude/ directory" src/app/.Claude/agents/x.md '# agent'
+check pass "text files scanned, clean" "a module only named claude" src/app/services/claude.py 'X = 1'
 check refuse "could not scan" "a symlink member" tests/link.txt 'symlink:/etc/hostname'
 
 # Only strict UTF-8 is text. UTF-16 of any kind, and ASCII behind a stray UTF-16 byte-order

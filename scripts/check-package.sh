@@ -8,6 +8,8 @@
 #      extension (zip and its family such as docx, xlsx, jar and apk; tar, gz, xz, 7z and the
 #      like) at any depth, and no member name holding a control character (unzip lists one as
 #      ^X, so any ^ refuses). Extensions are defence in depth: the content net decides by bytes.
+#      The agent configuration (CLAUDE.md, CLAUDE.local.md, anything under .claude/) is refused
+#      by name too: it is tracked on purpose, so its fix is the path list, not .gitignore.
 #   3. Content net: scan-package.mjs scans only readable text (strict UTF-8 without control
 #      characters) with the secret-scan hook's rules, and refuses every other file whatever its
 #      name, unless scripts/upload-binaries.txt, read from HEAD, pins it by SHA-256 with a
@@ -41,6 +43,10 @@ fi
 # file is caught, not only a nested one.
 if printf '%s\n' "$names" | grep -iqE '(^|/)(\.venv|venv|__pycache__|\.pytest_cache|\.mypy_cache|\.ruff_cache|\.complexipy_cache|coverage|htmlcov)/|(^|/)(\.env[^/]*|[^/]+\.env)$|(^|/)(coverage\.xml|\.coverage(\..+)?)$|\.(zip|jar|war|ear|apk|whl|egg|nupkg|docx|xlsx|pptx|odt|ods|odp|epub|npz|tar|tgz|gz|bz2|xz|zst|7z|rar|lz|lzma|lz4|z|br)$'; then
   echo "package contains a banned path (a virtualenv, a tool cache, coverage output, an environment file or an archive). Fix .gitignore and untrack it."; exit 1
+fi
+
+if printf '%s\n' "$names" | grep -iqE '(^|/)\.claude/|(^|/)claude(\.local)?\.md$'; then
+  echo "package contains the agent configuration (CLAUDE.md, CLAUDE.local.md or .claude/). Keep it off the path list in scripts/package-appstore.sh."; exit 1
 fi
 
 command -v node >/dev/null 2>&1 || { echo "node is required for the package secret scan"; exit 1; }
