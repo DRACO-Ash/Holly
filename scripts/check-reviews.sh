@@ -1,75 +1,103 @@
 #!/bin/sh
-# check-reviews.sh :: refuse packaging unless both binding reviews passed the upload at HEAD.
-# Usage: sh scripts/check-reviews.sh <upload path>...   (package-appstore.sh passes its list)
+# check-reviews.sh :: refuse packaging unless both binding reviews passed the upload at a commit.
+# Usage: sh scripts/check-reviews.sh <commit> <upload path>...   (package-appstore.sh passes the
+# commit it archives and its path list)
 #
-# Reads scripts/upload-record.txt from HEAD, so an uncommitted edit never counts. For the
-# version in src/app/__init__.py at HEAD, the last verdict from engineering-reviewer and the
-# last from security-reviewer must each be a PASS against a commit that is
-#   1. in this repository and in HEAD's history;
-#   2. at or after the commit that set the version (the bump);
-#   3. carrying the same upload as HEAD: the packaged paths, .gitattributes and the packaging
-#      tools (this script, the packager, the upload nets, the binary allowlist and the
-#      secret-scan rules they use) are unchanged since, so a PASS recorded against a tree that
-#      has since moved refuses.
-# The packaging tools that run are the working tree's, so one edited or never committed refuses
-# too. A line it cannot read, a git error or a missing record refuses. It proves the record is
-# present and consistent with the history, not that a review took place (SECURITY.md).
-set -eu
+# Reads scripts/upload-record.txt at that commit, so an uncommitted line never counts. A line is
+# `review <reviewer> <PASS|FAIL> <40-hex commit reviewed> [# note]`, the reviewer being
+# engineering-reviewer or security-reviewer. The last line from each reviewer decides, whatever
+# commit it names, so a FAIL recorded after a PASS always refuses. It must be a PASS on a commit
+#   1. in this repository and in the packaged commit's history;
+#   2. at or after the commit that set the version in src/app/__init__.py (the bump);
+#   3. carrying the same upload: the packaged paths and the packaging tools (this script, the
+#      packager, the upload nets, the binary allowlist, the secret-scan rules they use and
+#      .gitattributes) are unchanged since, so a PASS recorded against a tree that has since
+#      moved refuses.
+# The packaging tools that run are the working tree's, so each must match its committed content
+# byte for byte, whatever git's index says. A line it cannot read, a byte outside printable ASCII
+# and tab, a git error or a missing record refuses. It proves the record is present and
+# consistent with the history, not that a review took place (SECURITY.md).
+set -euf   # -f: the tool list splits into paths, never into patterns
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 RECORD=scripts/upload-record.txt
 TOOLS="scripts/check-reviews.sh scripts/package-appstore.sh scripts/check-package.sh
   scripts/scan-package.mjs scripts/upload-binaries.txt .claude/hooks/secret-scan.mjs .gitattributes"
+# Replaced objects never stand in for the committed ones.
+GIT_NO_REPLACE_OBJECTS=1
+export GIT_NO_REPLACE_OBJECTS
 
 refuse() { echo "packaging refused: $1"; exit 1; }
 short() { printf '%.7s' "$1"; }
+first3() { printf '%s\n' "$1" | sed '/^$/d' | head -n 3 | paste -s -d ' ' -; }
 
-[ "$#" -gt 0 ] || refuse "check-reviews.sh was given no upload paths"
-# shellcheck disable=SC2086  # the tool list splits on purpose
-edited="$(git -C "$ROOT" status --porcelain --untracked-files=all -- $TOOLS)" \
-  || refuse "could not compare the packaging tools with HEAD"
-[ -z "$edited" ] || refuse "the packaging tools differ from HEAD ($(printf '%s\n' "$edited" | cut -c4- | head -n 3 | paste -s -d ' ' -)): commit them for review, or restore them"
-record="$(git -C "$ROOT" show "HEAD:$RECORD" 2>/dev/null)" || refuse "$RECORD is not committed at HEAD"
-version="$(git -C "$ROOT" show HEAD:src/app/__init__.py \
+[ "$#" -gt 1 ] || refuse "check-reviews.sh needs the commit to package and its upload paths"
+at="$1"
+shift
+git -C "$ROOT" cat-file -e "$at^{commit}" 2>/dev/null || refuse "$at is not a commit in this repository"
+
+# Each tool that runs must be the committed one: compared by content, so a skip-worktree flag, an
+# assume-unchanged flag or a restored timestamp cannot hide an edit, and a tool never committed
+# refuses too.
+edited=""
+for tool in $TOOLS; do
+  committed="$(git -C "$ROOT" rev-parse -q --verify "$at:$tool" || true)"
+  actual=""
+  if [ -e "$ROOT/$tool" ] || [ -L "$ROOT/$tool" ]; then
+    actual="$(git -C "$ROOT" hash-object --no-filters -- "$tool")" || refuse "could not read $tool"
+  fi
+  [ "$committed" = "$actual" ] || edited="$edited$tool
+"
+done
+[ -z "$edited" ] || refuse "the packaging tools differ from $(short "$at") ($(first3 "$edited")): commit them for review, or restore them"
+
+record="$(git -C "$ROOT" show "$at:$RECORD" 2>/dev/null)" || refuse "$RECORD is not committed at $(short "$at")"
+version="$(git -C "$ROOT" show "$at:src/app/__init__.py" \
   | sed -n 's/^__version__ = "\([0-9][0-9.]*\)"$/\1/p')"
-[ -n "$version" ] || refuse "no __version__ in src/app/__init__.py at HEAD"
-bump="$(git -C "$ROOT" log -1 --format=%H -G'^__version__ = ' HEAD -- src/app/__init__.py)"
+[ -n "$version" ] || refuse "no __version__ in src/app/__init__.py at $(short "$at")"
+bump="$(git -C "$ROOT" log -1 --format=%H -G'^__version__ = ' "$at" -- src/app/__init__.py)"
 [ -n "$bump" ] || refuse "no commit sets version $version"
 
-# The last verdict from each reviewer for this version. Any line that is not blank, a comment
-# or a well-formed review line refuses the whole record.
-last="$(printf '%s\n' "$record" | awk -v version="$version" '
+# The last verdict from each reviewer, with its line. Any line that is not blank, a comment or a
+# well-formed verdict refuses the whole record, as does any byte outside printable ASCII and tab:
+# a carriage return could hide a verdict from a reader.
+last="$(printf '%s\n' "$record" | LC_ALL=C awk '
+  /[^\t -~]/ {
+    printf "line %d holds a byte outside printable ASCII and tab", NR
+    bad = 1
+    exit 1
+  }
   /^[ \t]*(#|$)/ { next }
   {
-    ok = $1 == "review" && $2 ~ /^[0-9]+(\.[0-9]+)*$/ &&
-      ($3 == "engineering-reviewer" || $3 == "security-reviewer") &&
-      ($4 == "PASS" || $4 == "FAIL") && length($5) == 40 && $5 ~ /^[0-9a-f]+$/ &&
-      (NF == 5 || $6 ~ /^#/)
+    ok = $1 == "review" && ($2 == "engineering-reviewer" || $2 == "security-reviewer") &&
+      ($3 == "PASS" || $3 == "FAIL") && length($4) == 40 && $4 ~ /^[0-9a-f]+$/ &&
+      (NF == 4 || $5 ~ /^#/)
     if (!ok) {
-      printf "line %d is not \"review <version> <reviewer> <PASS|FAIL> <40-hex commit> [# note]\"", NR
+      printf "line %d is not \"review <reviewer> <PASS|FAIL> <40-hex commit> [# note]\"", NR
       bad = 1
       exit 1
     }
+    verdict[$2] = $3 " " $4 " " NR
   }
-  # Compared as text: awk would read 9.1 and 9.10 as the same number.
-  ($2 "") == (version "") { verdict[$3] = $4 " " $5 }
   END { if (!bad) for (r in verdict) print r, verdict[r] }
 ')" || refuse "$RECORD $last"
 
 for reviewer in engineering-reviewer security-reviewer; do
-  entry="$(printf '%s\n' "$last" | awk -v r="$reviewer" '$1 == r { print $2, $3 }')"
-  [ -n "$entry" ] || refuse "$RECORD holds no $reviewer verdict for $version"
-  verdict="${entry% *}"
-  commit="${entry#* }"
-  [ "$verdict" = PASS ] || refuse "the last $reviewer verdict for $version is $verdict, at $(short "$commit")"
+  entry="$(printf '%s\n' "$last" | awk -v r="$reviewer" '$1 == r { print $2, $3, $4 }')"
+  [ -n "$entry" ] || refuse "$RECORD holds no $reviewer verdict"
+  read -r verdict commit line <<EOF
+$entry
+EOF
+  passed="$reviewer passed $(short "$commit") (line $line)"
+  [ "$verdict" = PASS ] || refuse "the last $reviewer verdict, line $line, is $verdict, at $(short "$commit")"
   git -C "$ROOT" cat-file -e "$commit^{commit}" 2>/dev/null \
-    || refuse "$reviewer passed $(short "$commit"), which is not a commit in this repository"
-  git -C "$ROOT" merge-base --is-ancestor "$commit" HEAD \
-    || refuse "$reviewer passed $(short "$commit"), which is not in HEAD's history"
+    || refuse "$passed, which is not a commit in this repository"
+  git -C "$ROOT" merge-base --is-ancestor "$commit" "$at" \
+    || refuse "$passed, which is not in $(short "$at")'s history"
   git -C "$ROOT" merge-base --is-ancestor "$bump" "$commit" \
-    || refuse "$reviewer passed $(short "$commit"), which comes before $(short "$bump") set version $version"
-  # shellcheck disable=SC2086  # as above
-  changed="$(git -C "$ROOT" diff --name-only "$commit" HEAD -- "$@" $TOOLS)" \
-    || refuse "could not compare $(short "$commit") with HEAD"
-  [ -z "$changed" ] || refuse "$reviewer passed $(short "$commit"), and the upload or its packaging has changed since ($(printf '%s\n' "$changed" | head -n 3 | paste -s -d ' ' -)): record a verdict on a later commit"
-  echo "$reviewer: PASS at $(short "$commit") for $version; the upload and its packaging are unchanged since"
+    || refuse "$passed, which comes before $(short "$bump"), the commit that set version $version"
+  # shellcheck disable=SC2086  # the tool list splits on purpose
+  changed="$(git -C "$ROOT" diff --no-renames --name-only "$commit" "$at" -- "$@" $TOOLS)" \
+    || refuse "could not compare $(short "$commit") with $(short "$at")"
+  [ -z "$changed" ] || refuse "$passed, and the upload or its packaging has changed since ($(first3 "$changed")): record a verdict on a later commit"
+  echo "$reviewer: PASS at $(short "$commit") (line $line) for version $version; the upload and its packaging are unchanged since"
 done

@@ -4,8 +4,8 @@
 
 **Data classification:** Unclassified (per ADR-006)
 **Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned the edition this one replaces)
-**Version:** 0.3
-**Last updated:** 2026-10-14
+**Version:** 0.4
+**Last updated:** 2026-10-17
 **Audience:** Operators and on-call engineers responsible for keeping Holly healthy on the Bluestaq App Store.
 
 > **BLUF**
@@ -62,7 +62,7 @@ sh scripts/simulate-pipeline.sh   # package, check out and test the way the plat
 sh scripts/smoke-container.sh     # build the image from the upload, run it with PostgreSQL, probe the contract
 ```
 
-`sh scripts/package-appstore.sh` writes the upload, `dist/appstore.zip`, only when `scripts/upload-record.txt` at HEAD holds a PASS from both gates for the upload as it stands (`scripts/check-reviews.sh`); otherwise it refuses and removes any earlier upload zip. The two rungs above package a rehearsal, `dist/appstore-rehearsal.zip`, which is never the upload.
+`sh scripts/package-appstore.sh` writes the upload, `dist/appstore.zip`, only when the last verdict from each gate in the committed `scripts/upload-record.txt` is a PASS for the upload as it stands (`scripts/check-reviews.sh`); every run first removes the last upload zip. It prints the commit it packaged, which `unzip -z dist/appstore.zip` also shows: package just before uploading, and upload that file. The two rungs above package rehearsals into their own temporary files; a rehearsal is never the upload.
 
 **Settings** are App Store environment variables; the full reference is in [developer setup](../developer/setup.md). According to the platform reference in this repository, saving them replaces the whole set at once (at most 50 variables), and a separate step applies them ([.claude/skills/app-store-deployment/SKILL.md](../../.claude/skills/app-store-deployment/SKILL.md)); always save the complete set. Holly needs at least:
 

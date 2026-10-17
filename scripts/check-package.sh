@@ -1,6 +1,6 @@
 #!/bin/sh
 # check-package.sh :: the upload nets, run on a built zip by package-appstore.sh.
-# Usage: sh scripts/check-package.sh <zip>
+# Usage: sh scripts/check-package.sh <zip> [<commit> <upload path>...]
 #   1. Required members at the root: requirements.txt, Dockerfile and pyproject.toml (the pytest
 #      configuration the platform's test stage depends on).
 #   2. Name net, matched without regard to case: no virtualenv, tool cache, coverage output,
@@ -15,20 +15,29 @@
 #      (which an extractor may read as a separator), and every file must land under the name it
 #      is listed by, so no name passes the net in one form and lands in another (Info-ZIP also
 #      strips a VMS version suffix such as ;1). A grep error refuses.
-#   3. Content net: scan-package.mjs scans only readable text (strict UTF-8 without control
+#   3. Given the commit packaged and its paths: the zip must hold exactly that commit's files,
+#      byte for byte, so git's local filters, attributes and replace refs cannot add, drop or
+#      change one on its way into the archive.
+#   4. Content net: scan-package.mjs scans only readable text (strict UTF-8 without control
 #      characters) with the secret-scan hook's rules, and refuses every other file whatever its
-#      name, unless scripts/upload-binaries.txt, read from HEAD, pins it by SHA-256 with a
-#      reason; an allowlisted binary's readable runs are still scanned, and every run names it.
-#      Cannot see: secret shapes the hook has no rule for, secrets encoded inside text (base64,
-#      a data: URI), or secrets encoded inside an allowlisted binary.
+#      name, unless scripts/upload-binaries.txt, read from the commit packaged (HEAD when none
+#      is given), pins it by SHA-256 with a reason; an allowlisted binary's readable runs are
+#      still scanned, and every run names it. Cannot see: secret shapes the hook has no rule
+#      for, secrets encoded inside text (base64, a data: URI), or secrets encoded inside an
+#      allowlisted binary.
 # Needs unzip and node; without them it refuses. scripts/test-package-nets.sh proves each net.
 set -eu
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ZIP="$1"
+shift
+COMMIT="${1-}"
+[ "$#" -eq 0 ] || shift
+[ -z "$COMMIT" ] || [ "$#" -gt 0 ] || { echo "check-package.sh needs the upload paths with the commit"; exit 1; }
 SCAN="$(mktemp -d "${TMPDIR:-/tmp}/holly-package-scan.XXXXXX")"
 ALLOW="$(mktemp "${TMPDIR:-/tmp}/holly-allowlist.XXXXXX")"
-trap 'rm -rf -- "$SCAN"; rm -f -- "$ALLOW"' EXIT
+LISTS="$(mktemp -d "${TMPDIR:-/tmp}/holly-package-lists.XXXXXX")"
+trap 'rm -rf -- "$SCAN" "$LISTS"; rm -f -- "$ALLOW"' EXIT
 # dash runs the EXIT trap on a normal exit or a set -e failure, not on a signal: exit first.
 trap 'exit 130' INT
 trap 'exit 143' TERM
@@ -77,15 +86,32 @@ if names_match -iE '(^|/)\.claude/|(^|/)(claude(\.local)?\.md|\.mcp\.json)$'; th
 fi
 
 command -v node >/dev/null 2>&1 || { echo "node is required for the package secret scan"; exit 1; }
-# The binary allowlist comes from HEAD, the commit being packaged, so an uncommitted entry can
-# never exempt a file.
-git -C "$ROOT" show HEAD:scripts/upload-binaries.txt > "$ALLOW" \
-  || { echo "could not read scripts/upload-binaries.txt from HEAD"; exit 1; }
+# The binary allowlist comes from the commit being packaged, so an uncommitted entry can never
+# exempt a file.
+git -C "$ROOT" show "${COMMIT:-HEAD}:scripts/upload-binaries.txt" > "$ALLOW" \
+  || { echo "could not read scripts/upload-binaries.txt from ${COMMIT:-HEAD}"; exit 1; }
 unzip -q "$ZIP" -d "$SCAN"
 # Every file must land under the name the listing gave it: a name extraction changes, such as a
 # doubled slash, ./ or a byte the extractor drops, could carry what the name net refused.
 listed="$(printf '%s\n' "$names" | LC_ALL=C grep -v '/$' | LC_ALL=C sort)"
 written="$(cd "$SCAN" && find . ! -type d | sed 's|^\./||' | LC_ALL=C sort)"
 [ "$listed" = "$written" ] || { echo "package member names change on extraction. Rename them."; exit 1; }
+if [ -n "$COMMIT" ]; then
+  # Exactly the committed files, byte for byte: each extracted file's blob id, hashed without
+  # filters, against the commit's tree for the same paths.
+  GIT_NO_REPLACE_OBJECTS=1 git -C "$ROOT" ls-tree -r "$COMMIT" -- "$@" > "$LISTS/tree" \
+    || { echo "could not list the files of $COMMIT"; exit 1; }
+  awk -F '\t' '{ split($1, f, " "); print f[3] " " $2 }' "$LISTS/tree" | LC_ALL=C sort > "$LISTS/expected"
+  printf '%s\n' "$written" | awk -v dir="$SCAN" '{ print dir "/" $0 }' > "$LISTS/files"
+  git -C "$ROOT" hash-object --no-filters --stdin-paths < "$LISTS/files" > "$LISTS/blobs" \
+    || { echo "could not hash the extracted files"; exit 1; }
+  printf '%s\n' "$written" | paste -d ' ' "$LISTS/blobs" - | LC_ALL=C sort > "$LISTS/actual"
+  if ! cmp -s "$LISTS/expected" "$LISTS/actual"; then
+    differ="$(cat "$LISTS/expected" "$LISTS/actual" | LC_ALL=C sort | uniq -u | cut -d ' ' -f 2- \
+      | LC_ALL=C sort -u | head -n 3 | paste -s -d ' ' -)"
+    echo "package does not hold the files of $(printf '%.7s' "$COMMIT") byte for byte ($differ): check git's local filters, attributes and replace refs"
+    exit 1
+  fi
+fi
 files="$(printf '%s\n' "$names" | LC_ALL=C grep -vc '/$' || true)"
 node "$ROOT/scripts/scan-package.mjs" "$SCAN" "$files" "$ROOT/.claude/hooks/secret-scan.mjs" "$ALLOW"

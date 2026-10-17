@@ -8,11 +8,13 @@
 # grep proves a failing name check refuses. Direct runs of the scanner prove that a hook which
 # crashes, floods or hangs refuses, and that the binary allowlist waives only the text
 # requirement for a pinned, unchanged binary listed once. Then cases package HEAD for real, as
-# rehearsals, in a throwaway clone, prove that only a committed allowlist entry counts, and refuse
-# committed names with a byte above 0x7E, an executable's among them, packaged under C.UTF-8.
-# The last cases, in a second clone, prove that packaging for upload refuses unless the committed
-# review record holds a PASS from both reviews for the upload at HEAD, and that a rehearsal needs
-# no record. Run by verify.sh; needs git, python3, unzip and node.
+# rehearsals outside dist/, in a throwaway clone, prove that only a committed allowlist entry
+# counts, and refuse committed names with a byte above 0x7E, an executable's among them,
+# packaged under C.UTF-8. The last cases, in a second clone, prove that packaging for upload
+# refuses unless the last verdict from each review in the committed record is a PASS on a commit
+# whose upload and packaging are unchanged, whatever git's index, local filters and attributes or
+# a commit landing meanwhile would make of it, and that a rehearsal needs no record. Run by
+# verify.sh; needs git, python3, unzip and node.
 set -eu
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -301,15 +303,29 @@ printf 'logo.png %s # the brand mark\nlogo.png %s # the brand mark, listed again
 scan refuse "more than once" "an allowlist that lists a path twice" "$WORK/binary" 1 "$HOOK" "$WORK/allow-twice.txt"
 
 # The real package from HEAD, in a throwaway clone carrying this working tree's nets, so the
-# loop never rewrites this repository's dist/appstore.zip.
+# loop never writes this repository's dist/. A rehearsal writes where it is told, outside dist/.
 git clone -q "$ROOT" "$WORK/repo"
 cp "$HERE/package-appstore.sh" "$HERE/check-package.sh" "$HERE/scan-package.mjs" "$WORK/repo/scripts/"
+REH="$WORK/rehearsal.zip"
 status=0
-out="$(sh "$WORK/repo/scripts/package-appstore.sh" --rehearsal 2>&1)" || status=$?
-expect pass "wrote dist/appstore-rehearsal.zip: a REHEARSAL" "the real package from HEAD" "$status" "$out"
-mode="$(ls -l "$WORK/repo/dist/appstore-rehearsal.zip" | cut -c1-10)"
+out="$(sh "$WORK/repo/scripts/package-appstore.sh" --rehearsal "$REH" 2>&1)" || status=$?
+expect pass "a REHEARSAL, never the upload" "the real package from HEAD" "$status" "$out"
+mode="$(ls -l "$REH" | cut -c1-10)"
 [ "$mode" = "-rw-r--r--" ] || { echo "FAIL: the rehearsal zip has mode $mode, not -rw-r--r--"; exit 1; }
 echo "ok: the rehearsal zip is mode 0644"
+
+# dist/ holds only checked uploads: a rehearsal aimed into it refuses, and every run, a mistyped
+# one included, first removes the last upload zip.
+status=0
+out="$(sh "$WORK/repo/scripts/package-appstore.sh" --rehearsal "$WORK/repo/dist/rehearsal.zip" 2>&1)" \
+  || status=$?
+expect refuse "never writes into dist/" "a rehearsal aimed into dist/" "$status" "$out"
+printf 'stale\n' > "$WORK/repo/dist/appstore.zip"
+status=0
+out="$(sh "$WORK/repo/scripts/package-appstore.sh" --rehersal "$REH" 2>&1)" || status=$?
+expect refuse "usage:" "a mistyped option" "$status" "$out"
+[ ! -e "$WORK/repo/dist/appstore.zip" ] || { echo "FAIL: a mistyped run left dist/appstore.zip"; exit 1; }
+echo "ok: a mistyped run removes the last upload zip"
 
 # Only a committed allowlist entry counts: the same entry refuses while it sits in the working
 # tree alone, and passes once committed.
@@ -325,11 +341,11 @@ commit_in_clone tests/fixtures/logo.dat "a binary fixture"
 printf 'tests/fixtures/logo.dat %s # a fixture image\n' "$(sha256_of "$WORK/repo/tests/fixtures/logo.dat")" \
   >> "$WORK/repo/scripts/upload-binaries.txt"
 status=0
-out="$(sh "$WORK/repo/scripts/package-appstore.sh" --rehearsal 2>&1)" || status=$?
+out="$(sh "$WORK/repo/scripts/package-appstore.sh" --rehearsal "$REH" 2>&1)" || status=$?
 expect refuse "is not text" "an allowlist entry that is not committed" "$status" "$out"
 commit_in_clone scripts/upload-binaries.txt "allowlist the fixture"
 status=0
-out="$(sh "$WORK/repo/scripts/package-appstore.sh" --rehearsal 2>&1)" || status=$?
+out="$(sh "$WORK/repo/scripts/package-appstore.sh" --rehearsal "$REH" 2>&1)" || status=$?
 expect pass "Allowlisted binaries, scanned only for readable runs: tests/fixtures/logo.dat (a fixture image)" \
   "the same entry once committed" "$status" "$out"
 
@@ -339,7 +355,7 @@ high="tests/CLAUDE.local$(printf '\377').md"
 printf '# notes\n' > "$WORK/repo/$high"
 commit_in_clone "$high" "a name with a byte above 0x7E"
 status=0
-out="$(sh "$WORK/repo/scripts/package-appstore.sh" --rehearsal 2>&1)" || status=$?
+out="$(sh "$WORK/repo/scripts/package-appstore.sh" --rehearsal "$REH" 2>&1)" || status=$?
 expect refuse "outside printable ASCII" "a committed name with a byte above 0x7E" "$status" "$out"
 rm -- "$WORK/repo/$high"
 commit_in_clone "$high" "drop the name with a byte above 0x7E"
@@ -351,33 +367,38 @@ printf 'X = 1\n' > "$WORK/repo/$latin"
 chmod +x "$WORK/repo/$latin"
 commit_in_clone "$latin" "an executable with a byte above 0x7E"
 status=0
-out="$(LC_ALL=C.UTF-8 sh "$WORK/repo/scripts/package-appstore.sh" --rehearsal 2>&1)" || status=$?
+out="$(LC_ALL=C.UTF-8 sh "$WORK/repo/scripts/package-appstore.sh" --rehearsal "$REH" 2>&1)" || status=$?
 expect refuse "outside printable ASCII" "an executable with a byte above 0x7E, under C.UTF-8" \
   "$status" "$out"
 
 # The review record, in a second clone that commits this working tree's packaging tools without
-# a record, then a synthetic bump to version 9.10. Each case commits a record on top of the bump
-# and packages for upload. Version 9.10 shows that a verdict for 9.1, which awk would read as the
-# same number, never counts for it.
+# a record, then the version 9.10, a later 9.11 and 9.10 again: the bump that counts is the last
+# commit that set the version. Each case commits a record on top of it and packages for upload.
 git clone -q "$ROOT" "$WORK/rec"
 cp "$HERE/package-appstore.sh" "$HERE/check-package.sh" "$HERE/scan-package.mjs" \
   "$HERE/check-reviews.sh" "$WORK/rec/scripts/"
 rm -f -- "$WORK/rec/scripts/upload-record.txt"
+rec_git() { git -C "$WORK/rec" -c user.name=test -c user.email=test@localhost -c commit.gpgsign=false "$@"; }
 rec_commit() {  # $1: message, then the paths to commit
   message="$1"
   shift
   git -C "$WORK/rec" add -A -- "$@"
-  git -C "$WORK/rec" -c user.name=test -c user.email=test@localhost -c commit.gpgsign=false \
-    commit -q --allow-empty -m "$message"
+  rec_git commit -q --allow-empty -m "$message"
+}
+set_version() {  # $1: the version to commit
+  sed "s/^__version__ = .*/__version__ = \"$1\"/" "$WORK/rec/src/app/__init__.py" > "$WORK/version.py"
+  cp "$WORK/version.py" "$WORK/rec/src/app/__init__.py"
+  rec_commit "version $1" src/app/__init__.py
 }
 rec_commit "the packaging tools under test, and no record" scripts
-before="$(git -C "$WORK/rec" rev-parse HEAD)"
-sed 's/^__version__ = .*/__version__ = "9.10"/' "$WORK/rec/src/app/__init__.py" > "$WORK/version.py"
-cp "$WORK/version.py" "$WORK/rec/src/app/__init__.py"
-rec_commit "a synthetic version bump" src/app/__init__.py
+set_version 9.10
+early="$(git -C "$WORK/rec" rev-parse HEAD)"
+set_version 9.11
+set_version 9.10
 bump="$(git -C "$WORK/rec" rev-parse HEAD)"
 set_record() {  # the record's lines, committed on top of the bump
   git -C "$WORK/rec" reset -q --hard "$bump"
+  git -C "$WORK/rec" clean -fdq
   printf '%s\n' "$@" > "$WORK/rec/scripts/upload-record.txt"
   rec_commit "a review record" scripts/upload-record.txt
 }
@@ -394,71 +415,143 @@ no_upload_zip() {  # $1: what must not have left an upload zip
   [ ! -e "$WORK/rec/dist/appstore.zip" ] || { echo "FAIL: $1 left dist/appstore.zip"; exit 1; }
   echo "ok: $1 leaves no upload zip"
 }
-E="review 9.10 engineering-reviewer"
-S="review 9.10 security-reviewer"
+head_of_rec() { git -C "$WORK/rec" rev-parse HEAD; }
+E="review engineering-reviewer"
+S="review security-reviewer"
 
-package_rec pass "a REHEARSAL, never the upload" "a rehearsal, which needs no record" --rehearsal
+package_rec pass "a REHEARSAL, never the upload" "a rehearsal, which needs no record" \
+  --rehearsal "$WORK/rec-rehearsal.zip"
 no_upload_zip "a rehearsal"
-package_rec refuse "upload-record.txt is not committed at HEAD" "an upload without a record"
+package_rec refuse "upload-record.txt is not committed at" "an upload without a record"
+status=0
+out="$(sh "$WORK/rec/scripts/check-reviews.sh" "$bump" 2>&1)" || status=$?
+expect refuse "needs the commit to package and its upload paths" "the review check without upload paths" \
+  "$status" "$out"
+
 # The last verdict from each reviewer decides, so a FAIL that a later PASS follows does not
-# count; comments and blank lines are skipped. The PASS holds on the commit that records it,
+# count; comments, blank lines and tabs are fine. The PASS holds on the commit that records it,
 # which leaves the upload alone.
+TAB="$(printf '\t')"
 set_record "# reviews of 9.10" "" "$E PASS $bump" "$S FAIL $bump # the first round" \
-  "$S PASS $bump # after its fixes"
-package_rec pass "wrote dist/appstore.zip" "both reviews passed, the last verdict deciding"
+  "review${TAB}security-reviewer${TAB}PASS${TAB}$bump # after its fixes"
+package_rec pass "wrote dist/appstore.zip from $(head_of_rec)" "both reviews passed, the last verdict deciding"
 mode="$(ls -l "$WORK/rec/dist/appstore.zip" | cut -c1-10)"
 [ "$mode" = "-rw-r--r--" ] || { echo "FAIL: the upload zip has mode $mode, not -rw-r--r--"; exit 1; }
 echo "ok: the upload zip is mode 0644"
-# Only the committed record counts, and a refusal removes the upload zip the last case wrote.
+# Only the committed record counts, and a refusal leaves no upload zip.
 git -C "$WORK/rec" reset -q --hard "$bump"
 printf '%s\n' "$E PASS $bump" "$S PASS $bump" > "$WORK/rec/scripts/upload-record.txt"
-package_rec refuse "is not committed at HEAD" "a record that is not committed"
+package_rec refuse "is not committed at" "a record that is not committed"
 no_upload_zip "a refusal"
 set_record "$E PASS $bump"
-package_rec refuse "holds no security-reviewer verdict for 9.10" "only one review recorded"
+package_rec refuse "holds no security-reviewer verdict" "only one review recorded"
 set_record "$E PASS $bump" "$S PASS $bump" "$E FAIL $bump # a finding after the pass"
-package_rec refuse "the last engineering-reviewer verdict for 9.10 is FAIL" "a FAIL after a PASS"
-set_record "review 9.1 engineering-reviewer PASS $bump" "review 9.1 security-reviewer PASS $bump"
-package_rec refuse "holds no engineering-reviewer verdict for 9.10" "verdicts for version 9.1 only"
-set_record "$E PASS $before" "$S PASS $before"
-package_rec refuse "comes before" "verdicts on the commit before the bump"
-side="$(git -C "$WORK/rec" -c user.name=test -c user.email=test@localhost -c commit.gpgsign=false \
-  commit-tree -p "$bump" -m "a side commit" "$bump^{tree}")"
+package_rec refuse "the last engineering-reviewer verdict, line 3, is FAIL" "a FAIL after a PASS"
+# A FAIL counts whatever commit it names: recorded last against an older tree, it still refuses.
+set_record "$E PASS $bump" "$S PASS $bump" "$S FAIL $early # a finding against an older tree"
+package_rec refuse "the last security-reviewer verdict, line 3, is FAIL" "a FAIL recorded last against an older commit"
+# The first 9.10 carries the same upload as the bump, but comes before it.
+set_record "$E PASS $early" "$S PASS $early"
+package_rec refuse "comes before" "verdicts on a commit before the bump, with the same upload"
+side="$(rec_git commit-tree -p "$bump" -m "a side commit" "$bump^{tree}")"
 set_record "$E PASS $side" "$S PASS $side"
-package_rec refuse "not in HEAD's history" "verdicts on a commit outside HEAD's history"
+package_rec refuse "which is not in" "verdicts on a commit outside the packaged commit's history"
 set_record "$E PASS 1234567890abcdef1234567890abcdef12345678" "$S PASS $bump"
 package_rec refuse "not a commit in this repository" "a verdict on an unknown commit"
+
+# A line that is not a well-formed verdict refuses the whole record.
 set_record "$E PASS $bump" "$S PASS ${bump%?}"
 package_rec refuse "line 2 is not" "a commit id one character short"
 set_record "$E pass $bump" "$S PASS $bump"
 package_rec refuse "line 1 is not" "a verdict in lower case"
+set_record "$E PASS HEAD~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0" "$S PASS $bump"
+package_rec refuse "line 1 is not" "a revision expression 40 characters long"
+set_record "$E PASS $bump reviewed" "$S PASS $bump"
+package_rec refuse "line 1 is not" "a trailing word that is not a note"
+set_record "verdict engineering-reviewer PASS $bump" "$S PASS $bump"
+package_rec refuse "line 1 is not" "a line that is not a review"
+set_record "$E PASS $bump" "# a note$(printf '\r')$S FAIL $bump" "$S PASS $bump"
+package_rec refuse "line 2 holds a byte outside printable ASCII" "a carriage return that hides a verdict"
+
+# The version must be readable at the commit packaged.
+set_record "$E PASS $bump" "$S PASS $bump"
+sed '/^__version__ = /d' "$WORK/rec/src/app/__init__.py" > "$WORK/version.py"
+cp "$WORK/version.py" "$WORK/rec/src/app/__init__.py"
+rec_commit "no version" src/app/__init__.py
+package_rec refuse "no __version__" "a commit without a version"
+
 # A PASS against a tree that has since moved refuses, until the moved tree is reviewed.
 set_record "$E PASS $bump" "$S PASS $bump"
 printf '\nA later line.\n' >> "$WORK/rec/README.md"
 rec_commit "the upload moves on" README.md
 package_rec refuse "has changed since (README.md)" "an upload changed after its reviews"
-moved="$(git -C "$WORK/rec" rev-parse HEAD)"
+moved="$(head_of_rec)"
 printf '%s\n' "$E PASS $moved" "$S PASS $moved" >> "$WORK/rec/scripts/upload-record.txt"
 rec_commit "the reviews of the move" scripts/upload-record.txt
 package_rec pass "security-reviewer: PASS at $(printf '%.7s' "$moved")" "the moved upload, reviewed"
+
+# Every packaging tool is part of what the reviews passed: a change committed after them refuses,
+# and so does an edit that is not committed. The packager's change drops tests from its path list;
+# .gitattributes is new.
+change_tool() {  # $1: the tool to change, so that it still runs
+  case "$1" in
+    scripts/package-appstore.sh)
+      sed 's/ src tests frontend"$/ src frontend"/' "$WORK/rec/$1" > "$WORK/tool.tmp"
+      cmp -s "$WORK/tool.tmp" "$WORK/rec/$1" && { echo "FAIL: the path list did not change"; exit 1; }
+      cp "$WORK/tool.tmp" "$WORK/rec/$1" ;;
+    .gitattributes) printf 'tests export-ignore\n' >> "$WORK/rec/$1" ;;
+    *.mjs) printf '// a later comment\n' >> "$WORK/rec/$1" ;;
+    *) printf '# a later comment\n' >> "$WORK/rec/$1" ;;
+  esac
+}
+for tool in scripts/check-reviews.sh scripts/package-appstore.sh scripts/check-package.sh \
+  scripts/scan-package.mjs scripts/upload-binaries.txt .claude/hooks/secret-scan.mjs .gitattributes; do
+  set_record "$E PASS $bump" "$S PASS $bump"
+  change_tool "$tool"
+  rec_commit "$tool moves on" "$tool"
+  package_rec refuse "has changed since ($tool)" "$tool, changed after the reviews"
+  set_record "$E PASS $bump" "$S PASS $bump"
+  change_tool "$tool"
+  package_rec refuse "differ from $(printf '%.7s' "$(head_of_rec)") ($tool)" "$tool, edited but not committed"
+done
+# An edit that git's index is told to ignore still refuses: the tools are compared by content.
 set_record "$E PASS $bump" "$S PASS $bump"
-printf '# a later comment\n' >> "$WORK/rec/scripts/check-package.sh"
-rec_commit "the nets move on" scripts/check-package.sh
-package_rec refuse "has changed since (scripts/check-package.sh)" \
-  "the upload nets changed after the reviews"
+git -C "$WORK/rec" update-index --skip-worktree scripts/check-package.sh
+printf '# hidden from git status\n' >> "$WORK/rec/scripts/check-package.sh"
+[ -z "$(git -C "$WORK/rec" status --porcelain -- scripts/check-package.sh)" ] \
+  || { echo "FAIL: the premise failed: git status shows the edit"; exit 1; }
+package_rec refuse "differ from" "a tool edit that skip-worktree hides from git status"
+git -C "$WORK/rec" update-index --no-skip-worktree scripts/check-package.sh
+
+# The zip must hold the committed files byte for byte, whatever git's local filters and
+# attributes would make of them, and the nets still judge a reviewed upload.
 set_record "$E PASS $bump" "$S PASS $bump"
-printf '# an uncommitted comment\n' >> "$WORK/rec/scripts/check-package.sh"
-package_rec refuse "the packaging tools differ from HEAD (scripts/check-package.sh)" \
-  "an upload net edited but not committed"
-# A tool never committed refuses too, though no commit carries it to compare.
+git -C "$WORK/rec" config filter.swap.smudge "sed s/Holly/H0lly/"
+printf 'README.md filter=swap\n' > "$WORK/rec/.git/info/attributes"
+package_rec refuse "does not hold the files of" "a local smudge filter that rewrites a packaged file"
+printf 'tests export-ignore\n' > "$WORK/rec/.git/info/attributes"
+package_rec refuse "does not hold the files of" "a local attribute that drops packaged files"
+: > "$WORK/rec/.git/info/attributes"
+git -C "$WORK/rec" config --unset filter.swap.smudge
 git -C "$WORK/rec" reset -q --hard "$bump"
-git -C "$WORK/rec" rm -q --cached scripts/check-reviews.sh
-git -C "$WORK/rec" -c user.name=test -c user.email=test@localhost -c commit.gpgsign=false \
-  commit -q -m "the review check, never committed"
-untracked="$(git -C "$WORK/rec" rev-parse HEAD)"
-printf '%s\n' "$E PASS $untracked" "$S PASS $untracked" > "$WORK/rec/scripts/upload-record.txt"
-rec_commit "a review record" scripts/upload-record.txt
-package_rec refuse "the packaging tools differ from HEAD (scripts/check-reviews.sh)" \
-  "the review check, never committed"
+printf '%s\n' "$LINE" > "$WORK/rec/src/app/leak.py"
+rec_commit "a key in the source" src/app/leak.py
+keyed="$(head_of_rec)"
+printf '%s\n' "$E PASS $keyed" "$S PASS $keyed" > "$WORK/rec/scripts/upload-record.txt"
+rec_commit "the reviews of the keyed tree" scripts/upload-record.txt
+package_rec refuse "secret-scan rules matched" "a reviewed upload that holds a key"
+no_upload_zip "a reviewed upload the nets refuse"
+
+# HEAD is resolved once: a commit landing while packaging refuses, never slips in. A stand-in git
+# commits on its way into git archive.
+set_record "$E PASS $bump" "$S PASS $bump"
+mkdir "$WORK/movegit"
+printf '#!/bin/sh\ncase " $* " in *" archive "*) "%s" -C "%s" -c user.name=test -c user.email=test@localhost -c commit.gpgsign=false commit -q --allow-empty -m moved ;; esac\nexec "%s" "$@"\n' \
+  "$(command -v git)" "$WORK/rec" "$(command -v git)" > "$WORK/movegit/git"
+chmod +x "$WORK/movegit/git"
+status=0
+out="$(PATH="$WORK/movegit:$PATH" sh "$WORK/rec/scripts/package-appstore.sh" 2>&1)" || status=$?
+expect refuse "HEAD moved from" "a commit landing while packaging" "$status" "$out"
+no_upload_zip "a commit landing while packaging"
 
 echo "upload nets: all $n cases behaved"

@@ -8,9 +8,9 @@
 # Adapted for Holly (Python): POSIX sh rather than bash, a fresh temporary checkout on every
 # run, the transport reproduced through a Git round-trip, a PATH holding only the venv and sh,
 # the locked pip install, and pytest writing coverage.xml. It packages the COMMITTED tree
-# (git archive HEAD), so commit before you simulate, as a rehearsal: the upload's archive and
-# nets without the review check, so it can run before the reviews. The checkout is removed
-# afterwards, also on Ctrl-C; KEEP_SIM=1 keeps it.
+# (git archive HEAD), so commit before you simulate, as a rehearsal: the upload's bytes and
+# nets without the review check, written into its own temporary directory, so it can run before
+# the reviews. The checkout is removed afterwards, also on Ctrl-C; KEEP_SIM=1 keeps it.
 # TBC, re-verify: the baseline does not record the platform's exact stage commands for the
 # python template. By default this runs the canonical pair from toolchain-adapters under
 # GITLAB_CI=true. Once the platform team confirms its commands, rehearse exactly those:
@@ -34,13 +34,13 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 # 1. Produce the upload's archive, as a rehearsal.
-sh "$HERE/package-appstore.sh" --rehearsal
+sh "$HERE/package-appstore.sh" --rehearsal "$SIM/upload.zip"
 
 # 2. Check it out the way the platform does: the zip is committed into a fresh Git project and
 #    the pipeline runs on a checkout of that commit, so the transport is reproduced (file modes,
 #    empty directories), not just the tree. Then the platform adds its own CI file.
 mkdir "$SIM/upload" "$SIM/checkout" "$SIM/bin"
-unzip -q "$ROOT/dist/appstore-rehearsal.zip" -d "$SIM/upload"
+unzip -q "$SIM/upload.zip" -d "$SIM/upload"
 git -C "$SIM/upload" init -q
 git -C "$SIM/upload" add -A
 git -C "$SIM/upload" -c user.name=simulation -c user.email=simulation@localhost \

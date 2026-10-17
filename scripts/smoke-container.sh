@@ -1,9 +1,9 @@
 #!/bin/sh
 # smoke-container.sh :: the local rung for the platform's container build and deploy stages.
-# It builds the image from the UPLOAD'S ARCHIVE (a rehearsal package of HEAD, which needs no
-# review record: the context the platform builds from, never the working tree), runs it the
-# way the platform does (a PostgreSQL database, the FILE_STORAGE add-on's writable mount at
-# /data, the settings Holly requires), and fails on:
+# It builds the image from the UPLOAD'S ARCHIVE (a rehearsal package of HEAD in a temporary
+# file, which needs no review record: the context the platform builds from, never the working
+# tree), runs it the way the platform does (a PostgreSQL database, the FILE_STORAGE add-on's
+# writable mount at /data, the settings Holly requires), and fails on:
 #   1. a non-200 from / or a health path, with PORT unset (8080) and with PORT injected
 #   2. an error line or a traceback in the boot log
 #   3. migrations that did not reach the newest revision, migrations that run while another
@@ -28,6 +28,7 @@ TAG="${TAG:-holly-smoke}"
 # version the App Store POSTGRESQL add-on provides.
 PG_IMAGE="${PG_IMAGE:-postgres:15-alpine@sha256:f7d23353e1b15400d22ebe31189f4d314b87a4c129cc400c8c2d8d4ca127bf81}"
 CTX="$(mktemp -d "${TMPDIR:-/tmp}/holly-smoke.XXXXXX")"
+ZIP="$(mktemp "${TMPDIR:-/tmp}/holly-smoke-upload.XXXXXX")"
 NET="holly-smoke-$(basename "$CTX" | tr -dc 'A-Za-z0-9')"
 CIDS=""
 NET_MADE=0
@@ -36,6 +37,7 @@ cleanup() {
   if [ -n "$CIDS" ]; then docker rm -f $CIDS >/dev/null 2>&1 || true; fi
   if [ "$NET_MADE" = 1 ]; then docker network rm "$NET" >/dev/null 2>&1 || true; fi
   if [ "${KEEP_SMOKE:-0}" != 1 ]; then rm -rf -- "$CTX"; else echo "kept $CTX"; fi
+  rm -f -- "$ZIP"
 }
 trap cleanup EXIT
 # dash runs the EXIT trap on a normal exit or a set -e failure, not on a signal: exit first.
@@ -115,8 +117,8 @@ refused() {  # $1: container id. $2: text the log must hold. $3: what was refuse
 }
 
 # 1. Build from the archive the platform receives, packaged as a rehearsal.
-sh "$HERE/package-appstore.sh" --rehearsal
-unzip -q "$ROOT/dist/appstore-rehearsal.zip" -d "$CTX"
+sh "$HERE/package-appstore.sh" --rehearsal "$ZIP"
+unzip -q "$ZIP" -d "$CTX"
 # DOCKER_BUILD_FLAGS is split into separate flags on purpose.
 docker build ${DOCKER_BUILD_FLAGS:-} -f "${DOCKERFILE:-$CTX/Dockerfile}" -t "$TAG" "$CTX"
 
