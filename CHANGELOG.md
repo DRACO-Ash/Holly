@@ -17,7 +17,9 @@ All notable changes to Holly are recorded here, newest first. Holly V0.2 is the 
 
 ● **Each analyst can switch two screen effects from the header.** Scanlines start on: they texture the screen behind the text and cross the large readouts, the page headings and the dashboard counts. They never cross body text, where any visible strength would pull the fainter labels below the contrast floor. CRT flicker starts off, and stays still when the system asks for reduced motion. Both choices are kept in the browser only.
 
-● **Every colour is a token, and the loop holds the theme to WCAG AA.** The stylesheet's last hard-coded tints now derive from their tokens. `scripts/contrast-check.mjs` measures every text, field-edge and focus pair the tokens make, the large readouts under the scanlines and the screen while it flickers, and refuses an accent that matches a status colour.
+● **Every colour is a token, and the loop holds the theme to WCAG AA.** The stylesheet's last hard-coded tints now derive from their tokens. `scripts/contrast-check.mjs` measures every text, field-edge and focus pair the tokens make, including tints over the chrome they sit on, the large readouts under the scanlines, the screen while it flickers and the firing banner at the peak of its pulse. It also refuses an accent closer than 0.2 in the OKLab colour space to a status colour.
+
+● **The theme keeps the interface readable as well as styled.** Links are underlined, so colour is never their only cue. Code and records show their characters as stored, with the code face's ligatures off, and headings that show a record's value keep its case. Native controls, date pickers and autofill follow the dark theme. Focus shows as a phosphor ring on every control, checkboxes included, and the side navigation marks the current page for screen readers. A dismissed timer dims by colour, not by fading below the contrast floor.
 
 ### Fixed
 

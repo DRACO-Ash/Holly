@@ -198,7 +198,7 @@ export default function ProceduresPage() {
       {selectedLoading && <div>Loading procedure...</div>}
       {selected && (
         <section className="card">
-          <h2>{selected.name}</h2>
+          <h2 className="record-value">{selected.name}</h2>
           <div className="muted">
             {selected.filename} &middot; {formatSize(selected.size_bytes)} &middot;{" "}
             {selected.content_type}

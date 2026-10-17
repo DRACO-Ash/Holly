@@ -74,7 +74,7 @@ export default function NotificationDetailPage() {
       <Link to="/notifications" className="back-link">
         &larr; Back to notifications
       </Link>
-      <h1>{item.notso_identifier ?? item.notice_id ?? "Notification"}</h1>
+      <h1 className="record-value">{item.notso_identifier ?? item.notice_id ?? "Notification"}</h1>
       {item.event_class && <p className="detail-subtitle">{item.event_class}</p>}
 
       <AssistantPanel notificationId={item.id} />

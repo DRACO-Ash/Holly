@@ -74,12 +74,17 @@ export default function Layout() {
                 key={item.to}
                 to={item.to}
                 className={pathname === item.to ? "nav-link active" : "nav-link"}
+                aria-current={pathname === item.to ? "page" : undefined}
               >
                 {item.label}
               </Link>
             ))}
           </nav>
           <main className="app-main">
+            <span className="screw screw-tl" aria-hidden="true" />
+            <span className="screw screw-tr" aria-hidden="true" />
+            <span className="screw screw-bl" aria-hidden="true" />
+            <span className="screw screw-br" aria-hidden="true" />
             <div className="crt-screen">
               <div className="crt-content">
                 <Outlet />

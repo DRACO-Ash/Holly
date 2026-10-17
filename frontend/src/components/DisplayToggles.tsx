@@ -5,9 +5,12 @@ interface DisplayTogglesProps {
   onChange: (prefs: DisplayPrefs) => void;
 }
 
-// The two screen effects of the Holly design document, switched per analyst. Flicker also stops
-// whenever the operating system asks for reduced motion.
+// The two screen effects of the Holly design document, switched per analyst. When the operating
+// system asks for reduced motion, flicker is off and its box is greyed out, saying why.
 export default function DisplayToggles({ prefs, onChange }: DisplayTogglesProps) {
+  const reduceMotion =
+    typeof window !== "undefined" &&
+    window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
   return (
     <fieldset className="display-toggles">
       <legend className="visually-hidden">Screen effects</legend>
@@ -17,15 +20,25 @@ export default function DisplayToggles({ prefs, onChange }: DisplayTogglesProps)
           checked={prefs.scanlines}
           onChange={(e) => onChange({ ...prefs, scanlines: e.target.checked })}
         />
-        Scanlines
+        <span>Scanlines</span>
       </label>
-      <label className="display-toggle">
+      <label
+        className="display-toggle"
+        title={reduceMotion ? "Off: your system reduces motion" : undefined}
+      >
         <input
           type="checkbox"
-          checked={prefs.flicker}
+          checked={prefs.flicker && !reduceMotion}
+          disabled={reduceMotion}
+          aria-describedby={reduceMotion ? "flicker-off-note" : undefined}
           onChange={(e) => onChange({ ...prefs, flicker: e.target.checked })}
         />
-        CRT flicker
+        <span>CRT flicker</span>
+        {reduceMotion && (
+          <span id="flicker-off-note" className="visually-hidden">
+            Off: your system reduces motion
+          </span>
+        )}
       </label>
     </fieldset>
   );
