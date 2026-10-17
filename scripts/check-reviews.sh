@@ -14,21 +14,32 @@
 #      .gitattributes) are unchanged since, so a PASS recorded against a tree that has since
 #      moved refuses.
 # The packaging tools that run are the working tree's, so each must match its committed content
-# byte for byte, whatever git's index says, and git's local overrides (replaced objects, grafts)
-# are ignored. A line it cannot read, a byte outside printable ASCII and tab, a git error or a
-# missing record refuses. It proves the record is present and consistent with the history, not
-# that a review took place (SECURITY.md).
+# byte for byte, whatever git's index says. They are compared once, before the archive is built,
+# so this catches a tool that has drifted, not one swapped while packaging runs, and the packager
+# is compared after it has started. Git's local overrides (replaced objects, grafts, a textconv
+# driver, signature display, a commit-graph) are ignored. A line it cannot read, a byte outside
+# printable ASCII and tab, a git error or a missing record refuses. It proves the record is
+# present and consistent with the history, not that a review took place (SECURITY.md).
 set -euf   # -f: the tool list splits into paths, never into patterns
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# An exported CDPATH would send a relative cd to another directory of the same name.
+unset CDPATH
+# The repository's root, kept exact: command substitution drops a trailing newline from a name,
+# which could name a sibling directory instead, so a sentinel follows pwd's output.
+ROOT="$(cd "$(dirname "$0")/.." && pwd && echo .)"
+ROOT="${ROOT%??}"
 RECORD=scripts/upload-record.txt
 TOOLS="scripts/check-reviews.sh scripts/package-appstore.sh scripts/check-package.sh
   scripts/scan-package.mjs scripts/upload-binaries.txt .claude/hooks/secret-scan.mjs .gitattributes"
 # Git's local overrides never stand in for the committed record and history: no replaced object,
-# and no graft, which could adopt a commit into the history. The graft file is a path that can
-# never exist, so git reads none and prints no deprecation hint.
+# no graft, which could adopt a commit into the history, and no commit-graph file, whose parents
+# git trusts unchecked. The graft file is a path that can never exist, so git reads none and
+# prints no deprecation hint.
 GIT_NO_REPLACE_OBJECTS=1
 GIT_GRAFT_FILE=/dev/null/none
-export GIT_NO_REPLACE_OBJECTS GIT_GRAFT_FILE
+GIT_CONFIG_COUNT=1
+GIT_CONFIG_KEY_0=core.commitGraph
+GIT_CONFIG_VALUE_0=false
+export GIT_NO_REPLACE_OBJECTS GIT_GRAFT_FILE GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0
 
 refuse() { echo "packaging refused: $1"; exit 1; }
 short() { printf '%.7s' "$1"; }
@@ -63,7 +74,9 @@ record="$(git -C "$ROOT" show "$at:$RECORD")"
 version="$(git -C "$ROOT" show "$at:src/app/__init__.py" \
   | sed -n 's/^__version__ = "\([0-9][0-9.]*\)"$/\1/p')"
 [ -n "$version" ] || refuse "no __version__ in src/app/__init__.py at $(short "$at")"
-bump="$(git -C "$ROOT" log -1 --format=%H -G'^__version__ = ' "$at" -- src/app/__init__.py)"
+# A local textconv could hide a version change from -G, and a signature line would garble the id.
+bump="$(git -C "$ROOT" log -1 --no-textconv --no-show-signature --format=%H -G'^__version__ = ' \
+  "$at" -- src/app/__init__.py)"
 [ -n "$bump" ] || refuse "no commit sets version $version"
 
 # The last verdict from each reviewer, with its line. Any line that is not blank, a comment or a

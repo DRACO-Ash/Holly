@@ -17,20 +17,24 @@
 #
 # The upload, dist/appstore.zip, is written only when scripts/check-reviews.sh finds that both
 # binding reviews passed the upload at the commit packaged (scripts/upload-record.txt), and only
-# from the tip of a branch that is not behind its upstream. HEAD is resolved once and that commit
-# is checked, archived and verified, so a commit landing meanwhile can never slip in: it refuses
+# from the tip of a branch that is not behind its upstream as last fetched; a branch with no
+# upstream is not compared, and the run says so. HEAD is resolved once and that commit is
+# checked, archived and verified, so a commit landing meanwhile can never slip in: it refuses
 # instead. Every run first removes the last upload zip and any temporary zip a killed run left,
 # so dist/ never holds one a later run did not write. `--rehearsal <file>` skips the review check
-# and writes <file> instead, resolved outside dist/: the same bytes through the same nets, for
-# the rungs that test a package before its reviews exist. A rehearsal, like `git archive` by
+# and writes <file> instead, outside dist/ and never named appstore.zip: the same bytes through
+# the same nets, for the rungs that test a package before its reviews exist. A rehearsal, like `git archive` by
 # hand, is never the upload: the check covers only the file this script writes, when it writes
 # it (SECURITY.md).
 set -euf   # -f: no path in the list is ever matched against the working tree as a pattern
+# An exported CDPATH would send a relative cd to another directory of the same name.
+unset CDPATH
 CALLER="$PWD"
 cd "$(dirname "$0")/.."
 rm -f -- dist/appstore.zip
-# A run that was killed can leave its temporary zip behind: an archive nobody checked.
-if [ -d dist ]; then find dist -maxdepth 1 -type f -name '.appstore.*' -exec rm -f -- {} +; fi
+# A run that was killed can leave its temporary zip behind: an archive nobody checked. The slash
+# makes find enter dist/ when it is a symlink to a directory.
+if [ -d dist ]; then find dist/ -maxdepth 1 -type f -name '.appstore.*' -exec rm -f -- {} +; fi
 
 OUT="dist/appstore.zip"
 rehearsal=0
@@ -44,27 +48,47 @@ TMPDIR_OUT=dist
 if [ "$rehearsal" = 1 ]; then
   [ -n "$OUT" ] || { echo "usage: sh scripts/package-appstore.sh [--rehearsal <file>]"; exit 2; }
   case "$OUT" in /*) ;; *) OUT="$CALLER/$OUT" ;; esac
-  # Resolved as the kernel resolves it (cd -P, so a symlink and .. cannot steer it), failing
-  # closed, and written to the resolved path.
-  name="$(basename -- "$OUT")"
-  dir="$(cd -P "$(dirname -- "$OUT")" 2>/dev/null && pwd -P)" \
-    || { echo "a rehearsal needs an existing directory: $(dirname -- "$OUT")"; exit 2; }
-  case "$name" in .|..|/) echo "a rehearsal needs a file name"; exit 2 ;; esac
-  case "$dir/" in
-    "$(cd -P dist && pwd -P)/"*) echo "a rehearsal never writes into dist/, which holds only checked uploads"; exit 2 ;;
+  # Split by parameter expansion, and resolved with a sentinel after pwd, since command
+  # substitution drops a trailing newline from a name. The directory is resolved as the kernel
+  # resolves it (cd -P, so a symlink and .. cannot steer it), failing closed, and the file is
+  # written there.
+  name="${OUT##*/}"
+  parent="${OUT%/*}"
+  dir="$(cd -P "${parent:-/}" 2>/dev/null && pwd -P && echo .)" \
+    || { echo "a rehearsal needs an existing directory: ${parent:-/}"; exit 2; }
+  dir="${dir%??}"
+  # Never under the upload's name, in any case, so no checkout's dist/appstore.zip is ever a
+  # rehearsal; and never in dist/ or below it, compared by device and inode, so no symlink,
+  # bind mount or other spelling of the path reaches it.
+  case "$name" in
+    [Aa][Pp][Pp][Ss][Tt][Oo][Rr][Ee].[Zz][Ii][Pp])
+      echo "a rehearsal is never named appstore.zip, the upload's name"; exit 2 ;;
   esac
+  up="$dir"
+  while [ -n "$up" ]; do
+    if [ "$up" -ef dist ]; then echo "a rehearsal never writes into dist/, which holds only checked uploads"; exit 2; fi
+    up="${up%/*}"
+  done
   OUT="$dir/$name"
   if [ -L "$OUT" ] || { [ -e "$OUT" ] && [ ! -f "$OUT" ]; }; then
     echo "a rehearsal writes a regular file, and $OUT is something else"; exit 2
   fi
-  # It replaces only an empty file or an earlier zip, never anything else.
-  if [ -s "$OUT" ] && [ "$(head -c 2 "$OUT")" != PK ]; then echo "a rehearsal never replaces $OUT, which is not a zip"; exit 2; fi
+  # It replaces only an empty file or an earlier rehearsal: a .zip file that holds a zip.
+  if [ -s "$OUT" ]; then
+    case "$name:$(head -c 2 "$OUT")" in
+      *.zip:PK) ;;
+      *) echo "a rehearsal replaces only an empty file or an earlier .zip rehearsal, and $OUT is neither"; exit 2 ;;
+    esac
+  fi
   TMPDIR_OUT="$dir"
 fi
 
-# A replaced object never stands in for a committed one in the archive.
+# Git's local overrides never stand in for the committed history: no replaced object in the
+# archive, and no graft, which could hide that the branch is behind its upstream. The graft file
+# is a path that can never exist, so git reads none and prints no deprecation hint.
 GIT_NO_REPLACE_OBJECTS=1
-export GIT_NO_REPLACE_OBJECTS
+GIT_GRAFT_FILE=/dev/null/none
+export GIT_NO_REPLACE_OBJECTS GIT_GRAFT_FILE
 COMMIT="$(git rev-parse --verify 'HEAD^{commit}')"
 
 # Build under a temporary name beside the output and move it into place only when every net
@@ -83,16 +107,36 @@ PATHS="Dockerfile .dockerignore .python-version pyproject.toml README.md alembic
   sonar-project.properties src tests frontend"
 
 # The record counts the verdicts committed at or before the commit packaged, so an upload comes
-# from the tip of a branch that is not behind its upstream as last fetched: never from a
-# detached HEAD or an older checkout, which could predate a FAIL.
+# from the tip of a local branch, never a detached HEAD or one on another ref, such as a tag, and
+# never from a branch behind its upstream as last fetched, whose record could predate a FAIL
+# recorded there. An upstream that is configured but does not resolve refuses, since the lag
+# cannot be measured. A branch with no upstream is not compared, and the run says so: only a
+# fetched upstream shows a later FAIL.
 if [ "$rehearsal" = 0 ]; then
-  git symbolic-ref -q HEAD > /dev/null \
+  ref="$(git symbolic-ref -q HEAD)" \
     || { echo "packaging refused: HEAD is detached; package from the tip of a branch"; exit 1; }
-  behind="$(git rev-list --count 'HEAD..@{upstream}' 2> /dev/null || echo 0)"
-  [ "$behind" = 0 ] || {
-    echo "packaging refused: the branch is $behind commits behind its upstream; pull first, so every recorded verdict counts"
-    exit 1
-  }
+  case "$ref" in
+    refs/heads/?*) branch="${ref#refs/heads/}" ;;
+    *) echo "packaging refused: HEAD is on $ref, not a local branch; package from the tip of one"; exit 1 ;;
+  esac
+  status=0
+  git config --get "branch.$branch.merge" > /dev/null || status=$?
+  case "$status" in
+    0)
+      upstream="$(git rev-parse -q --verify "$branch@{upstream}^{commit}")" || {
+        echo "packaging refused: the upstream of $branch does not resolve; fetch it, or remove it with git branch --unset-upstream"
+        exit 1
+      }
+      behind="$(git rev-list --count "$COMMIT..$upstream" --)" \
+        || { echo "packaging refused: could not compare $branch with its upstream"; exit 1; }
+      [ "$behind" = 0 ] || {
+        echo "packaging refused: $branch lacks $behind of its upstream's commits; pull first, so every recorded verdict counts"
+        exit 1
+      }
+      ;;
+    1) echo "note: $branch has no upstream, so packaging cannot tell whether it is behind one" ;;
+    *) echo "packaging refused: could not read the upstream of $branch"; exit 1 ;;
+  esac
   # shellcheck disable=SC2086  # the path list splits on purpose
   sh scripts/check-reviews.sh "$COMMIT" $PATHS
 fi

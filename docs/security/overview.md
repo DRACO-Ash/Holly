@@ -5,7 +5,7 @@
 **Data classification:** Unclassified (per ADR-006)
 **Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned the edition this one replaces)
 **Version:** 0.4
-**Last updated:** 2026-10-16
+**Last updated:** 2026-10-17
 
 > **BLUF**
 >
@@ -145,7 +145,7 @@ Every call goes through one function, `call_claude` ([src/app/services/claude.py
 ● `/status` reports only whether four non-secret inputs are set, and their lengths: `PORT`, `APP_ENV`, `STORAGE_MOUNT_PATH` and `PROCEDURE_STORAGE_PATH`.
 ● `APP_SECRET_KEY` signs the tokens and must be at least 32 characters. Treat it as a credential; rotating it signs every user out.
 ● Environment files are ignored by Git (`.gitignore`) and kept out of the image's build context (`.dockerignore`).
-● The upload sent to the App Store is an allowlist of tracked paths, and every file in it passes a content scan with the secret-scan hook's rules before the package is written ([scripts/check-package.sh](../../scripts/check-package.sh)). The same check refuses the agent configuration (`CLAUDE.md`, `CLAUDE.local.md`, `.mcp.json` and anything under `.claude/`) by name, so a change to the path list cannot ship it, and refuses any member name that is not printable ASCII, holds a backslash, or would change on extraction. [SECURITY.md](../../SECURITY.md) lists what that scan cannot see.
+● The upload sent to the App Store is an allowlist of tracked paths, and every file in it passes a content scan with the secret-scan hook's rules before the package is written ([scripts/check-package.sh](../../scripts/check-package.sh)). The same check refuses the agent configuration (`CLAUDE.md`, `CLAUDE.local.md`, `.mcp.json` and anything under `.claude/`) by name, so a change to the path list cannot ship it, and refuses any member name that is not printable ASCII, holds a backslash, or would change on extraction, any member that is not a regular file, and a zip that does not hold exactly the committed files of the commit packaged, byte for byte. [SECURITY.md](../../SECURITY.md) lists what that scan cannot see.
 ● Claude Code's pre-write hook ([.claude/hooks/secret-scan.mjs](../../.claude/hooks/secret-scan.mjs)) blocks a credential-shaped string in any file Claude writes.
 ● No repository-wide secret scanner, such as the Daily Operations Dashboard's gitleaks, runs in CI or as a commit hook.
 

@@ -245,6 +245,11 @@ status=0
 out="$(PATH="$WORK/badgrep:$PATH" sh "$HERE/check-package.sh" "$WORK/grepfail.zip" 2>&1)" || status=$?
 expect refuse "could not check the member names" "a grep that fails on the name patterns" "$status" "$out"
 
+# A commit given without the paths it was packaged from refuses before anything is compared.
+status=0
+out="$(sh "$HERE/check-package.sh" "$WORK/grepfail.zip" HEAD 2>&1)" || status=$?
+expect refuse "needs the upload paths with the commit" "a commit given without its upload paths" "$status" "$out"
+
 # The scanner itself: hooks that fail.
 mkdir "$WORK/clean"
 printf 'X = 1\n' > "$WORK/clean/a.py"
@@ -334,10 +339,12 @@ out="$(sh "$WORK/repo/scripts/package-appstore.sh" --rehersal "$REH" 2>&1)" || s
 expect refuse "usage:" "a mistyped option" "$status" "$out"
 [ ! -e "$WORK/repo/dist/appstore.zip" ] || { echo "FAIL: a mistyped run left dist/appstore.zip"; exit 1; }
 echo "ok: a mistyped run removes the last upload zip"
-# A relative rehearsal path is the caller's; an empty one, or a directory, refuses.
+# A relative rehearsal path is the caller's, printed as the kernel resolves it; an empty one, a
+# directory, a name that resolves to one, a symlink or a directory that does not exist refuses,
+# and an empty file is replaced.
 status=0
 out="$(cd "$WORK" && sh "$WORK/repo/scripts/package-appstore.sh" --rehearsal rel.zip 2>&1)" || status=$?
-expect pass "wrote $WORK/rel.zip" "a rehearsal path relative to the caller" "$status" "$out"
+expect pass "wrote $(cd -P "$WORK" && pwd -P)/rel.zip" "a rehearsal path relative to the caller" "$status" "$out"
 [ -f "$WORK/rel.zip" ] || { echo "FAIL: no rehearsal at $WORK/rel.zip"; exit 1; }
 status=0
 out="$(sh "$WORK/repo/scripts/package-appstore.sh" --rehearsal "" 2>&1)" || status=$?
@@ -345,25 +352,78 @@ expect refuse "usage:" "an empty rehearsal path" "$status" "$out"
 status=0
 out="$(sh "$WORK/repo/scripts/package-appstore.sh" --rehearsal "$WORK" 2>&1)" || status=$?
 expect refuse "is something else" "a rehearsal path that is a directory" "$status" "$out"
-# The rehearsal path is resolved as the kernel resolves it: neither a symlink with .. nor a
-# symlinked dist/ can steer a rehearsal to the upload path, and it never replaces a file that is
-# not a zip.
+status=0
+out="$(sh "$WORK/repo/scripts/package-appstore.sh" --rehearsal "$WORK/repo/.." 2>&1)" || status=$?
+expect refuse "is something else" "a rehearsal path whose name is .." "$status" "$out"
+ln -s "$WORK/rel.zip" "$WORK/link.zip"
+status=0
+out="$(sh "$WORK/repo/scripts/package-appstore.sh" --rehearsal "$WORK/link.zip" 2>&1)" || status=$?
+expect refuse "is something else" "a rehearsal path that is a symlink to a zip" "$status" "$out"
+status=0
+out="$(sh "$WORK/repo/scripts/package-appstore.sh" --rehearsal "$WORK/no-such-dir/r.zip" 2>&1)" || status=$?
+expect refuse "needs an existing directory" "a rehearsal into a directory that does not exist" "$status" "$out"
+[ ! -e "$WORK/no-such-dir" ] || { echo "FAIL: a refused rehearsal made its directory"; exit 1; }
+: > "$WORK/empty.zip"
+status=0
+out="$(sh "$WORK/repo/scripts/package-appstore.sh" --rehearsal "$WORK/empty.zip" 2>&1)" || status=$?
+expect pass "a REHEARSAL, never the upload" "a rehearsal over an empty file" "$status" "$out"
+[ "$(head -c 2 "$WORK/empty.zip")" = PK ] || { echo "FAIL: the empty file was not replaced by a zip"; exit 1; }
+echo "ok: a rehearsal replaces an empty file with the zip"
+# A rehearsal never writes into dist/ or below it, compared by inode, so neither a symlink to
+# dist/, nor a symlink with .., nor a symlinked dist/ can steer it there; it is never named like
+# the upload; and it never replaces a file that is not an earlier .zip rehearsal. A killed run's
+# temporary zip is cleared from a symlinked dist/ too.
+ln -s "$WORK/repo/dist" "$WORK/dist-link"
+status=0
+out="$(sh "$WORK/repo/scripts/package-appstore.sh" --rehearsal "$WORK/dist-link/r.zip" 2>&1)" \
+  || status=$?
+expect refuse "never writes into dist/" "a rehearsal through a symlink to dist/" "$status" "$out"
+rm -- "$WORK/dist-link"
+mkdir "$WORK/repo/dist/below"
+status=0
+out="$(sh "$WORK/repo/scripts/package-appstore.sh" --rehearsal "$WORK/repo/dist/below/r.zip" 2>&1)" || status=$?
+expect refuse "never writes into dist/" "a rehearsal into a directory below dist/" "$status" "$out"
+rmdir "$WORK/repo/dist/below"
+status=0
+out="$(sh "$WORK/repo/scripts/package-appstore.sh" --rehearsal "$WORK/AppStore.ZIP" 2>&1)" || status=$?
+expect refuse "never named appstore.zip" "a rehearsal under the upload's name, in another case" "$status" "$out"
+[ ! -e "$WORK/AppStore.ZIP" ] || { echo "FAIL: a rehearsal was written under the upload's name"; exit 1; }
+# The path is kept exact: a directory whose name ends in a newline is not the symlink that
+# shares its name without one.
+mkdir "$WORK/nl" "$WORK/nl/b$NL" "$WORK/elsewhere"
+ln -s "$WORK/elsewhere" "$WORK/nl/b"
+ln -s "$WORK/nl/b$NL" "$WORK/nl/c"
+status=0
+out="$(sh "$WORK/repo/scripts/package-appstore.sh" --rehearsal "$WORK/nl/c/r.zip" 2>&1)" || status=$?
+expect pass "a REHEARSAL, never the upload" "a rehearsal into a directory whose name ends in a newline" "$status" "$out"
+[ -f "$WORK/nl/b$NL/r.zip" ] && [ ! -e "$WORK/elsewhere/r.zip" ] \
+  || { echo "FAIL: the rehearsal did not land in the directory whose name ends in a newline"; exit 1; }
+echo "ok: the rehearsal landed in the directory it resolved"
 ln -s "$WORK/repo/scripts" "$WORK/scripts-link"
 status=0
-out="$(sh "$WORK/repo/scripts/package-appstore.sh" --rehearsal "$WORK/scripts-link/../dist/appstore.zip" 2>&1)" \
+out="$(sh "$WORK/repo/scripts/package-appstore.sh" --rehearsal "$WORK/scripts-link/../dist/r.zip" 2>&1)" \
   || status=$?
 expect refuse "never writes into dist/" "a rehearsal steered into dist/ by a symlink and .." "$status" "$out"
 mv "$WORK/repo/dist" "$WORK/dist-elsewhere"
 ln -s "$WORK/dist-elsewhere" "$WORK/repo/dist"
+printf 'PK unchecked\n' > "$WORK/dist-elsewhere/.appstore.killed"
 status=0
-out="$(sh "$WORK/repo/scripts/package-appstore.sh" --rehearsal "$WORK/dist-elsewhere/appstore.zip" 2>&1)" \
+out="$(sh "$WORK/repo/scripts/package-appstore.sh" --rehearsal "$WORK/dist-elsewhere/r.zip" 2>&1)" \
   || status=$?
 expect refuse "never writes into dist/" "a rehearsal into a dist/ that is a symlink" "$status" "$out"
+[ ! -e "$WORK/dist-elsewhere/.appstore.killed" ] \
+  || { echo "FAIL: a killed run's temporary zip survived in a symlinked dist/"; exit 1; }
+echo "ok: a killed run's temporary zip is cleared from a symlinked dist/"
 rm -- "$WORK/repo/dist"
 mv "$WORK/dist-elsewhere" "$WORK/repo/dist"
 status=0
 out="$(sh "$WORK/repo/scripts/package-appstore.sh" --rehearsal "$WORK/repo/.git/HEAD" 2>&1)" || status=$?
-expect refuse "which is not a zip" "a rehearsal over a file that is not a zip" "$status" "$out"
+expect refuse "is neither" "a rehearsal over a file that is not a zip" "$status" "$out"
+printf 'PK not a rehearsal\n' > "$WORK/report.docx"
+status=0
+out="$(sh "$WORK/repo/scripts/package-appstore.sh" --rehearsal "$WORK/report.docx" 2>&1)" || status=$?
+expect refuse "is neither" "a rehearsal over a zip that is not named .zip" "$status" "$out"
+[ "$(cat "$WORK/report.docx")" = "PK not a rehearsal" ] || { echo "FAIL: the .docx was replaced"; exit 1; }
 # Every run clears the temporary zip a killed run left in dist/.
 printf 'PK unchecked\n' > "$WORK/repo/dist/.appstore.killed"
 status=0
@@ -371,6 +431,22 @@ out="$(sh "$WORK/repo/scripts/package-appstore.sh" --rehearsal "$REH" 2>&1)" || 
 expect pass "a REHEARSAL, never the upload" "a run after a killed one" "$status" "$out"
 [ ! -e "$WORK/repo/dist/.appstore.killed" ] || { echo "FAIL: a killed run's temporary zip survived"; exit 1; }
 echo "ok: a killed run's temporary zip is cleared"
+# A rehearsal builds beside its destination, never in dist/: a stand-in git lists both
+# directories on its way into git archive.
+mkdir "$WORK/lsgit"
+printf '#!/bin/sh\ncase " $* " in *" archive "*) ls -A "%s" > "%s"; ls -A "%s" > "%s" ;; esac\nexec "%s" "$@"\n' \
+  "$WORK/repo/dist" "$WORK/during-dist.txt" "$WORK" "$WORK/during-dest.txt" "$(command -v git)" \
+  > "$WORK/lsgit/git"
+chmod +x "$WORK/lsgit/git"
+status=0
+out="$(PATH="$WORK/lsgit:$PATH" sh "$WORK/repo/scripts/package-appstore.sh" --rehearsal "$REH" 2>&1)" || status=$?
+expect pass "a REHEARSAL, never the upload" "a rehearsal, listed as it archives" "$status" "$out"
+grep -q '^\.appstore\.' "$WORK/during-dest.txt" \
+  || { echo "FAIL: no temporary zip beside the rehearsal while it archived"; exit 1; }
+if grep -q '^\.appstore\.' "$WORK/during-dist.txt"; then
+  echo "FAIL: a rehearsal built its temporary zip in dist/"; exit 1
+fi
+echo "ok: a rehearsal builds beside its destination, never in dist/"
 
 # The upload's own file list reads names and pathspecs as git archive does: a name holding a
 # quote packages, and so does a path list that excludes a path. A committed symlink refuses
@@ -512,6 +588,13 @@ git -C "$WORK/rec" reset -q --hard "$bump"
 printf '%s\n' "$E PASS $bump" "$S PASS $bump" > "$WORK/rec/scripts/upload-record.txt"
 package_rec refuse "is not committed at" "a record that is not committed"
 no_upload_zip "a refusal"
+# An edit over a committed record is ignored too, line for line and byte for byte.
+set_record "$E PASS $bump" "$S FAIL $bump"
+printf '%s\n' "$E PASS $bump" "$S PASS $bump" > "$WORK/rec/scripts/upload-record.txt"
+package_rec refuse "the last security-reviewer verdict, line 2, is FAIL" "a passing edit over a committed FAIL"
+set_record "$E PASS $bump" "# a note$(printf '\r')$S FAIL $bump" "$S PASS $bump"
+printf '%s\n' "$E PASS $bump" "$S PASS $bump" > "$WORK/rec/scripts/upload-record.txt"
+package_rec refuse "outside printable ASCII and tab" "a clean edit over a committed carriage return"
 set_record "$E PASS $bump"
 package_rec refuse "holds no security-reviewer verdict" "only one review recorded"
 set_record "$E PASS $bump" "$S PASS $bump" "$E FAIL $bump # a finding after the pass"
@@ -519,9 +602,39 @@ package_rec refuse "the last engineering-reviewer verdict, line 3, is FAIL" "a F
 # A FAIL counts whatever commit it names: recorded last against an older tree, it still refuses.
 set_record "$E PASS $bump" "$S PASS $bump" "$S FAIL $early # a finding against an older tree"
 package_rec refuse "the last security-reviewer verdict, line 3, is FAIL" "a FAIL recorded last against an older commit"
-# The first 9.10 carries the same upload as the bump, but comes before it.
+# The first 9.10 carries the same upload as the bump, but comes before it, even through a local
+# textconv that reads 9.11 as 9.10 and so hides the two later version changes from the search.
 set_record "$E PASS $early" "$S PASS $early"
 package_rec refuse "comes before" "verdicts on a commit before the bump, with the same upload"
+git -C "$WORK/rec" config diff.ver.textconv "sed s/9[.]11/9.10/"
+printf 'src/app/__init__.py diff=ver\n' > "$WORK/rec/.git/info/attributes"
+[ "$(git -C "$WORK/rec" log -1 --format=%H -G'^__version__ = ' HEAD -- src/app/__init__.py)" = "$early" ] \
+  || { echo "FAIL: the premise failed: the textconv does not move the bump"; exit 1; }
+package_rec refuse "comes before" "verdicts before the bump, behind a local textconv"
+: > "$WORK/rec/.git/info/attributes"
+git -C "$WORK/rec" config --remove-section diff.ver
+# Nor can a commit-graph file, whose parents git trusts: one that gives the record's commit the
+# first 9.10 as its parent hides the two later version changes from the search.
+graph="$WORK/rec/.git/objects/info/commit-graph"
+git -C "$WORK/rec" commit-graph write --reachable
+chmod u+w "$graph"
+python3 - "$graph" "$(head_of_rec)" "$early" <<'PY'
+import struct
+import sys
+
+path, child, parent = sys.argv[1], bytes.fromhex(sys.argv[2]), bytes.fromhex(sys.argv[3])
+data = bytearray(open(path, "rb").read())
+table = range(data[6] + 1)
+chunks = {bytes(data[8 + 12 * i:12 + 12 * i]): struct.unpack(">Q", data[12 + 12 * i:20 + 12 * i])[0] for i in table}
+oids, cdat = chunks[b"OIDL"], chunks[b"CDAT"]
+index = [bytes(data[oids + 20 * i:oids + 20 * i + 20]) for i in range((cdat - oids) // 20)]
+struct.pack_into(">I", data, cdat + 36 * index.index(child) + 20, index.index(parent))
+open(path, "wb").write(data)
+PY
+[ "$(git -C "$WORK/rec" log -1 --format=%H -G'^__version__ = ' HEAD -- src/app/__init__.py)" = "$early" ] \
+  || { echo "FAIL: the premise failed: the commit-graph does not move the bump"; exit 1; }
+package_rec refuse "comes before" "verdicts before the bump, behind a forged commit-graph"
+rm -f -- "$graph"
 side="$(rec_git commit-tree -p "$bump" -m "a side commit" "$bump^{tree}")"
 set_record "$E PASS $side" "$S PASS $side"
 package_rec refuse "which is not in" "verdicts on a commit outside the packaged commit's history"
@@ -694,18 +807,80 @@ printf 'README.md filter=pair\n' > "$WORK/rec/.git/info/attributes"
 package_rec refuse "does not hold the files of" "a local smudge filter that its clean filter undoes"
 : > "$WORK/rec/.git/info/attributes"
 git -C "$WORK/rec" config --remove-section filter.pair
-# The record counts the verdicts committed at or before the commit packaged: an upload comes from
-# the tip of a branch, never a detached HEAD, nor a branch behind its upstream.
+# The record counts the verdicts committed at or before the commit packaged, so an upload comes
+# from the tip of a local branch: never a detached HEAD or one on another ref, nor a branch whose
+# passing record predates a FAIL its upstream holds, even behind a graft that hides the lag or a
+# file named like the range compared, nor one whose upstream has gone. A branch level with its
+# upstream packages; one with none, as in every case above, is not compared, and the run says so.
 set_record "$E PASS $bump" "$S PASS $bump"
+stale="$(head_of_rec)"
+package_rec pass "$recbranch has no upstream" "a branch with no upstream, which is not compared"
 git -C "$WORK/rec" checkout -q --detach
 package_rec refuse "HEAD is detached" "an upload from a detached HEAD"
 git -C "$WORK/rec" checkout -q "$recbranch"
-git -C "$WORK/rec" branch -q ahead "$(head_of_rec)"
-git -C "$WORK/rec" checkout -q -b behind "$bump"
-git -C "$WORK/rec" branch -q --set-upstream-to=ahead
-package_rec refuse "behind its upstream" "an upload from a branch behind its upstream"
+git -C "$WORK/rec" update-ref refs/remotes/origin/stale "$stale"
+git -C "$WORK/rec" symbolic-ref HEAD refs/remotes/origin/stale
+package_rec refuse "not a local branch" "an upload from HEAD on a remote-tracking ref"
+git -C "$WORK/rec" symbolic-ref HEAD "refs/heads/$recbranch"
+git -C "$WORK/rec" update-ref -d refs/remotes/origin/stale
+printf '%s\n' "$S FAIL $bump # a finding after the pass" >> "$WORK/rec/scripts/upload-record.txt"
+rec_commit "a FAIL, recorded upstream" scripts/upload-record.txt
+ahead="$(head_of_rec)"
+git -C "$WORK/rec" branch -q upstream "$stale"
+git -C "$WORK/rec" checkout -q -b behind "$stale"
+git -C "$WORK/rec" branch -q --set-upstream-to=upstream
+package_rec pass "wrote dist/appstore.zip from $stale" "a branch level with its upstream"
+git -C "$WORK/rec" branch -q -f upstream "$ahead"
+package_rec refuse "lacks 1 of its upstream's commits" "a passing record behind an upstream that records a FAIL"
+printf '%s %s %s\n' "$stale" "$bump" "$ahead" > "$WORK/rec/.git/info/grafts"
+package_rec refuse "lacks 1 of its upstream's commits" "a graft that hides the lag"
+rm -f -- "$WORK/rec/.git/info/grafts"
+: > "$WORK/rec/$stale..$ahead"
+package_rec refuse "lacks 1 of its upstream's commits" "a file named like the range compared"
+rm -f -- "$WORK/rec/$stale..$ahead"
+git -C "$WORK/rec" branch -q -D upstream
+package_rec refuse "does not resolve" "a branch whose upstream has gone"
 git -C "$WORK/rec" checkout -q "$recbranch"
-git -C "$WORK/rec" branch -q -D behind ahead
+git -C "$WORK/rec" branch -q -D behind
+
+# The scripts keep the repository's path exact. In a clone whose directory name ends in a
+# newline, beside a twin without it, the review check compares this clone's tools and the nets
+# run this clone's scanner, never the twin's, and a CDPATH that names the twin's directory
+# steers neither.
+set_record "$E PASS $bump" "$S PASS $bump"
+twin="$WORK/twin$NL"
+git clone -q "$WORK/rec" "$twin"
+git -C "$twin" checkout -q -b keyed
+printf '%s\n' "$LINE" > "$twin/src/app/leak.py"
+git -C "$twin" add src/app/leak.py
+git -C "$twin" -c user.name=test -c user.email=test@localhost -c commit.gpgsign=false commit -q -m "a key"
+git -C "$twin" checkout -q "$recbranch"
+git clone -q "$twin" "$WORK/twin"
+printf '# an edit\n' >> "$twin/scripts/check-package.sh"
+status=0
+out="$(sh "$twin/scripts/package-appstore.sh" 2>&1)" || status=$?
+expect refuse "differ from" "a tool edit in a clone named with a final newline, beside a clean twin" "$status" "$out"
+status=0
+out="$(cd "$twin" && CDPATH="$WORK/twin" sh scripts/package-appstore.sh 2>&1)" || status=$?
+expect refuse "differ from" "a tool edit, with a CDPATH that names the clean twin" "$status" "$out"
+status=0
+out="$(cd "$twin" && CDPATH="$WORK/twin" sh scripts/check-reviews.sh "$(git -C "$twin" rev-parse HEAD)" src 2>&1)" \
+  || status=$?
+expect refuse "differ from" "the review check alone, with a CDPATH that names the clean twin" "$status" "$out"
+git -C "$twin" checkout -q -- scripts/check-package.sh
+printf 'process.exit(0);\n' > "$WORK/twin/scripts/scan-package.mjs"
+git -C "$twin" checkout -q keyed
+status=0
+out="$(sh "$twin/scripts/package-appstore.sh" --rehearsal "$WORK/twin.zip" 2>&1)" || status=$?
+expect refuse "secret-scan rules matched" "a key in a clone named with a final newline, beside a twin with no scanner" \
+  "$status" "$out"
+keyedc="$(git -C "$twin" rev-parse HEAD)"
+git -C "$twin" archive --format=zip -o "$WORK/twin-keyed.zip" "$keyedc" -- Dockerfile requirements.txt pyproject.toml src
+status=0
+out="$(cd "$twin" && CDPATH="$WORK/twin" sh scripts/check-package.sh "$WORK/twin-keyed.zip" "$keyedc" \
+  Dockerfile requirements.txt pyproject.toml src 2>&1)" || status=$?
+expect refuse "secret-scan rules matched" "the nets alone, with a CDPATH that names the twin with no scanner" \
+  "$status" "$out"
 
 # HEAD is resolved once: a commit landing while packaging refuses, never slips in. A stand-in git
 # commits on its way into git archive.

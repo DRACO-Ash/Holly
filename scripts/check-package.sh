@@ -28,11 +28,16 @@
 #      allowlisted binary.
 # Needs unzip and node; without them it refuses. scripts/test-package-nets.sh proves each net.
 set -eu
+# An exported CDPATH would send a relative cd to another directory of the same name.
+unset CDPATH
 # A replaced object never stands in for a committed one in the allowlist or the file list.
 GIT_NO_REPLACE_OBJECTS=1
 export GIT_NO_REPLACE_OBJECTS
 
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# The repository's root, kept exact: command substitution drops a trailing newline from a name,
+# which could name a sibling directory instead, so a sentinel follows pwd's output.
+ROOT="$(cd "$(dirname "$0")/.." && pwd && echo .)"
+ROOT="${ROOT%??}"
 ZIP="$1"
 shift
 COMMIT="${1-}"

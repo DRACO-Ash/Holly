@@ -1,16 +1,21 @@
 # upload-record.txt :: the binding review verdicts that packaging for upload checks.
-# Append one line per verdict, in the commit after its gate round; never edit or remove a line:
+# Append one line per verdict, in the first commit after its gate round; never edit or remove a
+# verdict line:
 #   review <reviewer> <PASS|FAIL> <full 40-hex id of the commit reviewed> [# note]
 # <reviewer> is engineering-reviewer or security-reviewer; the note may name the release and the
 # round. The last line from each reviewer decides, whatever commit it names: it must be a PASS on
 # a commit at or after the version bump, in the packaged commit's history, whose upload and
 # packaging are unchanged since (scripts/check-reviews.sh). Printable ASCII and tabs only. The
 # file sits outside the upload, so recording a verdict leaves the verdict standing.
-# docs/AUDIT-LOG.md holds each round's findings, and the rounds before this record began, which
-# are in V0.3's row.
+# A FAIL lands with the fixes it asks for; the closing PASS lines land in a record commit that
+# touches only this file and docs/AUDIT-LOG.md, so they stand. The release's row in
+# docs/AUDIT-LOG.md holds each round's findings by that record commit at the latest; the rounds
+# before this record began are in V0.3's row.
 review engineering-reviewer PASS 4827acb2ad7e11f214744708a9390e87e3351d8e # V0.3, round 4
 review security-reviewer PASS 4827acb2ad7e11f214744708a9390e87e3351d8e # V0.3, round 4
 review engineering-reviewer FAIL 7eedb7bc1c8ef0f9418394d248df14752ea50900 # V0.3, the review record, round 1
 review security-reviewer FAIL 7eedb7bc1c8ef0f9418394d248df14752ea50900 # V0.3, the review record, round 1
 review engineering-reviewer FAIL e40e12b6175f8a22ceca931eb5c39768d3a4a524 # V0.3, the review record, round 2
 review security-reviewer FAIL e40e12b6175f8a22ceca931eb5c39768d3a4a524 # V0.3, the review record, round 2
+review engineering-reviewer PASS 153c91e073b3a2cf5c7af7b8357650c8fa572971 # V0.3, the review record, round 3
+review security-reviewer FAIL 153c91e073b3a2cf5c7af7b8357650c8fa572971 # V0.3, the review record, round 3
