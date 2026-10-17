@@ -279,13 +279,14 @@ sh scripts/simulate-pipeline.sh   # package the committed tree, check it out and
 sh scripts/smoke-container.sh     # build the image from the upload, run it with PostgreSQL, probe the contract
 ```
 
-The smoke rung needs Docker and `curl`. It fails on a non-200 probe, an error in the boot log, migrations that miss the newest revision, migrations that run while another session holds their advisory lock, an audit log that accepts an UPDATE, a dashboard that is not served, or a misconfiguration that does not stop the container. `sh scripts/package-appstore.sh` alone writes the upload, `dist/appstore.zip`, after the upload nets pass.
+The smoke rung needs Docker and `curl`. It fails on a non-200 probe, an error in the boot log, migrations that miss the newest revision, migrations that run while another session holds their advisory lock, an audit log that accepts an UPDATE, a dashboard that is not served, or a misconfiguration that does not stop the container. Both rungs package a rehearsal (`--rehearsal`, written to `dist/appstore-rehearsal.zip`): the upload's archive through the same nets, without the review check, so they can run before the reviews. `sh scripts/package-appstore.sh` alone writes the upload, `dist/appstore.zip`, after the upload nets pass, and only when `scripts/upload-record.txt` at HEAD holds a PASS from both gates on a commit at or after the version bump whose upload and packaging are unchanged since, with the packaging tools committed (`scripts/check-reviews.sh`). A refusal removes any earlier upload zip.
 
 **SECTION 12**
 
 ## Changes and commits
 
 ● Every change runs the verification loop, then passes the `engineering-reviewer` and `security-reviewer` gates (`CLAUDE.md`).
+● Each gate verdict is appended to `scripts/upload-record.txt`, in the commit that records the round in `docs/AUDIT-LOG.md`; packaging for upload reads it from HEAD.
 ● `CLAUDE.md` (Naming and versioning) says when a change bumps the version stamp, `__version__` in `src/app/__init__.py`, and opens a row in `docs/AUDIT-LOG.md`, and when it is recorded in the current release's row. `tests/test_version.py` holds the stamp's other copies equal to it.
 ● Commit messages: an imperative summary line, then what changed and why.
 ● Whether `main` requires a pull request to land is `TBC, re-verify`.

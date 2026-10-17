@@ -62,7 +62,7 @@ sh scripts/simulate-pipeline.sh   # package, check out and test the way the plat
 sh scripts/smoke-container.sh     # build the image from the upload, run it with PostgreSQL, probe the contract
 ```
 
-`sh scripts/package-appstore.sh` writes the upload, `dist/appstore.zip`.
+`sh scripts/package-appstore.sh` writes the upload, `dist/appstore.zip`, only when `scripts/upload-record.txt` at HEAD holds a PASS from both gates for the upload as it stands (`scripts/check-reviews.sh`); otherwise it refuses and removes any earlier upload zip. The two rungs above package a rehearsal, `dist/appstore-rehearsal.zip`, which is never the upload.
 
 **Settings** are App Store environment variables; the full reference is in [developer setup](../developer/setup.md). According to the platform reference in this repository, saving them replaces the whole set at once (at most 50 variables), and a separate step applies them ([.claude/skills/app-store-deployment/SKILL.md](../../.claude/skills/app-store-deployment/SKILL.md)); always save the complete set. Holly needs at least:
 

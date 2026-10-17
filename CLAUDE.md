@@ -42,9 +42,9 @@ sh scripts/dev.sh                        # local run: PostgreSQL, migrations, th
 
 The dashboard installs from its lockfile with `cd frontend && npm ci --ignore-scripts`; the loop runs its lint, format, build, unit tests and `npm audit`. Pin dashboard packages exactly and relock with `npm install --package-lock-only`, never by hand.
 
-Relock after any dependency change with the `uv pip compile` command in the header of `requirements.in`, then `requirements-dev.in`; never edit a lockfile by hand. Packaging runs the upload nets in `scripts/check-package.sh` (required members, banned names, and a content scan with the secret-scan hook's rules), so it needs `node` and `unzip`; the loop's self-test of those nets also needs `python3`. The upload may carry only strict UTF-8 text, plus any binary pinned by SHA-256 with a reason in `scripts/upload-binaries.txt` (read from HEAD); treat any change there as a security change.
+Relock after any dependency change with the `uv pip compile` command in the header of `requirements.in`, then `requirements-dev.in`; never edit a lockfile by hand. Packaging runs the upload nets in `scripts/check-package.sh` (required members, banned names, and a content scan with the secret-scan hook's rules), so it needs `node` and `unzip`; the loop's self-test of those nets also needs `python3`. The upload may carry only strict UTF-8 text, plus any binary pinned by SHA-256 with a reason in `scripts/upload-binaries.txt` (read from HEAD); treat any change there as a security change. Packaging for upload also refuses unless `scripts/upload-record.txt` at HEAD holds a PASS from both gates on a commit with the same upload and packaging (`scripts/check-reviews.sh`); the rungs package with `--rehearsal`, which writes `dist/appstore-rehearsal.zip`, never the upload.
 
-Every change runs the verification loop, then passes the `engineering-reviewer` and `security-reviewer` gates before it is done. Anything that deploys, publishes, or mutates external state requires the `deploy-gate` verdict and an explicit human confirmation.
+Every change runs the verification loop, then passes the `engineering-reviewer` and `security-reviewer` gates before it is done; append each verdict to `scripts/upload-record.txt` in the commit that records the round. Anything that deploys, publishes, or mutates external state requires the `deploy-gate` verdict and an explicit human confirmation.
 
 ## Directory layout
 
@@ -56,8 +56,8 @@ frontend/               the React dashboard (Vite, TypeScript), built into src/a
 infra/docker-compose.yml  a local PostgreSQL for development only
 Dockerfile              the container build: the dashboard stage, then hardened and flattened to one layer
 scripts/                verify.sh (the loop), package-appstore.sh with check-package.sh, scan-package.mjs,
-                        upload-binaries.txt and test-package-nets.sh (the upload nets),
-                        simulate-pipeline.sh, smoke-container.sh
+                        upload-binaries.txt and test-package-nets.sh (the upload nets), check-reviews.sh
+                        and upload-record.txt (the review record), simulate-pipeline.sh, smoke-container.sh
 tests/                  the pytest suite (coverage.xml, 80% floor); tests/fakes.py holds the session fake
 docs/                   architecture, runbook, user handbook, security and developer setup (settings reference)
 docs/AUDIT-LOG.md       one row per release

@@ -14,10 +14,19 @@
 # archive is the analysed surface, so .claude/, CLAUDE.md, scripts/ and the bundle zip stay
 # out), and every package must pass the upload nets in scripts/check-package.sh (required
 # members, banned names, and a content scan for secrets) before it reaches the upload path.
+#
+# The upload, dist/appstore.zip, is written only when scripts/check-reviews.sh finds a PASS from
+# both binding reviews in scripts/upload-record.txt for the upload at HEAD. --rehearsal skips
+# that check and writes dist/appstore-rehearsal.zip instead: the same archive of HEAD through the
+# same nets, for the rungs that test a package before its reviews exist. It is never the upload.
 set -eu
 cd "$(dirname "$0")/.."
 
-OUT="dist/appstore.zip"
+case "$*" in
+  "") OUT="dist/appstore.zip"; rehearsal=0 ;;
+  --rehearsal) OUT="dist/appstore-rehearsal.zip"; rehearsal=1 ;;
+  *) echo "usage: sh scripts/package-appstore.sh [--rehearsal]"; exit 2 ;;
+esac
 mkdir -p dist
 # Build under a temporary name and move it into place only when every net passes, so a refused
 # or unscanned package never sits at the upload path. Any failure removes the temporary zip and
@@ -34,15 +43,25 @@ trap 'exit 143' TERM
 
 # frontend/ is the dashboard's source, which the Dockerfile compiles; alembic.ini is the
 # developer's migration entry point, which the test suite checks against the packaged
-# migrations in src/app/migrations.
-git archive --format=zip -o "$TMP" HEAD -- \
-  Dockerfile .dockerignore .python-version pyproject.toml README.md alembic.ini \
-  requirements.in requirements.txt requirements-dev.in requirements-dev.txt \
-  sonar-project.properties src tests frontend
+# migrations in src/app/migrations. The review check compares the same list.
+PATHS="Dockerfile .dockerignore .python-version pyproject.toml README.md alembic.ini
+  requirements.in requirements.txt requirements-dev.in requirements-dev.txt
+  sonar-project.properties src tests frontend"
+
+# A refusal leaves no upload zip behind, not even a stale one: the trap above removes it.
+# shellcheck disable=SC2086  # the path list splits on purpose
+if [ "$rehearsal" = 0 ]; then sh scripts/check-reviews.sh $PATHS; fi
+
+# shellcheck disable=SC2086  # as above
+git archive --format=zip -o "$TMP" HEAD -- $PATHS
 
 sh scripts/check-package.sh "$TMP"
 
 chmod 644 "$TMP"   # mktemp creates it private; the upload zip is an ordinary readable file
 mv -f -- "$TMP" "$OUT"
 packaged=1
-echo "wrote $OUT"
+if [ "$rehearsal" = 1 ]; then
+  echo "wrote $OUT: a REHEARSAL, never the upload (the reviews were not checked)"
+else
+  echo "wrote $OUT"
+fi

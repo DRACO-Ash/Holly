@@ -13,6 +13,8 @@ All notable changes to Holly are recorded here, newest first. Holly V0.2 is the 
 
 ### Added
 
+● **Packaging for upload checks the binding reviews.** `scripts/package-appstore.sh` writes the upload only when `scripts/upload-record.txt`, as committed, holds a PASS from both gates on a commit at or after the version bump whose upload and packaging are unchanged since, and refuses otherwise, removing any earlier upload zip. The pipeline simulation and the container smoke package a rehearsal, `dist/appstore-rehearsal.zip`, so they still run before the reviews.
+
 ● **The upload refuses the agent configuration by name.** `scripts/check-package.sh` refuses `CLAUDE.md`, `CLAUDE.local.md`, `.mcp.json` and anything under `.claude/`, in any case and at any depth, whatever the path list in `scripts/package-appstore.sh` says.
 
 ### Fixed

@@ -1,9 +1,9 @@
 #!/bin/sh
 # smoke-container.sh :: the local rung for the platform's container build and deploy stages.
-# It builds the image from the UPLOAD ARTEFACT (dist/appstore.zip, the context the platform
-# builds from, never the working tree), runs it the way the platform does (a PostgreSQL
-# database, the FILE_STORAGE add-on's writable mount at /data, the settings Holly requires),
-# and fails on:
+# It builds the image from the UPLOAD'S ARCHIVE (a rehearsal package of HEAD, which needs no
+# review record: the context the platform builds from, never the working tree), runs it the
+# way the platform does (a PostgreSQL database, the FILE_STORAGE add-on's writable mount at
+# /data, the settings Holly requires), and fails on:
 #   1. a non-200 from / or a health path, with PORT unset (8080) and with PORT injected
 #   2. an error line or a traceback in the boot log
 #   3. migrations that did not reach the newest revision, migrations that run while another
@@ -114,9 +114,9 @@ refused() {  # $1: container id. $2: text the log must hold. $3: what was refuse
   echo "$3: refused at boot (exit $code) with the expected message"
 }
 
-# 1. Build from the artefact the platform receives.
-sh "$HERE/package-appstore.sh"
-unzip -q "$ROOT/dist/appstore.zip" -d "$CTX"
+# 1. Build from the archive the platform receives, packaged as a rehearsal.
+sh "$HERE/package-appstore.sh" --rehearsal
+unzip -q "$ROOT/dist/appstore-rehearsal.zip" -d "$CTX"
 # DOCKER_BUILD_FLAGS is split into separate flags on purpose.
 docker build ${DOCKER_BUILD_FLAGS:-} -f "${DOCKERFILE:-$CTX/Dockerfile}" -t "$TAG" "$CTX"
 
