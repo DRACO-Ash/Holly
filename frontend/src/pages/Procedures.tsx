@@ -205,16 +205,7 @@ export default function ProceduresPage() {
           </div>
           {selected.description && <p>{selected.description}</p>}
           {selected.content !== null ? (
-            <pre
-              style={{
-                whiteSpace: "pre-wrap",
-                background: "#f5f7fa",
-                padding: "12px",
-                borderRadius: "4px",
-                maxHeight: "400px",
-                overflow: "auto",
-              }}
-            >
+            <pre className="procedure-content">
               {selected.content}
               {selected.content_truncated && "\n\n... (truncated)"}
             </pre>

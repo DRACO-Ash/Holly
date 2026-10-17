@@ -4,10 +4,24 @@
 
 **Data classification:** Unclassified (per ADR-006)
 **Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned the history below)
-**Version:** 0.4
+**Version:** 0.5
 **Last updated:** 2026-10-18
 
 All notable changes to Holly are recorded here, newest first. Holly V0.2 is the Daily Operations Dashboard fused into the Holly App Store project and renamed; the sections after it are the Daily Operations Dashboard's own record, kept as written. Holly's releases are numbered V<major>.<minor>, and each has a row in `docs/AUDIT-LOG.md` with the checks that ran.
+
+## Holly V0.4 (2026-10-17)
+
+### Changed
+
+● **The dashboard wears the Holly design document's theme: CRT phosphor on bulkhead steel.** Phosphor green leads the eye, rust marks alerts and amber warnings. The header, the sign-in panel, the side navigation and the frame around each page are steel bulkheads, and each page sits on a CRT screen edged by a vignette. Headings, navigation, labels and buttons are set in Share Tech Mono, body text in Inter, and code and records in Fira Code. All three are bundled into the build as three pinned Fontsource packages (OFL-1.1), because the dashboard's policy allows fonts only from Holly itself. The header carries the document's bracketed wordmark, the sign-in page its plate logo, and the browser tab its square icon.
+
+● **Each analyst can switch two screen effects from the header.** Scanlines start on: they texture the screen behind the text and cross the large readouts, the page headings and the dashboard counts. They never cross body text, where any visible strength would pull the fainter labels below the contrast floor. CRT flicker starts off, and stays still when the system asks for reduced motion. Both choices are kept in the browser only.
+
+● **Every colour is a token, and the loop holds the theme to WCAG AA.** The stylesheet's last hard-coded tints now derive from their tokens. `scripts/contrast-check.mjs` measures every text, field-edge and focus pair the tokens make, the large readouts under the scanlines and the screen while it flickers, and refuses an accent that matches a status colour.
+
+### Fixed
+
+● **A procedure's text was unreadable.** It was drawn in the light text colour on a near-white panel; it now sits on the screen colour in the code face.
 
 ## Holly V0.3 (2026-10-15)
 

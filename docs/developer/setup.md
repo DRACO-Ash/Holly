@@ -4,7 +4,7 @@
 
 **Data classification:** Unclassified (per ADR-006)
 **Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned the edition this one replaces)
-**Version:** 0.4
+**Version:** 0.5
 **Last updated:** 2026-10-18
 
 > **BLUF**
@@ -245,7 +245,7 @@ To run the dashboard's development server alone, `cd frontend && npm run dev`.
 sh scripts/verify.sh
 ```
 
-Every change runs it. It stops at the first failure and, in order, checks the Python version against `.python-version`; that the local database's health check asks over TCP and that `scripts/dev.sh` waits for it before migrating; that the smoke rung's and the local database's PostgreSQL images are pinned by digest, and that the smoke rung refuses any other image and waits for the database over TCP; `ruff format --check`; `ruff check`; strict `mypy`; cognitive complexity of at most 15 per function (`complexipy`); duplicated code (`pylint`); the test suite with coverage, which writes `coverage.xml` and fails under 80%; the dashboard's lockfile install, lint, format check, build and unit tests; `npm audit`; the upload nets' self-test; and `pip-audit` over both Python locks. A green run ends with:
+Every change runs it. It stops at the first failure and, in order, checks the Python version against `.python-version`; that the local database's health check asks over TCP and that `scripts/dev.sh` waits for it before migrating; that the smoke rung's and the local database's PostgreSQL images are pinned by digest, and that the smoke rung refuses any other image and waits for the database over TCP; `ruff format --check`; `ruff check`; strict `mypy`; cognitive complexity of at most 15 per function (`complexipy`); duplicated code (`pylint`); the test suite with coverage, which writes `coverage.xml` and fails under 80%; the dashboard's lockfile install, lint, format check, build and unit tests; the contrast of every text, field-edge and focus pair the dashboard theme's tokens make (`scripts/contrast-check.mjs`, WCAG AA); `npm audit`; the upload nets' self-test; and `pip-audit` over both Python locks. A green run ends with:
 
 ```
 VERIFY: PASS (necessary conditions met; the App Store pipeline is the binding check)

@@ -1,5 +1,6 @@
 import { FormEvent, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import BrandPlate from "../components/BrandPlate";
 import { useAuth } from "../context/AuthContext";
 import { extractErrorMessage } from "../utils/errors";
 
@@ -28,6 +29,7 @@ export default function Login() {
   return (
     <div className="login-page">
       <form className="login-form" onSubmit={onSubmit}>
+        <BrandPlate />
         <h1>Sign in</h1>
         <label>
           Username

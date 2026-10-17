@@ -4,8 +4,8 @@
 
 **Data classification:** Unclassified (per ADR-006)
 **Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned the edition this one replaces)
-**Version:** 0.3
-**Last updated:** 2026-10-14
+**Version:** 0.4
+**Last updated:** 2026-10-17
 **Audience:** Watch analysts new to Holly, plus the trainers delivering induction. Sections labelled **Trainer note** are for delivery, not for the trainee handout.
 
 > **BLUF**
@@ -62,7 +62,7 @@ You stay signed in while you use Holly: your 30-minute access renews itself in t
 
 ## Finding your way around
 
-● **The header** shows Holly, your username and **Sign out**.
+● **The header** shows Holly, two screen effects, your username and **Sign out**. **Scanlines** draws the fine horizontal lines of an old monitor across the screen and its large readouts; **CRT flicker** makes the screen flicker faintly. Scanlines start on and flicker starts off; each choice is kept in your browser only. Flicker stays still if your computer is set to reduce motion.
 ● **The timer banner**, under the header, appears on every page while an event timer is firing, and when sound alerts are not yet enabled.
 ● **The side navigation** lists **Dashboard**, **Notifications**, **Maneuvers**, **Comms**, **Procedures** and **Shift log**. Operators and administrators also see **Audit log**.
 

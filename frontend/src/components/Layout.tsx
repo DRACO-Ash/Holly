@@ -1,8 +1,11 @@
+import { useState } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { EventTimersProvider } from "../context/EventTimersContext";
+import DisplayToggles from "./DisplayToggles";
 import TimerBanner from "./TimerBanner";
 import type { UserRole } from "../types";
+import { type DisplayPrefs, loadDisplayPrefs, saveDisplayPrefs } from "../utils/displayPrefs";
 
 interface NavItem {
   to: string;
@@ -23,6 +26,12 @@ const NAV_ITEMS: ReadonlyArray<NavItem> = [
 export default function Layout() {
   const { logout, user } = useAuth();
   const { pathname } = useLocation();
+  const [display, setDisplay] = useState<DisplayPrefs>(() => loadDisplayPrefs());
+
+  function changeDisplay(next: DisplayPrefs) {
+    setDisplay(next);
+    saveDisplayPrefs(next);
+  }
 
   const visibleItems = NAV_ITEMS.filter((item) => {
     if (!item.requiredRoles) return true;
@@ -32,10 +41,25 @@ export default function Layout() {
 
   return (
     <EventTimersProvider>
-      <div className="app-shell">
+      <div
+        className="app-shell"
+        data-scanlines={display.scanlines ? "on" : "off"}
+        data-flicker={display.flicker ? "on" : "off"}
+      >
         <header className="app-header">
-          <div className="app-title">Holly</div>
+          <div className="app-brand">
+            <span className="brand-badge" aria-hidden="true">
+              [H]
+            </span>
+            <span className="brand-text">
+              <span className="app-title">
+                <span aria-hidden="true">[</span>Holly<span aria-hidden="true">]</span>
+              </span>
+              <span className="brand-sub">Daily operations dashboard</span>
+            </span>
+          </div>
           <div className="app-header-right">
+            <DisplayToggles prefs={display} onChange={changeDisplay} />
             {user && <span className="app-user">{user.username}</span>}
             <button type="button" className="logout-btn" onClick={logout}>
               Sign out
@@ -56,7 +80,11 @@ export default function Layout() {
             ))}
           </nav>
           <main className="app-main">
-            <Outlet />
+            <div className="crt-screen">
+              <div className="crt-content">
+                <Outlet />
+              </div>
+            </div>
           </main>
         </div>
       </div>

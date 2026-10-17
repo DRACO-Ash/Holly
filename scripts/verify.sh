@@ -85,6 +85,9 @@ echo "Reads: frontend/ with its committed configuration. The lockfile must not c
   npm test
 )
 
+step "Dashboard contrast (WCAG AA for every text, edge and focus pair the theme's tokens make)"
+node scripts/contrast-check.mjs
+
 step "Dashboard dependency audit (npm audit: runtime and tooling, every severity)"
 # npm audit exits 0 with an error-shaped report when it cannot reach the advisory service, so
 # the report's shape is checked: no metadata means the audit did not run, which fails.
