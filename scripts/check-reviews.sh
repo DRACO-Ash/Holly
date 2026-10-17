@@ -14,17 +14,21 @@
 #      .gitattributes) are unchanged since, so a PASS recorded against a tree that has since
 #      moved refuses.
 # The packaging tools that run are the working tree's, so each must match its committed content
-# byte for byte, whatever git's index says. A line it cannot read, a byte outside printable ASCII
-# and tab, a git error or a missing record refuses. It proves the record is present and
-# consistent with the history, not that a review took place (SECURITY.md).
+# byte for byte, whatever git's index says, and git's local overrides (replaced objects, grafts)
+# are ignored. A line it cannot read, a byte outside printable ASCII and tab, a git error or a
+# missing record refuses. It proves the record is present and consistent with the history, not
+# that a review took place (SECURITY.md).
 set -euf   # -f: the tool list splits into paths, never into patterns
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 RECORD=scripts/upload-record.txt
 TOOLS="scripts/check-reviews.sh scripts/package-appstore.sh scripts/check-package.sh
   scripts/scan-package.mjs scripts/upload-binaries.txt .claude/hooks/secret-scan.mjs .gitattributes"
-# Replaced objects never stand in for the committed ones.
+# Git's local overrides never stand in for the committed record and history: no replaced object,
+# and no graft, which could adopt a commit into the history. The graft file is a path that can
+# never exist, so git reads none and prints no deprecation hint.
 GIT_NO_REPLACE_OBJECTS=1
-export GIT_NO_REPLACE_OBJECTS
+GIT_GRAFT_FILE=/dev/null/none
+export GIT_NO_REPLACE_OBJECTS GIT_GRAFT_FILE
 
 refuse() { echo "packaging refused: $1"; exit 1; }
 short() { printf '%.7s' "$1"; }
@@ -50,7 +54,12 @@ for tool in $TOOLS; do
 done
 [ -z "$edited" ] || refuse "the packaging tools differ from $(short "$at") ($(first3 "$edited")): commit them for review, or restore them"
 
-record="$(git -C "$ROOT" show "$at:$RECORD" 2>/dev/null)" || refuse "$RECORD is not committed at $(short "$at")"
+git -C "$ROOT" cat-file -e "$at:$RECORD" 2>/dev/null || refuse "$RECORD is not committed at $(short "$at")"
+# Counted before the shell reads the record, since a shell drops a NUL from what it reads: a
+# carriage return or a NUL could hide a verdict from a reader.
+odd="$(git -C "$ROOT" show "$at:$RECORD" | LC_ALL=C tr -d '\11\12\40-\176' | wc -c | tr -d ' ')"
+[ "$odd" = 0 ] || refuse "$RECORD holds $odd bytes outside printable ASCII and tab"
+record="$(git -C "$ROOT" show "$at:$RECORD")"
 version="$(git -C "$ROOT" show "$at:src/app/__init__.py" \
   | sed -n 's/^__version__ = "\([0-9][0-9.]*\)"$/\1/p')"
 [ -n "$version" ] || refuse "no __version__ in src/app/__init__.py at $(short "$at")"
@@ -58,14 +67,8 @@ bump="$(git -C "$ROOT" log -1 --format=%H -G'^__version__ = ' "$at" -- src/app/_
 [ -n "$bump" ] || refuse "no commit sets version $version"
 
 # The last verdict from each reviewer, with its line. Any line that is not blank, a comment or a
-# well-formed verdict refuses the whole record, as does any byte outside printable ASCII and tab:
-# a carriage return could hide a verdict from a reader.
+# well-formed verdict refuses the whole record.
 last="$(printf '%s\n' "$record" | LC_ALL=C awk '
-  /[^\t -~]/ {
-    printf "line %d holds a byte outside printable ASCII and tab", NR
-    bad = 1
-    exit 1
-  }
   /^[ \t]*(#|$)/ { next }
   {
     ok = $1 == "review" && ($2 == "engineering-reviewer" || $2 == "security-reviewer") &&

@@ -194,7 +194,7 @@ check refuse "outside printable ASCII" "a DEL hidden in a .claude/ directory" \
 check refuse "change on extraction" "a doubled slash in a name" 'src//x.py' 'X = 1'
 check refuse "change on extraction" "a VMS version suffix on CLAUDE.md" 'frontend/CLAUDE.md;1' '# rules'
 check refuse "backslash" "a backslash standing in for a slash" 'tests/.claude\settings.json' '{}'
-check refuse "could not scan" "a symlink member" tests/link.txt 'symlink:/etc/hostname'
+check refuse "not a regular file" "a symlink member" tests/link.txt 'symlink:/etc/hostname'
 
 # Only strict UTF-8 is text. UTF-16 of any kind, and ASCII behind a stray UTF-16 byte-order
 # mark, would decode into characters the rules cannot read, so it is refused.
@@ -264,6 +264,9 @@ out="$(SCAN_HOOK_TIMEOUT_MS=500 node "$HERE/scan-package.mjs" "$WORK/clean" 1 "$
   || status=$?
 expect refuse "could not scan" "a hook that hangs, past the timeout" "$status" "$out"
 scan refuse "could not scan" "fewer files than the archive lists" "$WORK/clean" 2 "$HOOK" "$EMPTY"
+mkdir "$WORK/linked"
+ln -s /etc/hostname "$WORK/linked/host.txt"
+scan refuse "could not scan" "a symlink handed to the scanner directly" "$WORK/linked" 1 "$HOOK" "$EMPTY"
 
 # The binary allowlist waives only the text requirement, for a pinned and unchanged binary.
 mkdir "$WORK/binary" "$WORK/keyed" "$WORK/text"
@@ -307,6 +310,11 @@ scan refuse "more than once" "an allowlist that lists a path twice" "$WORK/binar
 git clone -q "$ROOT" "$WORK/repo"
 cp "$HERE/package-appstore.sh" "$HERE/check-package.sh" "$HERE/scan-package.mjs" "$WORK/repo/scripts/"
 REH="$WORK/rehearsal.zip"
+commit_in_clone() {  # $1: path to commit, $2: message
+  git -C "$WORK/repo" add -- "$1"
+  git -C "$WORK/repo" -c user.name=test -c user.email=test@localhost -c commit.gpgsign=false \
+    commit -q -m "$2"
+}
 status=0
 out="$(sh "$WORK/repo/scripts/package-appstore.sh" --rehearsal "$REH" 2>&1)" || status=$?
 expect pass "a REHEARSAL, never the upload" "the real package from HEAD" "$status" "$out"
@@ -326,17 +334,75 @@ out="$(sh "$WORK/repo/scripts/package-appstore.sh" --rehersal "$REH" 2>&1)" || s
 expect refuse "usage:" "a mistyped option" "$status" "$out"
 [ ! -e "$WORK/repo/dist/appstore.zip" ] || { echo "FAIL: a mistyped run left dist/appstore.zip"; exit 1; }
 echo "ok: a mistyped run removes the last upload zip"
+# A relative rehearsal path is the caller's; an empty one, or a directory, refuses.
+status=0
+out="$(cd "$WORK" && sh "$WORK/repo/scripts/package-appstore.sh" --rehearsal rel.zip 2>&1)" || status=$?
+expect pass "wrote $WORK/rel.zip" "a rehearsal path relative to the caller" "$status" "$out"
+[ -f "$WORK/rel.zip" ] || { echo "FAIL: no rehearsal at $WORK/rel.zip"; exit 1; }
+status=0
+out="$(sh "$WORK/repo/scripts/package-appstore.sh" --rehearsal "" 2>&1)" || status=$?
+expect refuse "usage:" "an empty rehearsal path" "$status" "$out"
+status=0
+out="$(sh "$WORK/repo/scripts/package-appstore.sh" --rehearsal "$WORK" 2>&1)" || status=$?
+expect refuse "is something else" "a rehearsal path that is a directory" "$status" "$out"
+# The rehearsal path is resolved as the kernel resolves it: neither a symlink with .. nor a
+# symlinked dist/ can steer a rehearsal to the upload path, and it never replaces a file that is
+# not a zip.
+ln -s "$WORK/repo/scripts" "$WORK/scripts-link"
+status=0
+out="$(sh "$WORK/repo/scripts/package-appstore.sh" --rehearsal "$WORK/scripts-link/../dist/appstore.zip" 2>&1)" \
+  || status=$?
+expect refuse "never writes into dist/" "a rehearsal steered into dist/ by a symlink and .." "$status" "$out"
+mv "$WORK/repo/dist" "$WORK/dist-elsewhere"
+ln -s "$WORK/dist-elsewhere" "$WORK/repo/dist"
+status=0
+out="$(sh "$WORK/repo/scripts/package-appstore.sh" --rehearsal "$WORK/dist-elsewhere/appstore.zip" 2>&1)" \
+  || status=$?
+expect refuse "never writes into dist/" "a rehearsal into a dist/ that is a symlink" "$status" "$out"
+rm -- "$WORK/repo/dist"
+mv "$WORK/dist-elsewhere" "$WORK/repo/dist"
+status=0
+out="$(sh "$WORK/repo/scripts/package-appstore.sh" --rehearsal "$WORK/repo/.git/HEAD" 2>&1)" || status=$?
+expect refuse "which is not a zip" "a rehearsal over a file that is not a zip" "$status" "$out"
+# Every run clears the temporary zip a killed run left in dist/.
+printf 'PK unchecked\n' > "$WORK/repo/dist/.appstore.killed"
+status=0
+out="$(sh "$WORK/repo/scripts/package-appstore.sh" --rehearsal "$REH" 2>&1)" || status=$?
+expect pass "a REHEARSAL, never the upload" "a run after a killed one" "$status" "$out"
+[ ! -e "$WORK/repo/dist/.appstore.killed" ] || { echo "FAIL: a killed run's temporary zip survived"; exit 1; }
+echo "ok: a killed run's temporary zip is cleared"
+
+# The upload's own file list reads names and pathspecs as git archive does: a name holding a
+# quote packages, and so does a path list that excludes a path. A committed symlink refuses
+# before anything follows it out of the upload.
+printf 'X = 1\n' > "$WORK/repo/tests/say\"hi\".txt"
+commit_in_clone "tests/say\"hi\".txt" "a name holding a quote"
+status=0
+out="$(sh "$WORK/repo/scripts/package-appstore.sh" --rehearsal "$REH" 2>&1)" || status=$?
+expect pass "a REHEARSAL, never the upload" "a name holding a quote" "$status" "$out"
+sed 's/ src tests frontend"$/ src tests frontend :(exclude)README.md"/' \
+  "$WORK/repo/scripts/package-appstore.sh" > "$WORK/repo/scripts/package-exclude.sh"
+cmp -s "$WORK/repo/scripts/package-exclude.sh" "$WORK/repo/scripts/package-appstore.sh" \
+  && { echo "FAIL: the path list did not change"; exit 1; }
+status=0
+out="$(sh "$WORK/repo/scripts/package-exclude.sh" --rehearsal "$REH" 2>&1)" || status=$?
+expect pass "a REHEARSAL, never the upload" "a path list that excludes a path" "$status" "$out"
+unzip -Z1 "$REH" | grep -qx README.md && { echo "FAIL: the excluded README.md was packaged"; exit 1; }
+echo "ok: the excluded path stays out of the zip"
+rm -f -- "$WORK/repo/scripts/package-exclude.sh"
+ln -s /etc/hostname "$WORK/repo/tests/hostlink"
+commit_in_clone tests/hostlink "a symlink"
+status=0
+out="$(sh "$WORK/repo/scripts/package-appstore.sh" --rehearsal "$REH" 2>&1)" || status=$?
+expect refuse "not a regular file" "a committed symlink" "$status" "$out"
+rm -- "$WORK/repo/tests/hostlink"
+commit_in_clone tests/hostlink "drop the symlink"
 
 # Only a committed allowlist entry counts: the same entry refuses while it sits in the working
 # tree alone, and passes once committed.
 mkdir -p "$WORK/repo/tests/fixtures"
 python3 -c 'import random, sys; open(sys.argv[1], "wb").write(random.Random(4).randbytes(128))' \
   "$WORK/repo/tests/fixtures/logo.dat"
-commit_in_clone() {  # $1: path to commit, $2: message
-  git -C "$WORK/repo" add -- "$1"
-  git -C "$WORK/repo" -c user.name=test -c user.email=test@localhost -c commit.gpgsign=false \
-    commit -q -m "$2"
-}
 commit_in_clone tests/fixtures/logo.dat "a binary fixture"
 printf 'tests/fixtures/logo.dat %s # a fixture image\n' "$(sha256_of "$WORK/repo/tests/fixtures/logo.dat")" \
   >> "$WORK/repo/scripts/upload-binaries.txt"
@@ -371,10 +437,13 @@ out="$(LC_ALL=C.UTF-8 sh "$WORK/repo/scripts/package-appstore.sh" --rehearsal "$
 expect refuse "outside printable ASCII" "an executable with a byte above 0x7E, under C.UTF-8" \
   "$status" "$out"
 
-# The review record, in a second clone that commits this working tree's packaging tools without
-# a record, then the version 9.10, a later 9.11 and 9.10 again: the bump that counts is the last
-# commit that set the version. Each case commits a record on top of it and packages for upload.
+# The review record, in a second clone, on a branch of its own with no upstream, that commits
+# this working tree's packaging tools without a record, then the version 9.10, a later 9.11 and
+# 9.10 again: the bump that counts is the last commit that set the version. Each case commits a
+# record on top of it and packages for upload.
 git clone -q "$ROOT" "$WORK/rec"
+recbranch=nets-test
+git -C "$WORK/rec" checkout -q -B "$recbranch"
 cp "$HERE/package-appstore.sh" "$HERE/check-package.sh" "$HERE/scan-package.mjs" \
   "$HERE/check-reviews.sh" "$WORK/rec/scripts/"
 rm -f -- "$WORK/rec/scripts/upload-record.txt"
@@ -471,7 +540,12 @@ package_rec refuse "line 1 is not" "a trailing word that is not a note"
 set_record "verdict engineering-reviewer PASS $bump" "$S PASS $bump"
 package_rec refuse "line 1 is not" "a line that is not a review"
 set_record "$E PASS $bump" "# a note$(printf '\r')$S FAIL $bump" "$S PASS $bump"
-package_rec refuse "line 2 holds a byte outside printable ASCII" "a carriage return that hides a verdict"
+package_rec refuse "outside printable ASCII and tab" "a carriage return that hides a verdict"
+git -C "$WORK/rec" reset -q --hard "$bump"
+printf '%s\n%s\n# a note\000%s FAIL %s\n' "$E PASS $bump" "$S PASS $bump" "$S" "$bump" \
+  > "$WORK/rec/scripts/upload-record.txt"
+rec_commit "a record holding a NUL" scripts/upload-record.txt
+package_rec refuse "outside printable ASCII and tab" "a NUL that hides a verdict"
 
 # The version must be readable at the commit packaged.
 set_record "$E PASS $bump" "$S PASS $bump"
@@ -541,6 +615,97 @@ printf '%s\n' "$E PASS $keyed" "$S PASS $keyed" > "$WORK/rec/scripts/upload-reco
 rec_commit "the reviews of the keyed tree" scripts/upload-record.txt
 package_rec refuse "secret-scan rules matched" "a reviewed upload that holds a key"
 no_upload_zip "a reviewed upload the nets refuse"
+
+# Git's local overrides never stand in for the committed history. Each case runs the one script
+# whose own guard is the only thing in the way: a replaced record and a graft against the review
+# check, a replaced allowlist against the nets, and a replaced packaged file against the packager,
+# whose archive must hold the committed file.
+set_record "$E PASS $bump" "$S PASS $bump" "$S FAIL $bump # a finding after the pass"
+recorded="$(git -C "$WORK/rec" rev-parse HEAD:scripts/upload-record.txt)"
+forged="$(printf '%s\n' "$E PASS $bump" "$S PASS $bump" | git -C "$WORK/rec" hash-object -w --stdin)"
+git -C "$WORK/rec" replace "$recorded" "$forged"
+package_rec refuse "is FAIL" "a replaced record, packaged for upload"
+status=0
+out="$(sh "$WORK/rec/scripts/check-reviews.sh" "$(head_of_rec)" src 2>&1)" || status=$?
+expect refuse "is FAIL" "a replaced record, read by the review check alone" "$status" "$out"
+git -C "$WORK/rec" replace -d "$recorded" > /dev/null
+set_record "$E PASS $side" "$S PASS $side"
+printf '%s %s %s\n' "$(head_of_rec)" "$bump" "$side" > "$WORK/rec/.git/info/grafts"
+status=0
+out="$(sh "$WORK/rec/scripts/check-reviews.sh" "$(head_of_rec)" src 2>&1)" || status=$?
+expect refuse "which is not in" "a graft that adopts an outside commit, read by the review check alone" \
+  "$status" "$out"
+rm -f -- "$WORK/rec/.git/info/grafts"
+git -C "$WORK/rec" reset -q --hard "$bump"
+mkdir -p "$WORK/rec/tests/fixtures"
+python3 -c 'import random, sys; open(sys.argv[1], "wb").write(random.Random(5).randbytes(128))' \
+  "$WORK/rec/tests/fixtures/blob.dat"
+rec_commit "an unlisted binary" tests/fixtures/blob.dat
+binc="$(head_of_rec)"
+allowed="$(git -C "$WORK/rec" rev-parse "$binc:scripts/upload-binaries.txt")"
+forged="$( { git -C "$WORK/rec" cat-file blob "$allowed"
+  printf 'tests/fixtures/blob.dat %s # forged by a replace ref\n' "$(sha256_of "$WORK/rec/tests/fixtures/blob.dat")"
+} | git -C "$WORK/rec" hash-object -w --stdin)"
+git -C "$WORK/rec" replace "$allowed" "$forged"
+GIT_NO_REPLACE_OBJECTS=1 git -C "$WORK/rec" archive --format=zip -o "$WORK/binary.zip" "$binc" -- \
+  Dockerfile requirements.txt pyproject.toml tests/fixtures
+status=0
+out="$(sh "$WORK/rec/scripts/check-package.sh" "$WORK/binary.zip" "$binc" \
+  Dockerfile requirements.txt pyproject.toml tests/fixtures 2>&1)" || status=$?
+expect refuse "is not text" "a replaced allowlist, read by the nets alone" "$status" "$out"
+git -C "$WORK/rec" replace -d "$allowed" > /dev/null
+set_record "$E PASS $bump" "$S PASS $bump"
+readme="$(git -C "$WORK/rec" rev-parse HEAD:README.md)"
+git -C "$WORK/rec" cat-file blob "$readme" > "$WORK/readme.committed"
+swapped="$(printf 'A replaced README.\n' | git -C "$WORK/rec" hash-object -w --stdin)"
+git -C "$WORK/rec" replace "$readme" "$swapped"
+package_rec pass "a REHEARSAL, never the upload" "a replaced packaged file, through the packager" \
+  --rehearsal "$WORK/swap.zip"
+unzip -p "$WORK/swap.zip" README.md | cmp -s - "$WORK/readme.committed" \
+  || { echo "FAIL: the zip does not hold the committed README.md"; exit 1; }
+echo "ok: the zip holds the committed README.md, not its replacement"
+git -C "$WORK/rec" replace -d "$readme" > /dev/null
+# The same for a replaced tree, packaged for upload: the zip holds the committed files only.
+set_record "$E PASS $bump" "$S PASS $bump"
+srctree="$(git -C "$WORK/rec" rev-parse HEAD:src)"
+GIT_INDEX_FILE="$WORK/replace.idx" git -C "$WORK/rec" read-tree "$srctree"
+printf 'X = 1\n' > "$WORK/replaced.py"
+GIT_INDEX_FILE="$WORK/replace.idx" git -C "$WORK/rec" update-index --add --cacheinfo \
+  "100644,$(git -C "$WORK/rec" hash-object -w "$WORK/replaced.py"),app/replaced.py"
+git -C "$WORK/rec" replace "$srctree" "$(GIT_INDEX_FILE="$WORK/replace.idx" git -C "$WORK/rec" write-tree)"
+package_rec pass "wrote dist/appstore.zip" "a replaced tree, packaged for upload"
+unzip -Z1 "$WORK/rec/dist/appstore.zip" | grep -q replaced.py \
+  && { echo "FAIL: a replaced tree put an unreviewed file into the upload"; exit 1; }
+echo "ok: the upload holds the committed tree, not its replacement"
+git -C "$WORK/rec" replace -d "$srctree" > /dev/null
+# Hashing is without filters: a clean filter that turns an edited tool back into its committed
+# bytes, or one that undoes a smudge filter's change to a packaged file, still refuses.
+set_record "$E PASS $bump" "$S PASS $bump"
+git -C "$WORK/rec" show HEAD:scripts/check-package.sh > "$WORK/committed-check.sh"
+printf '# a later comment\n' >> "$WORK/rec/scripts/check-package.sh"
+printf 'scripts/check-package.sh filter=undo\n' > "$WORK/rec/.git/info/attributes"
+git -C "$WORK/rec" config filter.undo.clean "cat $WORK/committed-check.sh"
+package_rec refuse "differ from" "a tool edit that a local clean filter hides"
+git -C "$WORK/rec" config --remove-section filter.undo
+set_record "$E PASS $bump" "$S PASS $bump"
+git -C "$WORK/rec" config filter.pair.smudge "sed s/Holly/H0lly/"
+git -C "$WORK/rec" config filter.pair.clean "sed s/H0lly/Holly/"
+printf 'README.md filter=pair\n' > "$WORK/rec/.git/info/attributes"
+package_rec refuse "does not hold the files of" "a local smudge filter that its clean filter undoes"
+: > "$WORK/rec/.git/info/attributes"
+git -C "$WORK/rec" config --remove-section filter.pair
+# The record counts the verdicts committed at or before the commit packaged: an upload comes from
+# the tip of a branch, never a detached HEAD, nor a branch behind its upstream.
+set_record "$E PASS $bump" "$S PASS $bump"
+git -C "$WORK/rec" checkout -q --detach
+package_rec refuse "HEAD is detached" "an upload from a detached HEAD"
+git -C "$WORK/rec" checkout -q "$recbranch"
+git -C "$WORK/rec" branch -q ahead "$(head_of_rec)"
+git -C "$WORK/rec" checkout -q -b behind "$bump"
+git -C "$WORK/rec" branch -q --set-upstream-to=ahead
+package_rec refuse "behind its upstream" "an upload from a branch behind its upstream"
+git -C "$WORK/rec" checkout -q "$recbranch"
+git -C "$WORK/rec" branch -q -D behind ahead
 
 # HEAD is resolved once: a commit landing while packaging refuses, never slips in. A stand-in git
 # commits on its way into git archive.

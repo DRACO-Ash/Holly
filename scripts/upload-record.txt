@@ -12,3 +12,5 @@ review engineering-reviewer PASS 4827acb2ad7e11f214744708a9390e87e3351d8e # V0.3
 review security-reviewer PASS 4827acb2ad7e11f214744708a9390e87e3351d8e # V0.3, round 4
 review engineering-reviewer FAIL 7eedb7bc1c8ef0f9418394d248df14752ea50900 # V0.3, the review record, round 1
 review security-reviewer FAIL 7eedb7bc1c8ef0f9418394d248df14752ea50900 # V0.3, the review record, round 1
+review engineering-reviewer FAIL e40e12b6175f8a22ceca931eb5c39768d3a4a524 # V0.3, the review record, round 2
+review security-reviewer FAIL e40e12b6175f8a22ceca931eb5c39768d3a4a524 # V0.3, the review record, round 2

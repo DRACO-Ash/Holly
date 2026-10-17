@@ -15,9 +15,10 @@
 #      (which an extractor may read as a separator), and every file must land under the name it
 #      is listed by, so no name passes the net in one form and lands in another (Info-ZIP also
 #      strips a VMS version suffix such as ;1). A grep error refuses.
-#   3. Given the commit packaged and its paths: the zip must hold exactly that commit's files,
-#      byte for byte, so git's local filters, attributes and replace refs cannot add, drop or
-#      change one on its way into the archive.
+#   3. Every member is a regular file: no symlink, which hashing or scanning would follow out of
+#      the upload. Given the commit packaged and its paths: the zip must hold exactly that
+#      commit's files, byte for byte, so git's local filters, attributes and replace refs cannot
+#      add, drop or change one on its way into the archive.
 #   4. Content net: scan-package.mjs scans only readable text (strict UTF-8 without control
 #      characters) with the secret-scan hook's rules, and refuses every other file whatever its
 #      name, unless scripts/upload-binaries.txt, read from the commit packaged (HEAD when none
@@ -27,6 +28,9 @@
 #      allowlisted binary.
 # Needs unzip and node; without them it refuses. scripts/test-package-nets.sh proves each net.
 set -eu
+# A replaced object never stands in for a committed one in the allowlist or the file list.
+GIT_NO_REPLACE_OBJECTS=1
+export GIT_NO_REPLACE_OBJECTS
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ZIP="$1"
@@ -91,6 +95,9 @@ command -v node >/dev/null 2>&1 || { echo "node is required for the package secr
 git -C "$ROOT" show "${COMMIT:-HEAD}:scripts/upload-binaries.txt" > "$ALLOW" \
   || { echo "could not read scripts/upload-binaries.txt from ${COMMIT:-HEAD}"; exit 1; }
 unzip -q "$ZIP" -d "$SCAN"
+if [ -n "$(cd "$SCAN" && find . ! -type d ! -type f | head -n 1)" ]; then
+  echo "package has a member that is not a regular file, such as a symlink. Commit the file itself."; exit 1
+fi
 # Every file must land under the name the listing gave it: a name extraction changes, such as a
 # doubled slash, ./ or a byte the extractor drops, could carry what the name net refused.
 listed="$(printf '%s\n' "$names" | LC_ALL=C grep -v '/$' | LC_ALL=C sort)"
@@ -98,10 +105,13 @@ written="$(cd "$SCAN" && find . ! -type d | sed 's|^\./||' | LC_ALL=C sort)"
 [ "$listed" = "$written" ] || { echo "package member names change on extraction. Rename them."; exit 1; }
 if [ -n "$COMMIT" ]; then
   # Exactly the committed files, byte for byte: each extracted file's blob id, hashed without
-  # filters, against the commit's tree for the same paths.
-  GIT_NO_REPLACE_OBJECTS=1 git -C "$ROOT" ls-tree -r "$COMMIT" -- "$@" > "$LISTS/tree" \
+  # filters, against the commit's tree for the same paths. diff-tree from the empty tree reads
+  # the paths as git archive does, pathspec magic included, and -z leaves every name unquoted.
+  empty="$(git -C "$ROOT" hash-object -t tree /dev/null)"
+  git -C "$ROOT" diff-tree -r -z --no-renames --raw "$empty" "$COMMIT" -- "$@" > "$LISTS/tree" \
     || { echo "could not list the files of $COMMIT"; exit 1; }
-  awk -F '\t' '{ split($1, f, " "); print f[3] " " $2 }' "$LISTS/tree" | LC_ALL=C sort > "$LISTS/expected"
+  tr '\0' '\n' < "$LISTS/tree" | awk 'NR % 2 == 1 { split($0, f, " "); id = f[4]; next } { print id " " $0 }' \
+    | LC_ALL=C sort > "$LISTS/expected"
   printf '%s\n' "$written" | awk -v dir="$SCAN" '{ print dir "/" $0 }' > "$LISTS/files"
   git -C "$ROOT" hash-object --no-filters --stdin-paths < "$LISTS/files" > "$LISTS/blobs" \
     || { echo "could not hash the extracted files"; exit 1; }
