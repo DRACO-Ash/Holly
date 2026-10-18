@@ -5,7 +5,7 @@
 **Data classification:** Unclassified (per ADR-006)
 **Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned the history below)
 **Version:** 0.4
-**Last updated:** 2026-10-17
+**Last updated:** 2026-10-18
 
 All notable changes to Holly are recorded here, newest first. Holly V0.2 is the Daily Operations Dashboard fused into the Holly App Store project and renamed; the sections after it are the Daily Operations Dashboard's own record, kept as written. Holly's releases are numbered V<major>.<minor>, and each has a row in `docs/AUDIT-LOG.md` with the checks that ran.
 

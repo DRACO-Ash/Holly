@@ -25,22 +25,29 @@ migrates="$(grep -n '^[^#]*run_migrations()' scripts/dev.sh | head -n 1 | cut -d
 echo "pg_isready asks over TCP; dev.sh waits at line $waits and migrates at line $migrates"
 
 step "Database images: both pin PostgreSQL by digest, and the smoke rung refuses any other image and waits over TCP"
-echo "Reads: scripts/smoke-container.sh and infra/docker-compose.yml, as text, then runs the smoke rung's refusal with a stand-in docker that is never reached. Cannot see: whether a digest holds the version its comment names, a later reassignment of PG_IMAGE or PG_DIGEST, or another database service in the compose file."
+echo "Reads: scripts/smoke-container.sh and infra/docker-compose.yml, as text, then runs the smoke rung's refusal on an image with no digest and one with another digest, with a stand-in docker first on PATH and DOCKER_HOST pointing nowhere, so no real Docker is reached. Cannot see: whether a digest holds the version its comment names, a later reassignment of PG_IMAGE or PG_DIGEST, a database run that names another image, or another database service in the compose file."
 grep -Eq '^PG_DIGEST=sha256:[0-9a-f]{64}$' scripts/smoke-container.sh \
   && grep -Eq '^PG_IMAGE="\$\{PG_IMAGE:-postgres:[0-9]+-alpine@\$PG_DIGEST\}"$' scripts/smoke-container.sh \
   || { echo "FAIL: the smoke rung's database image must be postgres:<major>-alpine, pinned by the digest in PG_DIGEST"; exit 1; }
 grep -Eq '^ +image: postgres:[0-9]+-alpine@sha256:[0-9a-f]{64}$' infra/docker-compose.yml \
   || { echo "FAIL: the local database image must be postgres:<major>-alpine, pinned by digest"; exit 1; }
-grep -Eq '^until docker exec "\$db" pg_isready -q -h 127\.0\.0\.1 ' scripts/smoke-container.sh \
-  || { echo "FAIL: the smoke rung must wait for the database over TCP (-h 127.0.0.1)"; exit 1; }
+grep -Eq '^until docker exec "\$db" pg_isready -q -h 127\.0\.0\.1 -U holly -d holly 2>/dev/null; do$' scripts/smoke-container.sh \
+  || { echo "FAIL: the smoke rung must wait for the database over TCP, on a line of its own: pg_isready -q -h 127.0.0.1 -U holly -d holly"; exit 1; }
 stub="$(mktemp -d "${TMPDIR:-/tmp}/holly-docker-stub.XXXXXX")"
 printf '#!/bin/sh\nexit 97\n' > "$stub/docker"
 chmod +x "$stub/docker"
-rc=0
-out="$(PG_IMAGE=postgres:16-alpine PATH="$stub:$PATH" sh scripts/smoke-container.sh 2>&1)" || rc=$?
+for image in postgres:16-alpine "postgres:16-alpine@sha256:$(printf '%064d' 0)"; do
+  rc=0
+  out="$(PG_IMAGE="$image" KEEP_SMOKE=0 DOCKER_HOST=unix:///nonexistent PATH="$stub:$PATH" \
+    sh scripts/smoke-container.sh 2>&1)" || rc=$?
+  if [ "$rc" != 1 ] || ! printf '%s\n' "$out" | grep -q '^SMOKE: FAIL: PG_IMAGE must end in the pinned digest sha256:'; then
+    rm -rf -- "$stub"
+    printf 'FAIL: the smoke rung must refuse PG_IMAGE=%s; it exited %s after:\n%s\n' "$image" "$rc" \
+      "$(printf '%s\n' "$out" | tail -n 5)"
+    exit 1
+  fi
+done
 rm -rf -- "$stub"
-[ "$rc" = 1 ] && printf '%s\n' "$out" | grep -q '^SMOKE: FAIL: PG_IMAGE must end in the pinned digest sha256:' \
-  || { echo "FAIL: the smoke rung must refuse a PG_IMAGE without the pinned digest"; exit 1; }
 echo "both database images are pinned by digest; the smoke rung refuses any other image and waits over TCP"
 
 step "Format (ruff format --check)"
