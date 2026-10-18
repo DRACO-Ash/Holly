@@ -19,3 +19,11 @@ review engineering-reviewer FAIL e40e12b6175f8a22ceca931eb5c39768d3a4a524 # V0.3
 review security-reviewer FAIL e40e12b6175f8a22ceca931eb5c39768d3a4a524 # V0.3, the review record, round 2
 review engineering-reviewer PASS 153c91e073b3a2cf5c7af7b8357650c8fa572971 # V0.3, the review record, round 3
 review security-reviewer FAIL 153c91e073b3a2cf5c7af7b8357650c8fa572971 # V0.3, the review record, round 3
+review engineering-reviewer PASS 3a48c8fb75526804b06641763d9edcba75e71ae6 # V0.3, the smoke rung on PostgreSQL 16, round 2
+review security-reviewer PASS 3a48c8fb75526804b06641763d9edcba75e71ae6 # V0.3, the smoke rung on PostgreSQL 16, round 2
+review engineering-reviewer PASS e13a3d34ce36e21bdc7f78b1301c0c13bc908a54 # V0.3, the smoke rung on PostgreSQL 16, round 3
+review security-reviewer PASS e13a3d34ce36e21bdc7f78b1301c0c13bc908a54 # V0.3, the smoke rung on PostgreSQL 16, round 3
+review engineering-reviewer PASS e0156cef298680bcbeaf066d99dd4d71efd02283 # V0.3, the smoke rung on PostgreSQL 16, round 4
+review security-reviewer PASS e0156cef298680bcbeaf066d99dd4d71efd02283 # V0.3, the smoke rung on PostgreSQL 16, round 4
+review engineering-reviewer PASS 8c70dbdd789e2720051fad0f0fc293b0cd6d11ad # V0.3, the review record, round 4
+review security-reviewer PASS 8c70dbdd789e2720051fad0f0fc293b0cd6d11ad # V0.3, the review record, round 4
