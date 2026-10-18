@@ -17,6 +17,10 @@ All notable changes to Holly are recorded here, newest first. Holly V0.2 is the 
 
 ● **The upload refuses the agent configuration by name.** `scripts/check-package.sh` refuses `CLAUDE.md`, `CLAUDE.local.md`, `.mcp.json` and anything under `.claude/`, in any case and at any depth, whatever the path list in `scripts/package-appstore.sh` says.
 
+### Changed
+
+● **The container smoke rung tests against PostgreSQL 16.** The App Store's upload page lists the POSTGRESQL add-on as PostgreSQL 16, so `scripts/smoke-container.sh` now runs PostgreSQL 16.15, pinned by digest, in place of 15.19. It refuses a database image without that digest and logs the server version it tested, and the verification loop checks that both database images are pinned by digest. The local database in `infra/docker-compose.yml` stays on 15.19, because a data volume made by 15 will not start under 16.
+
 ### Fixed
 
 ● **A refused name could pass the upload nets in another form.** `unzip` lists a DEL or a byte above 0x7E as it stands, or converted from CP437 in a UTF-8 locale, and an extractor may drop or change it: Info-ZIP drops a DEL, so `prod.en<DEL>v` passed every name check and landed as `prod.env`. Info-ZIP also strips a VMS version suffix, so `CLAUDE.md;1` landed as `CLAUDE.md`. Member names must now be printable ASCII without a backslash, every file must land under its listed name, and a `grep` error refuses rather than reading as no match.

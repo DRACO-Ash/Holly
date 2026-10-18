@@ -4,8 +4,8 @@
 
 **Data classification:** Unclassified (per ADR-006)
 **Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned ADR-001 to ADR-011)
-**Version:** 0.3
-**Last updated:** 2026-10-14
+**Version:** 0.4
+**Last updated:** 2026-10-17
 
 > **HOW TO READ THIS LOG**
 >
@@ -27,6 +27,7 @@
 **Date:** Sprint 1
 **Decision:** PostgreSQL 15 as the primary data store.
 **Rationale:** Robust, mature, strong support for audit schema isolation, UUID primary keys, and async drivers (asyncpg).
+**Status:** Amended by ADR-012. On the App Store, Holly's database is the POSTGRESQL add-on, which the store's upload page lists as PostgreSQL 16 (minor version `TBC, re-verify`); the container smoke rung tests 16.15, and local development stays on 15.19.
 
 **ADR-003**
 
@@ -126,7 +127,7 @@
 ● The rate limits, the daily token cap and the background loops live in one process: they reset when the container restarts, and a second replica would run its own. The number of replicas the platform runs is `TBC, re-verify`.
 ● A failed migration stops the container. So does a rollback to a package older than the database's newest migration, because Alembic cannot locate a revision the older code does not have; a rollback across a migration needs the database restored to match.
 ● Holly's database user runs the migrations and so owns every table, `audit.audit_log` included, and ADR-005's INSERT-only permissions cannot hold for an owner. Migration `0017_audit_append_only` enforces append-only with a statement-level trigger instead. The owner could still disable the trigger deliberately; the hash chain (`python -m app.cli.verify_audit`) detects a change made that way, unless every later hash is recomputed too, because nothing anchors the chain outside the database.
-● `DATABASE_URL` is the assumed name of the add-on's connection variable (`TBC, re-verify`); Holly also accepts the `POSTGRES_*` parts. The add-on's PostgreSQL version is `TBC, re-verify`; local development and the container smoke rung use PostgreSQL 15.19.
+● `DATABASE_URL` is the assumed name of the add-on's connection variable (`TBC, re-verify`); Holly also accepts the `POSTGRES_*` parts. The App Store's upload page lists the add-on as PostgreSQL 16, its minor version `TBC, re-verify`; the container smoke rung tests 16.15, and local development uses 15.19.
 ● The first admin is created with `python -m app.cli.create_admin --username <name>` inside the running container, or anywhere with the database settings. The password comes from `ADMIN_PASSWORD` or a hidden prompt; the `--password` flag in ADR-010's operational note is gone. Whether the platform offers a shell in the running container is `TBC, re-verify`.
 ● Behind the platform ingress, the client address Holly writes to the audit log and rate-limits by is the ingress's own, unless gunicorn is set to trust the ingress's forwarded headers (`FORWARDED_ALLOW_IPS`). Whether the platform provides those headers, and which address to trust, is `TBC, re-verify`.
 

@@ -152,7 +152,7 @@ A setting that is added to `Settings` belongs in this reference, and in `tests/c
 
 ## Local database
 
-`infra/docker-compose.yml` runs PostgreSQL 15.19, database `holly`, user `holly`, published on `127.0.0.1:5432` only. It needs `POSTGRES_PASSWORD` in your shell and refuses to start without it:
+`infra/docker-compose.yml` runs PostgreSQL 15.19, database `holly`, user `holly`, published on `127.0.0.1:5432` only. It stays on 15.19 while the App Store add-on runs 16, because a data volume made by 15 will not start under 16: moving it means a dump and restore, or `docker compose -f infra/docker-compose.yml down -v`, which deletes the local data. It needs `POSTGRES_PASSWORD` in your shell and refuses to start without it:
 
 ```sh
 export POSTGRES_PASSWORD=[REDACTED:password]

@@ -4,8 +4,8 @@
 
 **Data classification:** Unclassified (per ADR-006)
 **Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned the edition this one replaces)
-**Version:** 0.3
-**Last updated:** 2026-10-14
+**Version:** 0.4
+**Last updated:** 2026-10-17
 
 > **BLUF**
 >
@@ -81,7 +81,7 @@ PostgreSQL comes from the App Store POSTGRESQL add-on. Holly reads `DATABASE_URL
 ● `public` holds operational data in 12 tables, among them `notification`, `maneuver`, `shift_note` and `event_timer`.
 ● `audit` holds the tamper-evident audit log, `audit.audit_log`. A trigger refuses every UPDATE, DELETE and TRUNCATE on it (migration 0017).
 
-The PostgreSQL version the add-on provides is `TBC, re-verify`; the local database in [infra/docker-compose.yml](../../infra/docker-compose.yml) and the container smoke rung both use 15.19. Table and column detail is in the [data model](data-model.md).
+The App Store's upload page lists the add-on as PostgreSQL 16, its minor version `TBC, re-verify`; the container smoke rung tests 16.15, and the local database in [infra/docker-compose.yml](../../infra/docker-compose.yml) still uses 15.19. Table and column detail is in the [data model](data-model.md).
 
 ### Procedure store
 

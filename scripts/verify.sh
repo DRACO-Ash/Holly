@@ -24,6 +24,15 @@ migrates="$(grep -n '^[^#]*run_migrations()' scripts/dev.sh | head -n 1 | cut -d
   || { echo "FAIL: scripts/dev.sh must run 'up -d --wait db', with nothing after it on the line, before the migrations"; exit 1; }
 echo "pg_isready asks over TCP; dev.sh waits at line $waits and migrates at line $migrates"
 
+step "Database images: the smoke rung and the local database pin PostgreSQL by digest"
+echo "Reads: scripts/smoke-container.sh and infra/docker-compose.yml, as text. Cannot see: whether a digest holds the version its comment names."
+grep -Eq '^PG_DIGEST=sha256:[0-9a-f]{64}$' scripts/smoke-container.sh \
+  && grep -Eq '^PG_IMAGE="\$\{PG_IMAGE:-postgres:[0-9]+-alpine@\$PG_DIGEST\}"$' scripts/smoke-container.sh \
+  || { echo "FAIL: the smoke rung's database image must be pinned by digest"; exit 1; }
+grep -Eq '^ +image: postgres:[0-9]+-alpine@sha256:[0-9a-f]{64}$' infra/docker-compose.yml \
+  || { echo "FAIL: the local database image must be pinned by digest"; exit 1; }
+echo "both database images are pinned by digest"
+
 step "Format (ruff format --check)"
 "$BIN/ruff" format --check src tests
 

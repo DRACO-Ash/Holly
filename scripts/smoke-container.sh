@@ -14,8 +14,10 @@
 # Requires Docker and curl. Behind a TLS-intercepting proxy, point DOCKERFILE at a copy whose
 # pip and npm steps trust the proxy's certificate authority, and pass the build flags it needs:
 #   DOCKERFILE=/path/to/copy DOCKER_BUILD_FLAGS='--network host --secret id=...' sh scripts/smoke-container.sh
-# PG_IMAGE overrides the database image (for a registry mirror of the same digest). The
-# database password and signing key are generated per run and never written to disk.
+# PG_IMAGE overrides the database image, for a registry mirror of the same image: it must end in
+# the pinned digest, or the run refuses, and the run logs the server version it tested. The
+# database password and signing key are generated per run. The script writes neither to a file,
+# though Docker keeps them in its container records until the cleanup removes the containers.
 # Its containers, network and build context are removed afterwards, also on Ctrl-C;
 # KEEP_SMOKE=1 keeps the context. Green means necessary conditions met; the platform's build,
 # scan and deploy are binding.
@@ -24,9 +26,10 @@ set -eu
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 TAG="${TAG:-holly-smoke}"
-# PostgreSQL 15.19, the major version the dashboard was built against. TBC, re-verify: the
-# version the App Store POSTGRESQL add-on provides.
-PG_IMAGE="${PG_IMAGE:-postgres:15-alpine@sha256:f7d23353e1b15400d22ebe31189f4d314b87a4c129cc400c8c2d8d4ca127bf81}"
+# PostgreSQL 16.15, as the App Store's upload page lists the POSTGRESQL add-on as PostgreSQL 16.
+# TBC, re-verify: the add-on's minor version.
+PG_DIGEST=sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+PG_IMAGE="${PG_IMAGE:-postgres:16-alpine@$PG_DIGEST}"
 CTX="$(mktemp -d "${TMPDIR:-/tmp}/holly-smoke.XXXXXX")"
 ZIP="$(mktemp "${TMPDIR:-/tmp}/holly-smoke-upload.XXXXXX")"
 NET="holly-smoke-$(basename "$CTX" | tr -dc 'A-Za-z0-9')"
@@ -34,7 +37,7 @@ CIDS=""
 NET_MADE=0
 
 cleanup() {
-  if [ -n "$CIDS" ]; then docker rm -f $CIDS >/dev/null 2>&1 || true; fi
+  if [ -n "$CIDS" ]; then docker rm -f -v $CIDS >/dev/null 2>&1 || true; fi
   if [ "$NET_MADE" = 1 ]; then docker network rm "$NET" >/dev/null 2>&1 || true; fi
   if [ "${KEEP_SMOKE:-0}" != 1 ]; then rm -rf -- "$CTX"; else echo "kept $CTX"; fi
   rm -f -- "$ZIP"
@@ -48,6 +51,11 @@ fail() {
   echo "SMOKE: FAIL: $1"
   exit 1
 }
+
+case "$PG_IMAGE" in
+  *"@$PG_DIGEST") ;;
+  *) fail "PG_IMAGE must end in the pinned digest $PG_DIGEST" ;;
+esac
 
 random_hex() {  # $1: bytes of randomness
   od -An -N"$1" -tx1 /dev/urandom | tr -d ' \n'
@@ -131,12 +139,15 @@ NET_MADE=1
 db="$(docker run -d --network "$NET" --network-alias db \
   -e POSTGRES_DB=holly -e POSTGRES_USER=holly -e "POSTGRES_PASSWORD=$DB_SECRET" "$PG_IMAGE")"
 CIDS="$CIDS $db"
+# Over TCP, as Holly connects: on a fresh volume the image first answers on its Unix socket alone
+# while it initialises, then restarts and listens on TCP.
 tries=0
-until docker exec "$db" pg_isready -q -U holly -d holly 2>/dev/null; do
+until docker exec "$db" pg_isready -q -h 127.0.0.1 -U holly -d holly 2>/dev/null; do
   tries=$((tries + 1))
   [ "$tries" -lt 60 ] || { docker logs "$db"; fail "the database did not start"; }
   sleep 1
 done
+echo "database: $PG_IMAGE, PostgreSQL $(docker exec "$db" psql -U holly -d holly -qtAc 'SHOW server_version')"
 
 # 3. Run and probe with PORT unset, then with PORT injected as the platform does. The second
 #    container finds the schema already at head.
