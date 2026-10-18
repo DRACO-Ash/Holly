@@ -25,9 +25,9 @@
 ## PostgreSQL Database
 
 **Date:** Sprint 1
+**Status:** Amended by ADR-012. On the App Store, Holly's database is the POSTGRESQL add-on, which the store's upload page lists as PostgreSQL 16 (minor version `TBC, re-verify`); the container smoke rung tests 16.15, and local development stays on 15.19.
 **Decision:** PostgreSQL 15 as the primary data store.
 **Rationale:** Robust, mature, strong support for audit schema isolation, UUID primary keys, and async drivers (asyncpg).
-**Status:** Amended by ADR-012. On the App Store, Holly's database is the POSTGRESQL add-on, which the store's upload page lists as PostgreSQL 16 (minor version `TBC, re-verify`); the container smoke rung tests 16.15, and local development stays on 15.19.
 
 **ADR-003**
 
@@ -119,7 +119,7 @@
 ## Holly Runs as One Bluestaq App Store Container
 
 **Date:** 2026-10-14 (Holly V0.2)
-**Decision:** Holly ships as one container image on the Bluestaq App Store, `python` template, built from the `Dockerfile` at the repository root. The image compiles the React dashboard from `frontend/` in its own stage and serves it from the same FastAPI process as the API under `/api/v1` and the platform probes. gunicorn runs exactly one uvicorn worker, binds `0.0.0.0` on `PORT` (8080 when unset), and applies the Alembic migrations in its master process before the worker starts, under a PostgreSQL advisory lock. PostgreSQL comes from the App Store POSTGRESQL add-on and procedure files from the FILE_STORAGE add-on; settings arrive as App Store environment variables. TLS termination is the platform's responsibility. Supersedes ADR-003 and ADR-004; amends ADR-005 and the operational note of ADR-010.
+**Decision:** Holly ships as one container image on the Bluestaq App Store, `python` template, built from the `Dockerfile` at the repository root. The image compiles the React dashboard from `frontend/` in its own stage and serves it from the same FastAPI process as the API under `/api/v1` and the platform probes. gunicorn runs exactly one uvicorn worker, binds `0.0.0.0` on `PORT` (8080 when unset), and applies the Alembic migrations in its master process before the worker starts, under a PostgreSQL advisory lock. PostgreSQL comes from the App Store POSTGRESQL add-on and procedure files from the FILE_STORAGE add-on; settings arrive as App Store environment variables. TLS termination is the platform's responsibility. Supersedes ADR-003 and ADR-004; amends ADR-002, ADR-005 and the operational note of ADR-010.
 **Rationale:** The reasons are recorded in the repository. The App Store builds one image from the root `Dockerfile`, so the container is the whole build (`CLAUDE.md`). Building the dashboard in its own stage keeps Node, npm and `node_modules` out of the image (`Dockerfile`). Served from the API's own origin, the dashboard needs no cross-origin access, so `APP_ALLOWED_ORIGINS` is empty by default (`src/app/config.py`). The migrations ship inside the package, so the container needs no `alembic.ini`, and the advisory lock makes a second container that starts at the same time wait and then find nothing to do (`src/app/migrate.py`). There is exactly one worker because the background loops for UDL, Mattermost and the assistant run inside it, and a second worker would pull and bill everything twice; the rate limits and the daily assistant token cap also count in that one process (`src/app/gunicorn_conf.py`).
 **Consequences:**
 

@@ -19,7 +19,7 @@ All notable changes to Holly are recorded here, newest first. Holly V0.2 is the 
 
 ### Changed
 
-● **The container smoke rung tests against PostgreSQL 16.** The App Store's upload page lists the POSTGRESQL add-on as PostgreSQL 16, so `scripts/smoke-container.sh` now runs PostgreSQL 16.15, pinned by digest, in place of 15.19. It refuses a database image without that digest and logs the server version it tested, and the verification loop checks that both database images are pinned by digest. The local database in `infra/docker-compose.yml` stays on 15.19, because a data volume made by 15 will not start under 16.
+● **The container smoke rung tests against PostgreSQL 16.** The App Store's upload page lists the POSTGRESQL add-on as PostgreSQL 16, so `scripts/smoke-container.sh` now runs PostgreSQL 16.15, pinned by digest, in place of 15.19. It refuses a database image without that digest and logs the server version it tested, and the verification loop checks that both database images are pinned by digest and that the smoke rung refuses an image without its digest. The local database in `infra/docker-compose.yml` stays on 15.19, because a data volume made by 15 will not start under 16.
 
 ### Fixed
 

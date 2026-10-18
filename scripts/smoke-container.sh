@@ -147,7 +147,10 @@ until docker exec "$db" pg_isready -q -h 127.0.0.1 -U holly -d holly 2>/dev/null
   [ "$tries" -lt 60 ] || { docker logs "$db"; fail "the database did not start"; }
   sleep 1
 done
-echo "database: $PG_IMAGE, PostgreSQL $(docker exec "$db" psql -U holly -d holly -qtAc 'SHOW server_version')"
+pg_version="$(docker exec "$db" psql -U holly -d holly -qtAc 'SHOW server_version')" \
+  || fail "could not read the database's server version"
+[ -n "$pg_version" ] || fail "the database reported no server version"
+echo "database: $PG_IMAGE, PostgreSQL $pg_version"
 
 # 3. Run and probe with PORT unset, then with PORT injected as the platform does. The second
 #    container finds the schema already at head.

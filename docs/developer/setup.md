@@ -152,7 +152,7 @@ A setting that is added to `Settings` belongs in this reference, and in `tests/c
 
 ## Local database
 
-`infra/docker-compose.yml` runs PostgreSQL 15.19, database `holly`, user `holly`, published on `127.0.0.1:5432` only. It stays on 15.19 while the App Store add-on runs 16, because a data volume made by 15 will not start under 16: moving it means a dump and restore, or `docker compose -f infra/docker-compose.yml down -v`, which deletes the local data. It needs `POSTGRES_PASSWORD` in your shell and refuses to start without it:
+`infra/docker-compose.yml` runs PostgreSQL 15.19, database `holly`, user `holly`, published on `127.0.0.1:5432` only. It stays on 15.19 while the App Store's upload page lists the add-on as PostgreSQL 16, because a data volume made by 15 will not start under 16: moving it means a dump and restore, or `docker compose -f infra/docker-compose.yml down -v` (with `POSTGRES_PASSWORD` set, as for every command here), which deletes the local data. It needs `POSTGRES_PASSWORD` in your shell and refuses to start without it:
 
 ```sh
 export POSTGRES_PASSWORD=[REDACTED:password]
@@ -245,7 +245,7 @@ To run the dashboard's development server alone, `cd frontend && npm run dev`.
 sh scripts/verify.sh
 ```
 
-Every change runs it. It stops at the first failure and, in order, checks the Python version against `.python-version`; that the local database's health check asks over TCP and that `scripts/dev.sh` waits for it before migrating; `ruff format --check`; `ruff check`; strict `mypy`; cognitive complexity of at most 15 per function (`complexipy`); duplicated code (`pylint`); the test suite with coverage, which writes `coverage.xml` and fails under 80%; the dashboard's lockfile install, lint, format check, build and unit tests; `npm audit`; the upload nets' self-test; and `pip-audit` over both Python locks. A green run ends with:
+Every change runs it. It stops at the first failure and, in order, checks the Python version against `.python-version`; that the local database's health check asks over TCP and that `scripts/dev.sh` waits for it before migrating; that the smoke rung's and the local database's PostgreSQL images are pinned by digest, and that the smoke rung refuses any other image and waits for the database over TCP; `ruff format --check`; `ruff check`; strict `mypy`; cognitive complexity of at most 15 per function (`complexipy`); duplicated code (`pylint`); the test suite with coverage, which writes `coverage.xml` and fails under 80%; the dashboard's lockfile install, lint, format check, build and unit tests; `npm audit`; the upload nets' self-test; and `pip-audit` over both Python locks. A green run ends with:
 
 ```
 VERIFY: PASS (necessary conditions met; the App Store pipeline is the binding check)
