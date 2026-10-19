@@ -29,6 +29,26 @@ class NextAction(BaseModel):
     def _normalise_urgency(cls, value: object) -> object:
         return value.strip().lower() if isinstance(value, str) else value
 
+    @field_validator("deadline")
+    @classmethod
+    def _deadline_is_a_timestamp(cls, value: str | None) -> str | None:
+        # The prompt asks for an ISO 8601 timestamp or null. What Python's fromisoformat reads,
+        # a bare date or a compact form included, is kept as sent, but a time of day only with
+        # its UTC offset: without one, every browser would read it in its own zone. Anything
+        # else ("by end of shift") is dropped here rather than stored, so no reader has to
+        # guess what it means.
+        if value is None:
+            return None
+        text = value.strip()
+        try:
+            parsed = datetime.fromisoformat(text)
+        except ValueError:
+            return None
+        has_time = len(text) > len("2026-01-02")
+        if has_time and parsed.tzinfo is None:
+            return None
+        return text
+
 
 class StructuredEvaluation(BaseModel):
     summary: str = Field(max_length=4000)

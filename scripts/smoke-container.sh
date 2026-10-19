@@ -11,6 +11,10 @@
 #      that is not served
 #   4. a malformed PORT, a store that refuses writes, or a missing signing key that does not
 #      stop the container with a clear message
+#   5. a first admin from ADMIN_USERNAME and ADMIN_PASSWORD that is not created exactly once,
+#      cannot sign in, or reaches the log with its password or its hash; half a pair or an
+#      unusable email, before any account, that does not stop the start; or a start with the
+#      password removed, once the admin exists, that does
 # Requires Docker and curl. Behind a TLS-intercepting proxy, point DOCKERFILE at a copy whose
 # pip and npm steps trust the proxy's certificate authority, and pass the build flags it needs:
 #   DOCKERFILE=/path/to/copy DOCKER_BUILD_FLAGS='--network host --secret id=...' sh scripts/smoke-container.sh
@@ -197,6 +201,66 @@ until docker logs "$cid" 2>&1 | grep -q '"event": "migrations", .*"status": "app
   sleep 1
 done
 echo "migrations wait while another session holds the migration lock, then run"
+
+# 3c. The first admin comes from ADMIN_USERNAME and ADMIN_PASSWORD while no account exists, can
+#     sign in, and is never logged with its password; a later start with another pair changes
+#     nothing. The password is random for this run only.
+ADMIN_SECRET=$(random_hex 16)
+users() { docker exec "$db" psql -U holly -d holly -qtAc "$1"; }
+[ "$(users 'SELECT count(*) FROM app_user')" = 0 ] || fail "the database held an account before the admin bootstrap"
+# While no account exists, half a pair stops the start, and so does an email the database could
+# not store, refused before any query, so no failed statement can print the admin's password
+# hash: the log holds no bcrypt hash at all, and no account is written.
+cid="$(run_holly "" "$WRITABLE" -e ADMIN_USERNAME=half-set)"
+CIDS="$CIDS $cid"
+refused "$cid" "ADMIN_PASSWORD is not set" "an ADMIN_USERNAME without its ADMIN_PASSWORD, before any account"
+cid="$(run_holly "" "$WRITABLE" -e ADMIN_USERNAME=second-admin -e "ADMIN_PASSWORD=$(random_hex 16)" \
+  -e "ADMIN_EMAIL=$(printf '%0300d' 0)@example.org")"
+CIDS="$CIDS $cid"
+refused "$cid" "ADMIN_EMAIL must be at most" "an ADMIN_EMAIL longer than the database stores"
+if docker logs "$cid" 2>&1 | grep -q '\$2[aby]\$'; then fail "a bcrypt hash reached the log"; fi
+[ "$(users 'SELECT count(*) FROM app_user')" = 0 ] || fail "a refused start wrote an account"
+cid="$(run_holly "" "$WRITABLE" -p "127.0.0.1::8080" -e ADMIN_USERNAME=Smoke-Admin -e "ADMIN_PASSWORD=$ADMIN_SECRET")"
+CIDS="$CIDS $cid"
+base="http://127.0.0.1:$(docker port "$cid" 8080/tcp | head -n 1 | sed 's/.*://')"
+tries=0
+until curl -fsS -o /dev/null "$base/healthz" 2>/dev/null; do
+  tries=$((tries + 1))
+  [ "$tries" -lt 60 ] || { docker logs "$cid"; fail "the admin bootstrap container did not answer"; }
+  sleep 1
+done
+docker logs "$cid" 2>&1 | grep -q '"event": "admin_bootstrap", .*"status": "created"' \
+  || fail "the boot log does not show the admin created"
+[ "$(users "SELECT username || ' ' || role FROM app_user")" = "smoke-admin admin" ] \
+  || fail "the bootstrap did not create one admin named smoke-admin"
+[ "$(users "SELECT count(*) FROM audit.audit_log WHERE action_type = 'auth.user.admin_bootstrap'")" = 1 ] \
+  || fail "the admin bootstrap is not in the audit log"
+code="$(curl -s -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' \
+  -d "{\"username\": \"smoke-admin\", \"password\": \"$ADMIN_SECRET\"}" "$base/api/v1/auth/login")"
+[ "$code" = 200 ] || fail "the bootstrapped admin could not sign in ($code)"
+if docker logs "$cid" 2>&1 | grep -qF "$ADMIN_SECRET"; then fail "the admin password reached the log"; fi
+cid="$(run_holly "" "$WRITABLE" -e ADMIN_USERNAME=someone-else -e "ADMIN_PASSWORD=$(random_hex 16)")"
+CIDS="$CIDS $cid"
+tries=0
+until docker logs "$cid" 2>&1 | grep -q '"event": "admin_bootstrap", .*"status": "accounts_exist"'; do
+  tries=$((tries + 1))
+  [ "$tries" -lt 60 ] || { docker logs "$cid"; fail "a later start did not skip the admin bootstrap"; }
+  sleep 1
+done
+[ "$(users 'SELECT count(*) FROM app_user')" = 1 ] || fail "a later start with another pair added an account"
+# Once the admin exists, the operator removes ADMIN_PASSWORD: a start with the username and an
+# unusable email still set starts normally, and its log names what is left to remove.
+cid="$(run_holly "" "$WRITABLE" -e ADMIN_USERNAME=smoke-admin -e "ADMIN_EMAIL=$(printf '%0300d' 0)")"
+CIDS="$CIDS $cid"
+tries=0
+until docker logs "$cid" 2>&1 | grep -q '"event": "admin_bootstrap", .*"status": "accounts_exist", .*"variables_still_set": \["ADMIN_USERNAME", "ADMIN_EMAIL"\]'; do
+  tries=$((tries + 1))
+  [ "$tries" -lt 60 ] || { docker logs "$cid"; fail "a start with the password removed did not skip the admin bootstrap"; }
+  sleep 1
+done
+sleep 2
+[ "$(docker inspect -f '{{.State.Running}}' "$cid")" = true ] || { docker logs "$cid"; fail "a start with the password removed stopped"; }
+echo "the first admin is created from the environment once, signs in, a later pair changes nothing, and a start with the password removed runs"
 
 # 4. Each of these must stop the container at boot, never run in a degraded state.
 for bad in 0 "8080 --check-config"; do

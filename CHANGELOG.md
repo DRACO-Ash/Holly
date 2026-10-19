@@ -4,10 +4,24 @@
 
 **Data classification:** Unclassified (per ADR-006)
 **Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned the history below)
-**Version:** 0.7
+**Version:** 0.8
 **Last updated:** 2026-10-19
 
 All notable changes to Holly are recorded here, newest first. Holly V0.2 is the Daily Operations Dashboard fused into the Holly App Store project and renamed; the sections after it are the Daily Operations Dashboard's own record, kept as written. Holly's releases are numbered V<major>.<minor>, and each has a row in `docs/AUDIT-LOG.md` with the checks that ran.
+
+## Holly V0.7 (2026-10-19)
+
+### Added
+
+● **The first admin comes from App Store variables.** Set `ADMIN_USERNAME` and `ADMIN_PASSWORD` before the first start: Holly creates that admin at start while it holds no account and records it in the audit log. Once any account exists no value is checked or used, so none can reset a password or stop a start; remove them after the first start. Before then, half a pair, or a value Holly cannot store, stops the start with a message that names the variable and never its value. No shell in the container is needed.
+
+● **The deployment's record.** The operator manual lists the app record as the App Store console shows it: the slug `holly`, port 8080, the health check on `/`, 4Gi of memory and 2000m of CPU, PostgreSQL 16 and the file store at `/data`. Withdrawing the app is removing it from the App Store.
+
+### Fixed
+
+● **An assistant deadline that is not a timestamp, or a time of day without its UTC offset, is dropped when the reply is checked,** so it is never stored; one already stored that is not in ISO 8601 form shows as written, without "By".
+
+● **No failed database statement prints its bound values to the log,** in the application or its migrations, so an admin's password hash cannot reach it that way.
 
 ## Holly V0.6 (2026-10-19)
 

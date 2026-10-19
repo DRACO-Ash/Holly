@@ -5,7 +5,9 @@ stops the container at boot instead of listening on a port the platform does not
 """
 
 import os
+from typing import Any
 
+from app.admin_bootstrap import run_admin_bootstrap
 from app.config import resolve_port
 from app.core.logging import configure_logging
 from app.migrate import run_migrations
@@ -22,8 +24,16 @@ workers = 1
 control_socket_disable = True
 
 
-def on_starting(_server: object) -> None:
-    """Apply pending database migrations in the master, before the worker starts, logging in
-    the same JSON form as the application."""
+def on_starting(server: Any) -> None:
+    """Apply pending database migrations in the master, before the worker starts, then create
+    the first admin from the environment if no account exists, logging in the same JSON form as
+    the application."""
     configure_logging()
     run_migrations()
+    run_admin_bootstrap(os.environ)
+    # The worker forks from the master next. Its os.environ lacks the admin password, and so
+    # does gunicorn's copy of the starting environment (cfg.env_orig), which the worker inherits
+    # and a re-exec would start from. /proc/<pid>/environ still shows the block each process
+    # started with: removing the variable from the platform, then restarting, is what clears it.
+    os.environ.pop("ADMIN_PASSWORD", None)
+    server.cfg.env_orig.pop("ADMIN_PASSWORD", None)

@@ -19,10 +19,38 @@ from sqlalchemy import select
 
 from app.core.security import hash_password
 from app.db.session import get_session_factory
+from app.db.storable import storable_text
 from app.models.user import User, UserRole
 from app.services.audit import write_audit
 
 MIN_PASSWORD_LENGTH = 12
+MAX_USERNAME_LENGTH = 50
+MAX_EMAIL_LENGTH = 255
+
+
+CLI_PROBLEMS = {
+    "password": "The admin password holds a character that is not valid UTF-8 text.",
+    "username": f"The admin username must be 1 to {MAX_USERNAME_LENGTH} printable characters.",
+    "email": f"The admin email must be at most {MAX_EMAIL_LENGTH} printable characters.",
+}
+
+
+def _fits(value: str, limit: int) -> bool:
+    return 0 < len(value) <= limit and storable_text(value) and value.isprintable()
+
+
+def unstorable_field(username: str, password: str, email: str | None) -> str | None:
+    """The field ("password", "username" or "email") that cannot be hashed or stored, or None.
+
+    Checked before any query: bcrypt names a character that will not encode, and the database's
+    refusal of a value would print the statement that carried it."""
+    if not storable_text(password):
+        return "password"
+    if not _fits(username, MAX_USERNAME_LENGTH):
+        return "username"
+    if email is not None and not _fits(email, MAX_EMAIL_LENGTH):
+        return "email"
+    return None
 
 
 async def upsert_admin(username: str, password: str, email: str | None = None) -> str:
@@ -60,14 +88,19 @@ def main(argv: list[str] | None = None) -> int:
 
     username = (args.username or input("Username (admin): ")).strip()
     password = os.environ.get("ADMIN_PASSWORD") or getpass("Admin password (hidden): ")
-    if not username or not password:
+    if not username or not password.strip():
         sys.stderr.write("A username and a password are both required.\n")
         return 2
     if len(password) < MIN_PASSWORD_LENGTH:
         sys.stderr.write(f"Use at least {MIN_PASSWORD_LENGTH} characters for the admin password.\n")
         return 2
+    email = args.email.strip() if args.email and args.email.strip() else None
+    field = unstorable_field(username.lower(), password, email)
+    if field is not None:
+        sys.stderr.write(f"{CLI_PROBLEMS[field]}\n")
+        return 2
 
-    action = asyncio.run(upsert_admin(username, password, args.email))
+    action = asyncio.run(upsert_admin(username, password, email))
     sys.stdout.write(f"Admin user '{username.lower()}' {action}.\n")
     return 0
 

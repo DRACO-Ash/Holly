@@ -457,6 +457,8 @@ class TestEveryPasswordCharacterReachesTheEngineExactly:
 
         def recorder(_configuration: object, prefix: str, **kwargs: Any) -> NoReturn:
             assert prefix == "sqlalchemy."
+            # A failed migration statement never prints its bound values.
+            assert kwargs["hide_parameters"] is True
             handed.append(kwargs["url"])
             raise _StoppedBeforeConnectingError
 

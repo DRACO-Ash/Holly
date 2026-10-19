@@ -17,6 +17,15 @@ function formatDateTime(value: string | null | undefined): string {
   return date.toISOString().replace("T", " ").slice(0, 19);
 }
 
+// "By <time>" for an ISO 8601 timestamp; anything else an older evaluation stored is shown as
+// written, since the browser's Date reads words like "before shift 3" as a date nobody gave.
+const ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}|$)/;
+
+function deadlineLabel(value: string): string {
+  if (!ISO_TIMESTAMP.test(value) || Number.isNaN(new Date(value).getTime())) return value;
+  return `By ${formatDateTime(value)}`;
+}
+
 function urgencyClass(urgency: string): string {
   const lower = urgency.toLowerCase();
   if (lower === "high") return "urgency-pill urgency-high";
@@ -127,9 +136,7 @@ export default function AssistantPanel({ notificationId }: Readonly<AssistantPan
                     <span className={urgencyClass(a.urgency)}>{a.urgency}</span>
                     <strong>{a.action}</strong>
                   </div>
-                  {a.deadline && (
-                    <div className="action-deadline">By {formatDateTime(a.deadline)}</div>
-                  )}
+                  {a.deadline && <div className="action-deadline">{deadlineLabel(a.deadline)}</div>}
                   <div className="action-rationale">{a.rationale}</div>
                 </li>
               ),

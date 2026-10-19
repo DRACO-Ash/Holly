@@ -146,3 +146,60 @@ class TestMain:
         assert create_admin.main(["--username", username]) == 2
         assert message in capsys.readouterr().err
         upsert.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    ("username", "password", "email", "field"),
+    [
+        ("alice", "p" * 12 + "\udcff", None, "password"),
+        ("al\u202eice", a_password(), None, "username"),
+        ("a" * 51, a_password(), None, "username"),
+        # Thirty dotted capital I lower to sixty characters, over the fifty Holly stores.
+        ("\u0130" * 30, a_password(), None, "username"),
+        ("alice", a_password(), "e" * 256, "email"),
+        ("alice", a_password(), "ops\x00@example.org", "email"),
+    ],
+)
+def test_a_value_holly_cannot_hash_or_store_stops_before_any_query(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    username: str,
+    password: str,
+    email: str | None,
+    field: str,
+) -> None:
+    upsert = AsyncMock()
+    monkeypatch.setattr(create_admin, "upsert_admin", upsert)
+    monkeypatch.setenv("ADMIN_PASSWORD", password)
+    argv = ["--username", username] + (["--email", email] if email else [])
+    assert create_admin.main(argv) == 2
+    err = capsys.readouterr().err
+    assert err == f"{create_admin.CLI_PROBLEMS[field]}\n"
+    assert "\udcff" not in err
+    upsert.assert_not_awaited()
+
+
+def test_a_padded_email_is_checked_and_stored_stripped(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    upsert = AsyncMock(return_value="created")
+    monkeypatch.setattr(create_admin, "upsert_admin", upsert)
+    monkeypatch.setenv("ADMIN_PASSWORD", a_password())
+    assert create_admin.main(["--username", "alice", "--email", "  ops@example.org  "]) == 0
+    upsert.assert_awaited_once_with("alice", a_password(), "ops@example.org")
+    # Padding around the longest email Holly stores is not counted against it.
+    upsert.reset_mock()
+    assert create_admin.main(["--username", "alice", "--email", " " + "e" * 255 + " "]) == 0
+    upsert.assert_awaited_once_with("alice", a_password(), "e" * 255)
+    capsys.readouterr()
+
+
+def test_a_password_of_spaces_is_no_password(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    upsert = AsyncMock()
+    monkeypatch.setattr(create_admin, "upsert_admin", upsert)
+    monkeypatch.setenv("ADMIN_PASSWORD", " " * 16)
+    assert create_admin.main(["--username", "alice"]) == 2
+    assert "A username and a password are both required." in capsys.readouterr().err
+    upsert.assert_not_awaited()

@@ -67,7 +67,7 @@ async def run_migrations_online() -> None:
     # and never as text, which SQLAlchemy would parse a second time.
     section = config.get_section(config.config_ini_section, {})
     connectable = async_engine_from_config(
-        section, prefix="sqlalchemy.", url=get_settings().sqlalchemy_url()
+        section, prefix="sqlalchemy.", url=get_settings().sqlalchemy_url(), hide_parameters=True
     )
 
     async with connectable.connect() as connection:

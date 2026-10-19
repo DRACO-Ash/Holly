@@ -126,6 +126,7 @@ def test_a_preflight_is_refused_while_no_origin_is_allowed(client: TestClient) -
     response = client.options("/api/v1/auth/login", headers=headers)
     assert response.status_code == 400
     assert "access-control-allow-origin" not in response.headers
+    assert "content-security-policy" not in response.headers
     # A fixed answer: nothing the client sent comes back.
     assert response.content.startswith(b"Disallowed CORS ")
     assert b"X-Probe" not in response.content

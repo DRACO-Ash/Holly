@@ -98,6 +98,12 @@ describe("the assistant panel", () => {
               deadline: "by end of shift",
               rationale: "Why by shift end",
             },
+            {
+              action: "Act before shift 3",
+              urgency: "medium",
+              deadline: "before shift 3",
+              rationale: "Why before shift 3",
+            },
             { action: "Act later", urgency: "low", deadline: null, rationale: "Why later" },
             { action: "Act maybe", urgency: "unclear", deadline: null, rationale: "Why maybe" },
           ],
@@ -117,16 +123,49 @@ describe("the assistant panel", () => {
       "urgency-pill urgency-high",
       "urgency-pill urgency-medium",
       "urgency-pill urgency-medium",
+      "urgency-pill urgency-medium",
       "urgency-pill urgency-low",
       "urgency-pill",
     ]);
     expect(within(actions[0]).getByText("By 2026-01-02 06:00:00")).toBeTruthy();
     expect(within(actions[0]).getByText("Why now")).toBeTruthy();
     expect(actions[1].querySelector(".action-deadline")).toBeNull();
-    expect(within(actions[2]).getByText("By by end of shift")).toBeTruthy();
+    expect(
+      within(actions[2]).getByText("by end of shift", { selector: ".action-deadline" }),
+    ).toBeTruthy();
+    // The browser's Date reads "before shift 3" as a 2001 date; it is shown as written.
+    expect(
+      within(actions[3]).getByText("before shift 3", { selector: ".action-deadline" }),
+    ).toBeTruthy();
     expect(screen.getByText("Synthetic procedure")).toBeTruthy();
     expect(screen.getByText("Fits")).toBeTruthy();
     expect(screen.getByText("Synthetic question?")).toBeTruthy();
+  });
+
+  it("labels only an ISO 8601 deadline with By, and shows any other as written", async () => {
+    const deadlines = ["2026-01-02", "2026-01-02 06:00+00:00", "2026-13-45", "by 2026-01-02 06:00"];
+    vi.mocked(getEvaluation).mockResolvedValue(
+      anEvaluation({
+        structured: structured({
+          next_actions: deadlines.map((deadline, n) => ({
+            action: `Act ${n}`,
+            urgency: "low",
+            deadline,
+            rationale: `Why ${n}`,
+          })),
+        }),
+      }),
+    );
+    await panelFor();
+    const shown = [...document.querySelectorAll(".action-deadline")].map((el) => el.textContent);
+    // A bare date is a timestamp; a date that does not exist, or a timestamp after other text,
+    // is not.
+    expect(shown).toEqual([
+      "By 2026-01-02 00:00:00",
+      "By 2026-01-02 06:00:00",
+      "2026-13-45",
+      "by 2026-01-02 06:00",
+    ]);
   });
 
   it("falls back to the plain summary, says when the structure failed, and copes with what is missing", async () => {

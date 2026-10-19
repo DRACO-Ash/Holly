@@ -4,8 +4,8 @@
 
 **Data classification:** Unclassified (per ADR-006)
 **Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned the edition this one replaces)
-**Version:** 0.4
-**Last updated:** 2026-10-17
+**Version:** 0.5
+**Last updated:** 2026-10-19
 **Audience:** Operators and on-call engineers responsible for keeping Holly healthy on the Bluestaq App Store.
 
 > **BLUF**
@@ -22,7 +22,7 @@
 ● **TLS:** terminated by the platform before requests reach Holly.
 ● **Outbound:** UDL, the team's Mattermost server and the Anthropic API, over HTTPS.
 
-Holly's address is `https://<slug>.apps.bluestaq.com`; the slug is `TBC, re-verify`. Below, `<host>` stands for that address. There is no nginx and no Docker Compose deployment: the Daily Operations Dashboard's four-container stack is retired (ADR-012).
+Holly's address is `https://holly.apps.bluestaq.com`, the slug `holly`. Below, `<host>` stands for that address. There is no nginx and no Docker Compose deployment: the Daily Operations Dashboard's four-container stack is retired (ADR-012).
 
 **SECTION 02**
 
@@ -67,15 +67,35 @@ sh scripts/smoke-container.sh     # build the image from the upload, run it with
 **Settings** are App Store environment variables; the full reference is in [developer setup](../developer/setup.md). According to the platform reference in this repository, saving them replaces the whole set at once (at most 50 variables), and a separate step applies them ([.claude/skills/app-store-deployment/SKILL.md](../../.claude/skills/app-store-deployment/SKILL.md)); always save the complete set. Holly needs at least:
 
 ● `APP_SECRET_KEY`, at least 32 characters.
-● The database settings. Whether the POSTGRESQL add-on provides `DATABASE_URL` or the `POSTGRES_*` parts is `TBC, re-verify`.
+● The database settings: the POSTGRESQL add-on injects `DATABASE_URL`, which Holly reads; nothing to set by hand (Deployment parameters, below).
+● `ADMIN_USERNAME` and `ADMIN_PASSWORD` for the first start only (section 08).
 ● `UDL_USERNAME` and `UDL_PASSWORD` for UDL data, and `ANTHROPIC_API_KEY` for the assistant.
 ● `MATTERMOST_URL`, `MATTERMOST_BOT_TOKEN` and `MATTERMOST_CHANNEL_IDS` if the Comms page is used.
 
 Leave `STORAGE_MOUNT_PATH` to the FILE_STORAGE add-on, which injects it; do not set it by hand. Leave `APP_ENV` at its default, `production`. Leave `ASSISTANT_CLEARED_MARKINGS` at its default, `["U"]`, unless the data owner clears a further UDL classification marking for the assistant; who that is, and whether the `JCO` source's own marking may be cleared, is `TBC, re-verify`.
 
-**Starting, stopping and restarting** the app are platform operations: `TBC, re-verify` how. Rate-limit counters and the daily assistant token count start again from zero at every restart.
+**Starting, stopping and restarting** the app are platform operations: `TBC, re-verify` how. Rate-limit counters and the daily assistant token count start again from zero at every restart. **Withdrawing** the app is removing it from the App Store (the app owner, 19 October 2026); whether removal also deletes the add-ons' database and files is `TBC, re-verify`, so take what must be kept first.
 
 **Rollback** is a resubmission of the previous package; the platform has no separate rollback (platform reference above). Migrations only move forward at start, so a package older than the database's newest migration stops at boot with Alembic's `Can't locate revision identified by '<revision>'`. Rolling back across a migration therefore needs the database restored to match the older package, or a fixed package that carries the newer migration.
+
+### Deployment parameters
+
+The app record as the App Store console showed it on 19 October 2026 (fact, from the app owner's screenshots). A change here is a change to the platform's record, made in the console, not in this repository.
+
+| Parameter | Value |
+|---|---|
+| App name (slug) | `holly`, at `https://holly.apps.bluestaq.com` |
+| Detected stack | `node-react` (inference: from the root `package.json`, which exists for the platform's node test job; the image still builds from the root `Dockerfile`, as the platform reference says of every container template) |
+| Service | `app`, the entrypoint |
+| Port | 8080 |
+| Health check | `/` |
+| Memory | 4Gi |
+| CPU | 2000m |
+| POSTGRESQL add-on | PostgreSQL 16, 256Mi memory, 973 MiB storage; injects `DATABASE_URL` (`postgresql://postgres:[REDACTED:password]@appstore-holly-postgresql:5432/app?sslmode=disable`), `PGHOST`, `PGPORT`, `PGDATABASE` and `PGUSER` |
+| FILE_STORAGE add-on | An S3-backed persistent volume at `/data`; injects `STORAGE_MOUNT_PATH=/data` |
+| Category, display name, visibility | `TBC, re-verify` |
+
+Holly reads `DATABASE_URL` and ignores the `PG*` variables; its own `POSTGRES_*` fallback is for local runs. `sslmode=disable` means the connection to the database is not encrypted inside the platform (SECURITY.md). Whether the `/data` volume is writable by Holly's numeric user, 10001, is `TBC, re-verify`: if it is not, Holly stops at start with the errno in the log (section 10), and the fix is a platform request for that user's group on the volume.
 
 **SECTION 04**
 
@@ -83,8 +103,9 @@ Leave `STORAGE_MOUNT_PATH` to the FILE_STORAGE add-on, which injects it; do not 
 
 1. gunicorn reads its configuration. A malformed `PORT` stops it with `PORT must be a whole number from 1 to 65535, got '<value>'`.
 2. The master applies pending migrations under a PostgreSQL advisory lock, logging `{"event": "migrations", "status": "starting"}` and then `"applied"`. Reading the database URL here validates every setting, so a misconfiguration stops the container at this step with one line that names each problem and repeats no value, for example `Error: Holly cannot start: APP_SECRET_KEY: Field required` or `Error: Holly cannot start: UDL_BASE_URL must use https outside development`. A failed migration stops it here too, with Alembic's error.
-3. The worker starts and proves the procedure store accepts a write. On success it logs `{"event": "boot", "version": "<version>", "storage": "/data/procedures", "storage_writable": true, "background_refresh": true, ...}`. On failure it logs `"storage_writable": false` with the `errno` and `error`, and the container stops.
-4. The background loops start, each logging a line such as `Background notifications loop enabled: every 3600s`.
+3. The master counts the accounts. With none, and `ADMIN_USERNAME` and `ADMIN_PASSWORD` set, it creates the first admin, logging `{"event": "admin_bootstrap", "status": "created", "username": "<name>"}`; otherwise it logs `"not_configured"`, or `"accounts_exist"` with any `ADMIN_*` variable still set. With no account yet, half a pair, a password shorter than 12 characters, or a value Holly cannot store stops the container here with a line naming the variable (section 08).
+4. The worker starts and proves the procedure store accepts a write. On success it logs `{"event": "boot", "version": "<version>", "storage": "/data/procedures", "storage_writable": true, "background_refresh": true, ...}`. On failure it logs `"storage_writable": false` with the `errno` and `error`, and the container stops.
+5. The background loops start, each logging a line such as `Background notifications loop enabled: every 3600s`.
 
 At shutdown Holly stops the loops, closes its database connections and logs `{"event": "shutdown", ...}`.
 
@@ -159,6 +180,10 @@ SELECT timestamp, user_id, ip_address, detail
 
 ## Accounts
 
+### The first admin
+
+Set `ADMIN_USERNAME` and `ADMIN_PASSWORD` (at least 12 characters, a secret) as App Store variables before the first start, with `ADMIN_EMAIL` if wanted. At start, after the migrations, Holly counts the accounts. While there are none, it creates that admin, writes an `auth.user.admin_bootstrap` audit row and logs `{"event": "admin_bootstrap", "status": "created", ...}` without the password; one variable without the other, a shorter password, or a username, password or email Holly cannot store stops the start before the value reaches a query, naming the variable and never its value, and nothing is written. Once any account exists, no value is checked or used: the log shows `"status": "accounts_exist"` and names any still set in `variables_still_set`, and no value, however set, can reset a password or stop a start. After the first start, remove all three from the App Store and apply the settings: until the app restarts without it, the password stays in the environment block each process started with (`/proc/<pid>/environ`), though the master drops it from the worker's `os.environ` and from gunicorn's own copy before the worker starts.
+
 ### Create or reset an admin
 
 ```sh
@@ -195,6 +220,7 @@ Read the start of its log (section 04). The causes Holly names itself:
 ● `PORT must be a whole number ...`: fix or remove the `PORT` variable.
 ● `Error: Holly cannot start: ...`: a setting failed validation. Fix each setting the line names; it never repeats a value. A missing or short `APP_SECRET_KEY`, missing database settings, a `DATABASE_URL` that does not read as a postgres URL with a host (an unencoded `@` in the password does this: write it as `%40`), a `*` origin, an http UDL or Mattermost URL, `UDL_VERIFY_SSL=false` or a relative procedure path each stops the start.
 ● An Alembic error: a migration failed. If it reads `Can't locate revision identified by ...`, the package is older than the database (section 03). Escalate any other migration failure to engineering.
+● `Error: ADMIN_... `: the first-admin bootstrap refused a variable while no account exists (section 08). Fix the variable the line names, or remove `ADMIN_USERNAME`, `ADMIN_PASSWORD` and `ADMIN_EMAIL` to start without an admin.
 ● `"storage_writable": false`: the procedure store refused a write. The `errno` and `error` say why; check the FILE_STORAGE add-on and `PROCEDURE_STORAGE_PATH`.
 
 ### Symptom: `/api/v1/health` answers 500, or `/api/v1/health/detailed` shows `"database": "down"`

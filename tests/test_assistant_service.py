@@ -291,6 +291,34 @@ class TestParseEvaluation:
         [action] = evaluation.next_actions
         assert (action.urgency, action.deadline) == ("high", None)
 
+    @pytest.mark.parametrize(
+        ("deadline", "kept"),
+        [
+            ("2026-01-02T06:00:00Z", "2026-01-02T06:00:00Z"),
+            (" 2026-01-02T06:00:00+00:00 ", "2026-01-02T06:00:00+00:00"),
+            ("by end of shift", None),
+            ("2026-01-02", "2026-01-02"),
+            # A time of day with no offset would read as the browser's own zone.
+            ("2026-07-02T06:00", None),
+            ("2026-07-02T06:00+01:00", "2026-07-02T06:00+01:00"),
+            ("tomorrow", None),
+            ("", None),
+        ],
+    )
+    def test_a_deadline_is_kept_only_as_a_timestamp(self, deadline: str, kept: str | None) -> None:
+        body = reply_body(
+            next_actions=[
+                {
+                    "action": "Notify the duty officer",
+                    "urgency": "high",
+                    "deadline": deadline,
+                    "rationale": "Step 1.",
+                }
+            ]
+        )
+        [action] = parse_evaluation(json.dumps(body), set()).next_actions
+        assert action.deadline == kept
+
     def test_a_procedure_the_prompt_did_not_supply_is_dropped(self) -> None:
         known = str(synthetic_id())
         body = reply_body(

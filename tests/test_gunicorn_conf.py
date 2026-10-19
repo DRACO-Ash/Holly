@@ -2,6 +2,7 @@
 
 import importlib
 import runpy
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -42,8 +43,11 @@ def test_control_socket_is_off_and_one_uvicorn_worker_runs(
     assert settings["workers"] == 1
 
 
-def test_the_master_migrates_before_any_worker_starts(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_the_master_migrates_then_bootstraps_the_admin_before_any_worker_starts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     settings = load_settings(monkeypatch, None)
+    environ = settings["os"].environ
     calls: list[str] = []
     monkeypatch.setitem(
         settings["on_starting"].__globals__, "run_migrations", lambda: calls.append("migrate")
@@ -51,15 +55,35 @@ def test_the_master_migrates_before_any_worker_starts(monkeypatch: pytest.Monkey
     monkeypatch.setitem(
         settings["on_starting"].__globals__, "configure_logging", lambda: calls.append("log")
     )
-    settings["on_starting"](object())
-    assert calls == ["log", "migrate"]
+    monkeypatch.setitem(
+        settings["on_starting"].__globals__,
+        "run_admin_bootstrap",
+        # The bootstrap sees the live environment, with the password still in it.
+        lambda env: calls.append(f"admin:{env is environ}:{'ADMIN_PASSWORD' in env}"),
+    )
+    monkeypatch.setenv("ADMIN_PASSWORD", "p" * 16)
+    # gunicorn's own Config copies the environment, password included, before this hook runs.
+    server = SimpleNamespace(cfg=Config())
+    assert server.cfg.env_orig["ADMIN_PASSWORD"] == "p" * 16
+    settings["on_starting"](server)
+    assert calls == ["log", "migrate", "admin:True:True"]
+    # The worker forks without the admin password in its environment or in gunicorn's copy.
+    assert "ADMIN_PASSWORD" not in environ
+    assert "ADMIN_PASSWORD" not in server.cfg.env_orig
 
 
 def test_gunicorn_knows_every_setting_the_module_defines(monkeypatch: pytest.MonkeyPatch) -> None:
     # gunicorn ignores a name it does not know, so a misspelt setting or server hook would do
     # nothing silently. Every public name except the module's own imports counts, functions
     # included, because gunicorn's server hooks (post_fork and the like) are functions.
-    imports = {"os", "resolve_port", "configure_logging", "run_migrations"}
+    imports = {
+        "os",
+        "Any",
+        "resolve_port",
+        "configure_logging",
+        "run_migrations",
+        "run_admin_bootstrap",
+    }
     defined = {
         name
         for name in load_settings(monkeypatch, None)

@@ -19,7 +19,11 @@ from app.config import get_settings
 
 @lru_cache(maxsize=1)
 def get_engine() -> AsyncEngine:
-    return create_async_engine(get_settings().sqlalchemy_url(), pool_pre_ping=True)
+    # A failed statement's error never carries its bound values, which can hold a password
+    # hash or any other value a caller stores: the log gets the statement alone.
+    return create_async_engine(
+        get_settings().sqlalchemy_url(), pool_pre_ping=True, hide_parameters=True
+    )
 
 
 @lru_cache(maxsize=1)

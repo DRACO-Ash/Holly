@@ -70,7 +70,7 @@ Every setting Holly reads. Names are environment variable names. Secret values a
 
 | Setting | Purpose | Default | Required |
 |---------|---------|---------|----------|
-| `DATABASE_URL` | PostgreSQL connection URL with a host; `postgres://`, `postgresql://` and `postgresql+asyncpg://` are accepted. SQLAlchemy's parser reads it once, as the connection does: punctuation in the password may stay unencoded except `@`, as a URL holding more than one `@` stops the start, and `%` before two hexadecimal digits, which reads as an escape; write them as `%40` and `%25`. An `sslmode` query parameter, as PostgreSQL's own clients write it, is passed to asyncpg as `ssl`, which takes the same values. Wins over the `POSTGRES_*` parts. On the App Store this is the assumed name of the POSTGRESQL add-on's variable: `TBC, re-verify`. Secret, because it carries the password. | none | Yes, unless the `POSTGRES_*` parts are set |
+| `DATABASE_URL` | PostgreSQL connection URL with a host; `postgres://`, `postgresql://` and `postgresql+asyncpg://` are accepted. SQLAlchemy's parser reads it once, as the connection does: punctuation in the password may stay unencoded except `@`, as a URL holding more than one `@` stops the start, and `%` before two hexadecimal digits, which reads as an escape; write them as `%40` and `%25`. An `sslmode` query parameter, as PostgreSQL's own clients write it, is passed to asyncpg as `ssl`, which takes the same values. Wins over the `POSTGRES_*` parts. On the App Store the POSTGRESQL add-on injects it, with `sslmode=disable` (the console, 19 October 2026); its `PG*` variables are not read. Secret, because it carries the password. | none | Yes, unless the `POSTGRES_*` parts are set |
 | `POSTGRES_HOST` | Database host name or IP address, used when `DATABASE_URL` is not set. | none | Yes, without `DATABASE_URL` |
 | `POSTGRES_PORT` | Database port, 1 to 65535. | `5432` | No |
 | `POSTGRES_DB` | Database name. | none | Yes, without `DATABASE_URL` |
@@ -136,13 +136,13 @@ Every setting Holly reads. Names are environment variable names. Secret values a
 | `BACKGROUND_MANEUVER_INTERVAL_SECONDS` | Manoeuvre pull interval, at least 60 seconds. | `600` | No |
 | `BACKGROUND_MANEUVER_WINDOW_HOURS` | How far back the manoeuvre pull reaches, by event start time. | `48` | No |
 
-### Read by the admin command only, from the environment
+### Read by the admin command, and by the first-admin bootstrap at container start
 
 | Setting | Purpose | Default | Required |
 |---------|---------|---------|----------|
-| `ADMIN_USERNAME` | Username for `python -m app.cli.create_admin` when `--username` is not given. | prompted | No |
-| `ADMIN_EMAIL` | Email for the admin account when `--email` is not given. | none | No |
-| `ADMIN_PASSWORD` | The admin's password, at least 12 characters. When unset, the command prompts without echo. Never a command-line flag. Secret. | prompted | No |
+| `ADMIN_USERNAME` | Username for `python -m app.cli.create_admin` when `--username` is not given, and for the first admin Holly creates at start when it holds no account (with `ADMIN_PASSWORD`; while no account exists the two are set together or not at all, or the start stops; once one exists, none of the `ADMIN_*` variables is read). | prompted | No |
+| `ADMIN_EMAIL` | Email for the admin account when `--email` is not given, and for the first admin created at start. | none | No |
+| `ADMIN_PASSWORD` | The admin's password, at least 12 characters. When unset, the command prompts without echo. Never a command-line flag. At start it creates the first admin only while no account exists, and is neither checked nor used afterwards; remove all three `ADMIN_*` variables from the App Store once the admin exists. Secret. | prompted | No |
 
 gunicorn's own `FORWARDED_ALLOW_IPS` is not a Holly setting, but it decides whether the client address Holly records and rate-limits by is the caller's or the ingress's ([src/app/core/net.py](../../src/app/core/net.py)). gunicorn trusts only `127.0.0.1` and `::1` by default.
 
@@ -207,7 +207,7 @@ Expected: 12 tables and `alembic_version` in `public`, and `audit_log` in `audit
 
 ## Bootstrap the first admin
 
-There is no public sign-up. Create the first admin from the repository root:
+There is no public sign-up. On the App Store, set `ADMIN_USERNAME` and `ADMIN_PASSWORD` before the first start: Holly creates that admin at start while it holds no account, and uses neither once any account exists (the [operator manual](../runbook/operator-manual.md), section 08). Locally, `scripts/dev.sh` and `python -m app` run the development server, not gunicorn, so they never run the bootstrap: create the first admin from the repository root instead:
 
 ```sh
 PYTHONPATH=src .venv/bin/python -m app.cli.create_admin --username <name>
