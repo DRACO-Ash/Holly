@@ -16,7 +16,8 @@
 # members, banned names, and a content scan for secrets) before it reaches the upload path.
 #
 # The upload, dist/appstore.zip, is written only when scripts/check-reviews.sh finds that both
-# binding reviews passed the upload at the commit packaged (scripts/upload-record.txt), and only
+# binding reviews passed the upload at the commit packaged (scripts/upload-record.txt) and the last
+# upload handed over is recorded (scripts/upload-baseline.txt, whose window it prints), and only
 # from the tip of a branch that is not behind its upstream as last fetched; a branch with no
 # upstream is not compared, and the run says so. HEAD is resolved once and that commit is
 # checked, archived and verified, so a commit landing meanwhile can never slip in: it refuses
@@ -141,6 +142,8 @@ if [ "$rehearsal" = 0 ]; then
   esac
   # shellcheck disable=SC2086  # the path list splits on purpose
   sh scripts/check-reviews.sh "$COMMIT" $PATHS
+  # shellcheck disable=SC2086  # as above
+  sh scripts/check-baseline.sh "$COMMIT" $PATHS
 fi
 
 # shellcheck disable=SC2086  # as above

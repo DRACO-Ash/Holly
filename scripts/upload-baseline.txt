@@ -1,0 +1,12 @@
+# upload-baseline.txt :: every upload handed to the App Store, so the gate's changed-code window
+# can be read. The platform scores new code against the previous UPLOAD, passed or failed, and
+# records that boundary nowhere in this repository (appstore-gate-compliance, section 2.3).
+# Append one line per upload, in the first commit after it is handed over; never edit or remove a
+# line:
+#   upload <full 40-hex id of the commit packaged> <__version__ there> <passed|failed|pending> [# note]
+# pending means handed over with the platform's outcome not yet known; a later line records the
+# outcome. The last line is the baseline, whatever its outcome. The note names the zip, the merge
+# request and the stage that failed. Packaging for upload refuses unless the record is committed
+# and its last line reads, and prints the files the upload changes since that baseline
+# (scripts/check-baseline.sh). Printable ASCII and tabs only. The file sits outside the upload.
+upload dccfbdceb9bcb249303adcd7ffe7e15da0ae974a 0.4.0 failed # V0.4, zip ff5d3658, merge request 2: both test jobs failed at the test stage

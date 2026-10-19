@@ -10,9 +10,9 @@
 #   1. in this repository and in the packaged commit's history;
 #   2. at or after the commit that set the version in src/app/__init__.py (the bump);
 #   3. carrying the same upload: the packaged paths and the packaging tools (this script, the
-#      packager, the upload nets, the binary allowlist, the secret-scan rules they use and
-#      .gitattributes) are unchanged since, so a PASS recorded against a tree that has since
-#      moved refuses.
+#      baseline check, the packager, the upload nets, the binary allowlist, the secret-scan rules
+#      they use and .gitattributes) are unchanged since, so a PASS recorded against a tree that
+#      has since moved refuses.
 # The packaging tools that run are the working tree's, so each must match its committed content
 # byte for byte, whatever git's index says. They are compared once, before the archive is built,
 # so this catches a tool that has drifted, not one swapped while packaging runs, and the packager
@@ -28,7 +28,7 @@ unset CDPATH
 ROOT="$(cd "$(dirname "$0")/.." && pwd && echo .)"
 ROOT="${ROOT%??}"
 RECORD=scripts/upload-record.txt
-TOOLS="scripts/check-reviews.sh scripts/package-appstore.sh scripts/check-package.sh
+TOOLS="scripts/check-reviews.sh scripts/check-baseline.sh scripts/package-appstore.sh scripts/check-package.sh
   scripts/scan-package.mjs scripts/upload-binaries.txt .claude/hooks/secret-scan.mjs .gitattributes"
 # Git's local overrides never stand in for the committed record and history: no replaced object,
 # no graft, which could adopt a commit into the history, and no commit-graph file, whose parents

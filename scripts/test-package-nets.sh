@@ -13,8 +13,9 @@
 # packaged under C.UTF-8. The last cases, in a second clone, prove that packaging for upload
 # refuses unless the last verdict from each review in the committed record is a PASS on a commit
 # whose upload and packaging are unchanged, whatever git's index, local filters and attributes or
-# a commit landing meanwhile would make of it, and that a rehearsal needs no record. Run by
-# verify.sh; needs git, python3, unzip and node.
+# a commit landing meanwhile would make of it, and unless the committed upload baseline reads
+# and agrees with its commit, and that a rehearsal needs neither. Run by verify.sh; needs git,
+# python3, unzip and node.
 set -eu
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -551,8 +552,8 @@ recbranch=nets-test
 git -C "$WORK/rec" checkout -q -B "$recbranch"
 git -C "$WORK/rec" branch -q --unset-upstream 2>/dev/null || true
 cp "$HERE/package-appstore.sh" "$HERE/check-package.sh" "$HERE/scan-package.mjs" \
-  "$HERE/check-reviews.sh" "$WORK/rec/scripts/"
-rm -f -- "$WORK/rec/scripts/upload-record.txt"
+  "$HERE/check-reviews.sh" "$HERE/check-baseline.sh" "$WORK/rec/scripts/"
+rm -f -- "$WORK/rec/scripts/upload-record.txt" "$WORK/rec/scripts/upload-baseline.txt"
 rec_git() { git -C "$WORK/rec" -c user.name=test -c user.email=test@localhost -c commit.gpgsign=false "$@"; }
 rec_commit() {  # $1: message, then the paths to commit
   message="$1"
@@ -566,6 +567,11 @@ set_version() {  # $1: the version to commit
   rec_commit "version $1" src/app/__init__.py
 }
 rec_commit "the packaging tools under test, and no record" scripts
+# The upload baseline is that commit, at the version it carries, recorded in a commit of its own.
+base0="$(git -C "$WORK/rec" rev-parse HEAD)"
+v0="$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' "$WORK/rec/src/app/__init__.py")"
+printf 'upload %s %s failed # the baseline under test\n' "$base0" "$v0" > "$WORK/rec/scripts/upload-baseline.txt"
+rec_commit "the upload baseline" scripts/upload-baseline.txt
 set_version 9.10
 early="$(git -C "$WORK/rec" rev-parse HEAD)"
 set_version 9.11
@@ -690,6 +696,63 @@ printf '%s\n%s\n# a note\000%s FAIL %s\n' "$E PASS $bump" "$S PASS $bump" "$S" "
 rec_commit "a record holding a NUL" scripts/upload-record.txt
 package_rec refuse "outside printable ASCII and tab" "a NUL that hides a verdict"
 
+# The upload baseline: the last line is the baseline, read as committed at the commit packaged,
+# and packaging prints the upload's files that differ from it. A missing or unreadable record, a
+# baseline whose version is not the one its commit sets, and an upload changed since the baseline
+# under the baseline's version refuse; a rehearsal needs no baseline.
+set_baseline() {  # the baseline record's lines, committed on top of a passing review record
+  set_record "$E PASS $bump" "$S PASS $bump"
+  printf '%s\n' "$@" > "$WORK/rec/scripts/upload-baseline.txt"
+  rec_commit "an upload baseline" scripts/upload-baseline.txt
+}
+set_record "$E PASS $bump" "$S PASS $bump"
+package_rec pass "upload baseline: $(printf '%.7s' "$base0"), version $v0, failed (line 1)" \
+  "an upload with a baseline, which prints it"
+case "$out" in
+  *"the gate's window: 1 files"*"M${TAB}src/app/__init__.py"*) echo "ok: the window names the one file changed" ;;
+  *) printf 'FAIL: the window does not name src/app/__init__.py alone\n%s\n' "$out"; exit 1 ;;
+esac
+set_baseline "# uploads" "upload $base0 $v0 failed" "" "upload $bump 9.10 pending # handed over"
+package_rec pass "the upload is unchanged since the baseline" "an upload unchanged since the last line's baseline"
+# The upload moves on after a baseline at the bump, and both reviews pass the move, but the
+# version stays: the earlier line, at the move itself, does not count, since the last line decides.
+set_baseline "upload $base0 $v0 failed" "upload $bump 9.10 failed # the last line decides"
+printf '\nA later line.\n' >> "$WORK/rec/README.md"
+rec_commit "the upload moves on under 9.10" README.md
+printf '%s\n' "$E PASS $(head_of_rec)" "$S PASS $(head_of_rec)" >> "$WORK/rec/scripts/upload-record.txt"
+rec_commit "the reviews of the move" scripts/upload-record.txt
+package_rec refuse "version 9.10 is the baseline's: bump the version" "an upload changed under the baseline's version"
+set_baseline "upload $base0 9.11 failed"
+package_rec refuse "records version 9.11, and $(printf '%.7s' "$base0") sets $v0" "a baseline whose commit sets another version"
+set_baseline "upload 1234567890abcdef1234567890abcdef12345678 $v0 failed"
+package_rec refuse "is not a commit in this repository" "a baseline on an unknown commit"
+set_baseline "upload ${base0%?} $v0 failed"
+package_rec refuse "line 1 is not" "a baseline id one character short"
+set_baseline "upload $base0 $v0 failed" "upload $bump 9.10 rejected"
+package_rec refuse "line 2 is not" "an outcome that is not passed, failed or pending"
+set_baseline "upload $base0 V$v0 failed"
+package_rec refuse "line 1 is not" "a version written as the release stamp"
+set_baseline "upload $base0 $v0 failed handed" "upload $bump 9.10 passed"
+package_rec refuse "line 1 is not" "a trailing word that is not a note"
+set_baseline "# no upload yet"
+package_rec refuse "records no upload" "a baseline record without an upload"
+set_baseline "upload $early 9.10 failed" "# a note$(printf '\r')upload $bump 9.10 passed"
+package_rec refuse "outside printable ASCII and tab" "a carriage return in the baseline record"
+set_baseline "upload $base0 9.11 failed"
+printf 'upload %s %s failed\n' "$base0" "$v0" > "$WORK/rec/scripts/upload-baseline.txt"
+package_rec refuse "records version 9.11" "a correct edit over a committed baseline"
+set_record "$E PASS $bump" "$S PASS $bump"
+git -C "$WORK/rec" rm -q -- scripts/upload-baseline.txt
+rec_git commit -q -m "no baseline"
+package_rec refuse "upload-baseline.txt is not committed at" "an upload without a baseline record"
+no_upload_zip "an upload without a baseline record"
+package_rec pass "a REHEARSAL, never the upload" "a rehearsal, which needs no baseline" \
+  --rehearsal "$WORK/rec-rehearsal.zip"
+status=0
+out="$(sh "$WORK/rec/scripts/check-baseline.sh" "$bump" 2>&1)" || status=$?
+expect refuse "needs the commit to package and its upload paths" "the baseline check without upload paths" \
+  "$status" "$out"
+
 # The version must be readable at the commit packaged.
 set_record "$E PASS $bump" "$S PASS $bump"
 sed '/^__version__ = /d' "$WORK/rec/src/app/__init__.py" > "$WORK/version.py"
@@ -721,8 +784,8 @@ change_tool() {  # $1: the tool to change, so that it still runs
     *) printf '# a later comment\n' >> "$WORK/rec/$1" ;;
   esac
 }
-for tool in scripts/check-reviews.sh scripts/package-appstore.sh scripts/check-package.sh \
-  scripts/scan-package.mjs scripts/upload-binaries.txt .claude/hooks/secret-scan.mjs .gitattributes; do
+for tool in scripts/check-reviews.sh scripts/check-baseline.sh scripts/package-appstore.sh \
+  scripts/check-package.sh scripts/scan-package.mjs scripts/upload-binaries.txt .claude/hooks/secret-scan.mjs .gitattributes; do
   set_record "$E PASS $bump" "$S PASS $bump"
   change_tool "$tool"
   rec_commit "$tool moves on" "$tool"
