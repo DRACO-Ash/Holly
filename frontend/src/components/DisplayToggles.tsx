@@ -34,12 +34,12 @@ export default function DisplayToggles({ prefs, onChange }: DisplayTogglesProps)
           onChange={(e) => onChange({ ...prefs, flicker: e.target.checked })}
         />
         <span>CRT flicker</span>
-        {reduceMotion && (
-          <span id="flicker-off-note" className="visually-hidden">
-            Off: your system reduces motion
-          </span>
-        )}
       </label>
+      {reduceMotion && (
+        <span id="flicker-off-note" hidden>
+          Off: your system reduces motion
+        </span>
+      )}
     </fieldset>
   );
 }

@@ -37,10 +37,11 @@ sh scripts/verify.sh                     # the verification loop: pin, format, l
 PYTHONPATH=src .venv/bin/python -m app   # dev server on 0.0.0.0, at PORT or 8080
 sh scripts/simulate-pipeline.sh          # before every upload: package, check out and test the way the platform does
 sh scripts/smoke-container.sh            # before every upload: build the image from the upload, run it with PostgreSQL, probe the contract
+node scripts/mutation-battery.mjs        # after changing the contrast check, the licence plugin or their self-tests (CI runs it)
 sh scripts/dev.sh                        # local run: PostgreSQL, migrations, the API on 8080, the dashboard on 3000
 ```
 
-The dashboard installs from its lockfile with `cd frontend && npm ci --ignore-scripts`; the loop runs its lint, format, build, unit tests, the theme's contrast check (`scripts/contrast-check.mjs`, WCAG AA for every token pair) and `npm audit`. Pin dashboard packages exactly and relock with `npm install --package-lock-only`, never by hand.
+The dashboard installs from its lockfile with `cd frontend && npm ci --ignore-scripts`; the loop runs its lint, format, build (which copies each bundled package's licence to `licences/` and stops on a package without one), unit tests, the theme's contrast check (`scripts/contrast-check.mjs`, WCAG AA for every token pair) and `npm audit`. Pin dashboard packages exactly and relock with `npm install --package-lock-only`, never by hand.
 
 Relock after any dependency change with the `uv pip compile` command in the header of `requirements.in`, then `requirements-dev.in`; never edit a lockfile by hand. Packaging runs the upload nets in `scripts/check-package.sh` (required members, banned names, and a content scan with the secret-scan hook's rules), so it needs `node` and `unzip`; the loop's self-test of those nets also needs `python3`. The upload may carry only strict UTF-8 text, plus any binary pinned by SHA-256 with a reason in `scripts/upload-binaries.txt` (read from HEAD); treat any change there as a security change. Packaging for upload also refuses unless the last verdict from each gate in the committed `scripts/upload-record.txt` is a PASS on a commit with the same upload and packaging (`scripts/check-reviews.sh`); the rungs package with `--rehearsal <file>` into their own temporary files, never the upload.
 
@@ -58,7 +59,8 @@ Dockerfile              the container build: the dashboard stage, then hardened 
 scripts/                verify.sh (the loop), package-appstore.sh with check-package.sh, scan-package.mjs,
                         upload-binaries.txt and test-package-nets.sh (the upload nets), check-reviews.sh
                         and upload-record.txt (the review record), simulate-pipeline.sh, smoke-container.sh,
-                        contrast-check.mjs
+                        contrast-check.mjs, the self-tests test-contrast-check.mjs and
+                        test-bundled-licences.mjs, and mutation-battery.mjs, which proves them
 tests/                  the pytest suite (coverage.xml, 80% floor); tests/fakes.py holds the session fake
 docs/                   architecture, runbook, user handbook, security and developer setup (settings reference)
 docs/AUDIT-LOG.md       one row per release

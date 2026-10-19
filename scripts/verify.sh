@@ -82,11 +82,28 @@ echo "Reads: frontend/ with its committed configuration. The lockfile must not c
   npm run lint
   npm run format:check
   npm run build
+  # The build ships the licence of every package it bundles (bundled-licences.mjs), so each
+  # runtime dependency's licence must be in its output.
+  node --input-type=module -e '
+    import { existsSync, readFileSync } from "node:fs";
+    import { licenceFileName } from "./bundled-licences.mjs";
+    const deps = Object.keys(JSON.parse(readFileSync("package.json", "utf8")).dependencies);
+    const missing = deps.filter((name) => !existsSync(`dist/${licenceFileName(name)}`));
+    if (missing.length > 0) {
+      console.log(`FAIL: the build ships no licence for ${missing.join(", ")}`);
+      process.exit(1);
+    }
+    console.log(`licences: the build ships the licence of each of the ${deps.length} runtime dependencies; dist/licences/index.txt lists every bundled package`);
+  '
+  # The plugin's own self-test: what it ships, and each way it stops a build, on small projects.
+  node ../scripts/test-bundled-licences.mjs
   npm test
 )
 
 step "Dashboard contrast (WCAG AA for every text, edge and focus pair the theme's tokens make)"
 node scripts/contrast-check.mjs
+# The check's own self-test: each form it must refuse, and each it must accept, on copies.
+node scripts/test-contrast-check.mjs
 
 step "Dashboard dependency audit (npm audit: runtime and tooling, every severity)"
 # npm audit exits 0 with an error-shaped report when it cannot reach the advisory service, so

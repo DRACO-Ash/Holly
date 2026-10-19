@@ -245,7 +245,7 @@ To run the dashboard's development server alone, `cd frontend && npm run dev`.
 sh scripts/verify.sh
 ```
 
-Every change runs it. It stops at the first failure and, in order, checks the Python version against `.python-version`; that the local database's health check asks over TCP and that `scripts/dev.sh` waits for it before migrating; that the smoke rung's and the local database's PostgreSQL images are pinned by digest, and that the smoke rung refuses any other image and waits for the database over TCP; `ruff format --check`; `ruff check`; strict `mypy`; cognitive complexity of at most 15 per function (`complexipy`); duplicated code (`pylint`); the test suite with coverage, which writes `coverage.xml` and fails under 80%; the dashboard's lockfile install, lint, format check, build and unit tests; the contrast of every text, field-edge and focus pair the dashboard theme's tokens make (`scripts/contrast-check.mjs`, WCAG AA); `npm audit`; the upload nets' self-test; and `pip-audit` over both Python locks. A green run ends with:
+Every change runs it. It stops at the first failure and, in order, checks the Python version against `.python-version`; that the local database's health check asks over TCP and that `scripts/dev.sh` waits for it before migrating; that the smoke rung's and the local database's PostgreSQL images are pinned by digest, and that the smoke rung refuses any other image and waits for the database over TCP; `ruff format --check`; `ruff check`; strict `mypy`; cognitive complexity of at most 15 per function (`complexipy`); duplicated code (`pylint`); the test suite with coverage, which writes `coverage.xml` and fails under 80%; the dashboard's lockfile install, lint, format check, build, the check that the build ships each runtime dependency's licence, the licence plugin's self-test (`scripts/test-bundled-licences.mjs`) and unit tests; the contrast of every text, field-edge and focus pair the dashboard theme's tokens make (`scripts/contrast-check.mjs`, WCAG AA), then that check's self-test (`scripts/test-contrast-check.mjs`); `npm audit`; the upload nets' self-test; and `pip-audit` over both Python locks. A green run ends with:
 
 ```
 VERIFY: PASS (necessary conditions met; the App Store pipeline is the binding check)
@@ -258,7 +258,15 @@ The test suite needs no database: [tests/conftest.py](../../tests/conftest.py) s
 (cd frontend && npm test)
 ```
 
-CI ([.github/workflows/verify.yml](../../.github/workflows/verify.yml)) runs the same loop on every push and on pull requests to `main`.
+Two of the loop's steps are themselves tested against mutants, outside the loop, since that takes five to six minutes:
+
+```sh
+node scripts/mutation-battery.mjs
+```
+
+In a copy, it removes or moves each control of the contrast check and of the licence plugin in turn, and each entry of each list the check measures and of the words and pattern alternatives it allows a value by, runs the self-test case each mutant names, and fails unless that case goes red; its own copies of those lists must equal the check's, so an entry added there without a case fails it; it fails as well when a control's text has moved, so its proof cannot quietly stop measuring, when a mutated file does not parse, and when a mutant it declares equivalent is caught after all. Run it after changing either check or its self-test. `--case <name>` runs one case of either self-test.
+
+CI ([.github/workflows/verify.yml](../../.github/workflows/verify.yml)) runs the same loop, then the mutation battery, on every push and on pull requests to `main`.
 
 Optional commit hooks are in [.pre-commit-config.yaml](../../.pre-commit-config.yaml): `ruff format --check`, `ruff check`, `mypy` and the dashboard's `eslint`, each from the project's own tools. `pre-commit` itself is not in the locked tooling. The loop stays the gate.
 
@@ -266,7 +274,7 @@ Optional commit hooks are in [.pre-commit-config.yaml](../../.pre-commit-config.
 
 ## Dependencies
 
-Runtime dependencies are listed with exact pins in `requirements.in`, tooling in `requirements-dev.in`. After any change, relock with the `uv pip compile` command in the header of `requirements.in`, then the one in `requirements-dev.in`. Never edit `requirements.txt` or `requirements-dev.txt` by hand. The dashboard's dependencies are exact pins in `frontend/package.json`, locked in `frontend/package-lock.json`.
+Runtime dependencies are listed with exact pins in `requirements.in`, tooling in `requirements-dev.in`. After any change, relock with the `uv pip compile` command in the header of `requirements.in`, then the one in `requirements-dev.in`. Never edit `requirements.txt` or `requirements-dev.txt` by hand. The dashboard's dependencies are exact pins in `frontend/package.json`, locked in `frontend/package-lock.json`. Every package the dashboard's build bundles must carry a licence file: the build copies its text into `licences/` beside the dashboard, served at `/licences/`, and stops when one has none (`frontend/bundled-licences.mjs`).
 
 **SECTION 11**
 

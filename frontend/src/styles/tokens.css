@@ -226,14 +226,21 @@ code {
   height: 100vh;
 }
 
+/* The header wraps rather than squeeze or scroll: when the brand and the controls do not share
+   a line, the controls drop to a second, and they wrap among themselves on a narrow screen, so
+   the page reflows (WCAG 2.2 1.4.10). */
 .app-header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
+  row-gap: var(--space-2);
   padding: var(--space-2) var(--space-5);
   background: var(--color-chrome);
   border-bottom: 1px solid var(--color-border);
-  height: 64px;
+  min-height: 64px;
+  /* Never shorter than its rows, or a window full of firing banners would cover Sign out. */
+  flex-shrink: 0;
 }
 
 .app-brand {
@@ -318,34 +325,23 @@ code {
   color: var(--color-text-faint);
 }
 
-@media (max-width: 760px) {
-  .brand-sub {
-    display: none;
-  }
-
-  .app-header {
-    padding: var(--space-2) var(--space-3);
-  }
-
-  .app-main {
-    padding: var(--space-3);
-  }
-
-  .crt-content {
-    padding: var(--space-4);
-  }
-}
-
+/* On a line of their own the controls keep to the right, as they do beside the brand. */
 .app-header-right {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: var(--space-3);
+  row-gap: var(--space-2);
+  margin-left: auto;
 }
 
+/* A username longer than the screen is wide breaks rather than push Sign out away. */
 .app-user {
   font-family: var(--font-display);
   color: var(--color-text-muted);
   font-size: 0.85rem;
+  overflow-wrap: anywhere;
 }
 
 .logout-btn {
@@ -382,6 +378,8 @@ code {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  /* Banners can leave a short window less height than the links need: they scroll, never clip. */
+  overflow-y: auto;
 }
 
 .nav-link {
@@ -408,6 +406,32 @@ code {
   background: color-mix(in srgb, var(--color-accent) 8%, transparent);
   border-color: var(--color-accent);
   text-shadow: var(--glow-accent);
+}
+
+/* On a narrow or a short window the whole page scrolls, since a fixed-height shell would clip
+   it: 320 by 256 is a 1,280 by 1,024 window at 400% zoom (WCAG 2.2 1.4.10). */
+@media (max-width: 600px), (max-height: 480px) {
+  .app-shell {
+    height: auto;
+    min-height: 100vh;
+  }
+}
+
+/* On a narrow screen the sidebar becomes a wrapping row of links above the page, so the page
+   keeps the full width and its words are never cut off. */
+@media (max-width: 600px) {
+  .app-body {
+    flex-direction: column;
+  }
+
+  .app-nav {
+    width: auto;
+    flex-direction: row;
+    flex-wrap: wrap;
+    padding: var(--space-2);
+    border-right: 0;
+    border-bottom: 1px solid var(--color-chrome-edge);
+  }
 }
 
 /* The bulkhead frame, with a screw in each corner, holding the CRT screen. */
@@ -480,6 +504,25 @@ code {
   flex: 1;
   overflow: auto;
   padding: var(--space-5) var(--space-6);
+}
+
+/* At 760px and below: after the rules it overrides, so its paddings win. */
+@media (max-width: 760px) {
+  .brand-sub {
+    display: none;
+  }
+
+  .app-header {
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .app-main {
+    padding: var(--space-3);
+  }
+
+  .crt-content {
+    padding: var(--space-4);
+  }
 }
 
 /* The screen's own texture, fixed while the content scrolls over it. */
@@ -556,11 +599,14 @@ code {
   margin-bottom: var(--space-3);
 }
 
+/* A label, and the field it stretches to its width, never pushes its form wider than the
+   screen (WCAG 2.2 1.4.10). */
 .filter-form label,
 .ingest-form label,
 .login-form label {
   display: flex;
   flex-direction: column;
+  max-width: 100%;
   font-family: var(--font-display);
   font-size: 0.8rem;
   color: var(--color-text-muted);
@@ -692,6 +738,7 @@ button:disabled {
 
 .pagination {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-3);
   margin-top: var(--space-3);
@@ -740,7 +787,7 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 100vh;
+  min-height: 100vh;
   background:
     radial-gradient(
       ellipse at top,
@@ -1425,6 +1472,7 @@ button:disabled {
 
 .shift-note-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
 }
 
@@ -1478,6 +1526,7 @@ button:disabled {
 
 .shift-summary-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
@@ -1558,8 +1607,10 @@ button:disabled {
   font-weight: 700;
 }
 
+/* A label is free text: one long word breaks rather than widen the page. */
 .timer-banner-label {
   font-weight: 500;
+  overflow-wrap: anywhere;
 }
 
 .timer-banner button {
@@ -1705,6 +1756,18 @@ button:disabled {
   align-self: center;
 }
 
+/* At 760px and below a timer's buttons drop below its text instead of pushing past the panel. */
+@media (max-width: 760px) {
+  .event-timer-row {
+    grid-template-columns: 1fr;
+  }
+
+  .event-timer-actions {
+    grid-column: 1;
+    grid-row: auto;
+  }
+}
+
 .event-timer-actions button {
   background: transparent;
   border: 1px solid var(--color-border-strong);
@@ -1753,6 +1816,7 @@ button:disabled {
 
 .comms-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   gap: var(--space-3);
   margin-bottom: 4px;
