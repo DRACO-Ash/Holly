@@ -1560,8 +1560,8 @@ const mutants = [
     'L7',
     "a helper module's NUL byte is not its path",
     PLUGIN,
-    String.raw`const path = id.replace(/^\0/, "").replace(`,
-    'const path = id.replace(',
+    String.raw`const path = id.replace(/^\0/, "").replaceAll(`,
+    'const path = id.replaceAll(',
     "a CommonJS package's helper modules count as that package, and COPYING counts",
   ],
   [
@@ -2654,14 +2654,14 @@ const equivalents = [
     'E6',
     'no id holds a backslash on Linux, where the build runs: the replacement is for Windows',
     PLUGIN,
-    String.raw`const path = id.replace(/^\0/, "").replace(/\\/g, "/");`,
+    String.raw`const path = id.replace(/^\0/, "").replaceAll("\\", "/");`,
     String.raw`const path = id.replace(/^\0/, "");`,
   ],
   [
     'E7',
     'no root holds a backslash on Linux, where the build runs: the replacement is for Windows',
     PLUGIN,
-    String.raw`root = config.root.replace(/\\/g, "/");`,
+    String.raw`root = config.root.replaceAll("\\", "/");`,
     'root = config.root;',
   ],
   [

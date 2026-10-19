@@ -304,7 +304,7 @@ const EVERY_TIMING =
 // [what, the reason the check must give, null where it must pass, or { passes: text } where it
 // must pass and print text, edits, or null to run the check with no path].
 const cases = [
-  ['the stylesheet as it stands', { passes: 'contrast: all 218 pairs clear the floor' }, []],
+  ['the stylesheet as it stands', { passes: 'contrast: all 220 pairs clear the floor' }, []],
 
   // A colour of a rule's own, in each property that paints one, with each vendor prefix.
   ...PAINTING.map(([form, declaration, selector = '.case']) => [
@@ -621,17 +621,17 @@ const cases = [
   ],
   [
     'a failing sheet says how many of its pairs fail',
-    'contrast: 1 of 219 pairs fail:',
+    'contrast: 1 of 221 pairs fail:',
     own('color: var(--color-text)', 'background: var(--color-text)'),
   ],
   [
     'text over a background image is not measured as well',
-    'contrast: 1 of 218 pairs fail:',
+    'contrast: 1 of 220 pairs fail:',
     own(...ON_BG, `background-image: ${IMAGE}`),
   ],
   [
     'text with a border image is not measured as well',
-    'contrast: 1 of 218 pairs fail:',
+    'contrast: 1 of 220 pairs fail:',
     own(...ON_BG, `border-image: ${IMAGE} 1`),
   ],
   [
@@ -977,7 +977,7 @@ const cases = [
   ],
   [
     'a rule nested in another is refused once',
-    'contrast: 1 of 218 pairs fail:',
+    'contrast: 1 of 220 pairs fail:',
     block('  color: #333333;\n  .inner {\n    order: 1;\n  }\n'),
   ],
   [
@@ -1733,7 +1733,7 @@ const cases = [
   ],
   [
     'the check run without a path reads the dashboard stylesheet',
-    { passes: 'contrast: all 218 pairs clear the floor' },
+    { passes: 'contrast: all 220 pairs clear the floor' },
     null,
   ],
   ['every word and unit a painting value may hold', null, [append(EVERY_WORD)]],

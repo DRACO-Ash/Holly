@@ -44,7 +44,7 @@ interface TimerRowProps {
   variant: "upcoming" | "firing" | "pre" | "dismissed";
 }
 
-function TimerRow({ timer, variant }: TimerRowProps) {
+function TimerRow({ timer, variant }: Readonly<TimerRowProps>) {
   const { dismissTimer, deleteTimer } = useEventTimers();
   const [busy, setBusy] = useState(false);
 
@@ -165,7 +165,7 @@ export default function EventTimersPanel() {
         <>
           <form onSubmit={onSubmit} className="filter-form event-timer-form">
             <label>
-              Label
+              Label{" "}
               <input
                 type="text"
                 value={label}
@@ -175,7 +175,7 @@ export default function EventTimersPanel() {
               />
             </label>
             <label>
-              Event ID (optional)
+              Event ID (optional){" "}
               <input
                 type="text"
                 value={eventKey}
@@ -184,7 +184,7 @@ export default function EventTimersPanel() {
               />
             </label>
             <label>
-              Target time (local)
+              Target time (local){" "}
               <input
                 type="datetime-local"
                 value={targetTime}
@@ -193,7 +193,7 @@ export default function EventTimersPanel() {
               />
             </label>
             <label>
-              Pre-alert (min)
+              Pre-alert (min){" "}
               <input
                 type="number"
                 value={preMinutes}
@@ -203,7 +203,7 @@ export default function EventTimersPanel() {
               />
             </label>
             <label>
-              Recurrence
+              Recurrence{" "}
               <select
                 value={recurrence}
                 onChange={(e) => setRecurrence(e.target.value as TimerRecurrence)}

@@ -122,7 +122,7 @@ export default function NotificationsPage() {
       <section className="card">
         <form onSubmit={onFilterSubmit} className="filter-form">
           <label>
-            Event type (filter)
+            Event type (filter){" "}
             <input
               type="text"
               value={eventTypeInput}
@@ -131,7 +131,7 @@ export default function NotificationsPage() {
             />
           </label>
           <label>
-            Status
+            Status{" "}
             <select
               value={statusFilter ?? ""}
               onChange={(e) => {

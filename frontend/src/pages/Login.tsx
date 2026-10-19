@@ -32,7 +32,7 @@ export default function Login() {
         <BrandPlate />
         <h1>Sign in</h1>
         <label>
-          Username
+          Username{" "}
           <input
             type="text"
             value={username}
@@ -42,7 +42,7 @@ export default function Login() {
           />
         </label>
         <label>
-          Password
+          Password{" "}
           <input
             type="password"
             value={password}

@@ -102,7 +102,7 @@ export default function ManeuversPage() {
       <section className="card">
         <form onSubmit={onFilterSubmit} className="filter-form">
           <label>
-            Satellite number
+            Satellite number{" "}
             <input
               type="number"
               value={satNoInput}
@@ -111,7 +111,7 @@ export default function ManeuversPage() {
             />
           </label>
           <label>
-            Maneuver type
+            Maneuver type{" "}
             <input
               type="text"
               value={typeInput}

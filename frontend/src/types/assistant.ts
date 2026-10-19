@@ -8,7 +8,8 @@ export interface ApplicableProcedure {
 
 export interface NextAction {
   action: string;
-  urgency: ActionUrgency | string;
+  // An ActionUrgency as a rule; the server types it as any string.
+  urgency: string;
   deadline: string | null;
   rationale: string;
 }
@@ -36,7 +37,8 @@ export type FeedUrgency = "high" | "medium" | "low" | "none" | "pending";
 export interface AssistantFeedItem {
   notification: import("./notification").Notification;
   evaluation: AssistantEvaluation | null;
-  urgency: FeedUrgency | string;
+  // A FeedUrgency as a rule; the server types it as any string.
+  urgency: string;
   top_action: string | null;
   event_summary: string | null;
   event_publication_count: number | null;

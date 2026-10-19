@@ -38,7 +38,7 @@ async function attemptRefresh(): Promise<string> {
   }
   const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
   if (!refreshToken) {
-    return Promise.reject(new Error("No refresh token available"));
+    throw new Error("No refresh token available");
   }
   refreshPromise = axios
     .post<{ access_token: string; refresh_token: string }>("/api/v1/auth/refresh", {
@@ -66,27 +66,27 @@ apiClient.interceptors.response.use(
     const config = error.config as (AxiosRequestConfig & { _retry?: boolean }) | undefined;
 
     if (!config || status !== 401) {
-      return Promise.reject(error);
+      throw error;
     }
 
     const isAuthEndpoint = config.url?.includes("/auth/") ?? false;
 
     if (config._retry || isAuthEndpoint) {
       redirectToLogin();
-      return Promise.reject(error);
+      throw error;
     }
 
     config._retry = true;
     try {
       const newAccess = await attemptRefresh();
       config.headers = {
-        ...(config.headers ?? {}),
+        ...config.headers,
         Authorization: `Bearer ${newAccess}`,
       };
       return apiClient.request(config);
     } catch {
       redirectToLogin();
-      return Promise.reject(error);
+      throw error;
     }
   },
 );

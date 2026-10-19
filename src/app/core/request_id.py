@@ -1,4 +1,5 @@
-"""A request id on every response and every log line, so one request can be traced end to end.
+"""A request id on every response but a CORS preflight, and every log line, so one request can
+be traced end to end.
 
 An id the client sends is reused only when it is a plain token of at most 128 characters;
 anything else is replaced with a fresh UUID, so a caller cannot write arbitrary text into the

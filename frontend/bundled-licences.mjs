@@ -33,7 +33,7 @@ function packageOf(id, root) {
     const manifest = createRequire(join(root, "package.json")).resolve("vite/package.json");
     return { name: "vite", dir: dirname(manifest) };
   }
-  const path = id.replace(/^\0/, "").replace(/\\/g, "/");
+  const path = id.replace(/^\0/, "").replaceAll("\\", "/");
   const at = path.lastIndexOf(MODULES);
   if (at === -1) return path.startsWith(`${root}/`) ? null : undefined;
   const parts = path.slice(at + MODULES.length).split("/");
@@ -53,7 +53,7 @@ export function bundledLicences() {
     // takes fonts from 'self' only, not from data: URIs.
     config: () => ({ build: { assetsInlineLimit: 0 } }),
     configResolved(config) {
-      root = config.root.replace(/\\/g, "/");
+      root = config.root.replaceAll("\\", "/");
     },
     transform: {
       order: "post",
@@ -102,7 +102,9 @@ export function bundledLicences() {
         note(packageOf(isAbsolute(file) ? file : join(root, file), root), file);
       }
       const index = [];
-      for (const name of [...packages.keys()].sort()) {
+      // By UTF-16 code unit, as sort() orders by default, so the index stays byte for byte the
+      // same: a locale's order would put "_" before "-".
+      for (const name of [...packages.keys()].sort((a, b) => (a < b ? -1 : Number(a > b)))) {
         const dir = packages.get(name);
         const meta = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
         const file = readdirSync(dir).find((f) => LICENCE_FILE.test(f));

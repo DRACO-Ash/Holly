@@ -1,6 +1,7 @@
 """Guard the drift: the version stamp in code, in pyproject.toml, and in the manifest and lockfile
 of the dashboard and of the root Node project the platform's node job installs, is one value."""
 
+import ast
 import json
 import tomllib
 from pathlib import Path
@@ -10,6 +11,23 @@ from app import __version__
 PYPROJECT = Path(__file__).resolve().parent.parent / "pyproject.toml"
 DASHBOARD = Path(__file__).resolve().parent.parent / "frontend"
 ROOT = Path(__file__).resolve().parent.parent
+
+
+def test_version_is_set_once_as_a_plain_string() -> None:
+    # The packaging checks read the one line `__version__ = "<digits and dots>"`; Python must read
+    # the same, so no annotated, augmented or second assignment may stand beside it.
+    tree = ast.parse((ROOT / "src" / "app" / "__init__.py").read_text(encoding="utf-8"))
+    targets = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.Assign, ast.AnnAssign, ast.AugAssign))
+        and "__version__"
+        in ast.dump(node.targets[0] if isinstance(node, ast.Assign) else node.target)
+    ]
+    assert len(targets) == 1
+    assert isinstance(targets[0], ast.Assign)
+    assert isinstance(targets[0].value, ast.Constant)
+    assert targets[0].value.value == __version__
 
 
 def test_version_stamp_matches_pyproject() -> None:

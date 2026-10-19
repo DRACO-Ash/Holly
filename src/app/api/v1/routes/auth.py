@@ -48,6 +48,11 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+# The audit actions these routes write.
+AUDIT_LOGIN = "auth.user.login"
+AUDIT_REFRESH = "auth.token.refresh"
+AUDIT_LOGOUT = "auth.user.logout"
+
 # bcrypt is deliberately slow, a few hundred milliseconds a check. At most this many checks run
 # at once, each on a worker thread; a sign-in beyond them is refused at once, not queued.
 MAX_CONCURRENT_PASSWORD_CHECKS = 4
@@ -199,18 +204,18 @@ async def login(payload: LoginRequest, request: Request, db: DbSession) -> Token
     wait = LOGIN_LIMIT.wait_time(username)
     if wait:
         detail = _failure_detail(user, username, "rate_limited")
-        await _audit(db, "auth.user.login", user_id=user_id, ip=ip, detail=detail)
+        await _audit(db, AUDIT_LOGIN, user_id=user_id, ip=ip, detail=detail)
         raise _too_many("Too many failed sign-ins.", wait)
 
     reason = await _check_password(user, username, payload.password)
     if user is None or reason is not None:
         detail = _failure_detail(user, username, reason or "unknown_user")
-        await _audit(db, "auth.user.login", user_id=user_id, ip=ip, detail=detail)
+        await _audit(db, AUDIT_LOGIN, user_id=user_id, ip=ip, detail=detail)
         raise _invalid_credentials()
 
     LOGIN_LIMIT.forget(username)
     detail = {"success": True, "username": username}
-    await _audit(db, "auth.user.login", user_id=user.id, ip=ip, detail=detail)
+    await _audit(db, AUDIT_LOGIN, user_id=user.id, ip=ip, detail=detail)
     return _tokens_for(user.id)
 
 
@@ -223,19 +228,17 @@ async def refresh(payload: RefreshRequest, request: Request, db: DbSession) -> T
             raise _RefreshRejectedError("revoked_token")
     except _RefreshRejectedError as exc:
         detail = {"success": False, "reason": exc.reason}
-        await _audit(db, "auth.token.refresh", user_id=None, ip=ip, detail=detail)
+        await _audit(db, AUDIT_REFRESH, user_id=None, ip=ip, detail=detail)
         raise _invalid_refresh() from exc
 
     user = (await db.execute(select(User).where(User.id == claims.user_id))).scalar_one_or_none()
     if user is None or not user.is_active:
         detail = {"success": False, "reason": "inactive_user"}
-        await _audit(
-            db, "auth.token.refresh", user_id=user.id if user else None, ip=ip, detail=detail
-        )
+        await _audit(db, AUDIT_REFRESH, user_id=user.id if user else None, ip=ip, detail=detail)
         raise _invalid_refresh()
 
     await revoke(db, jti=claims.jti, user_id=claims.user_id, expires_at=claims.expires_at)
-    await _audit(db, "auth.token.refresh", user_id=user.id, ip=ip, detail={"success": True})
+    await _audit(db, AUDIT_REFRESH, user_id=user.id, ip=ip, detail={"success": True})
     return _tokens_for(user.id)
 
 
@@ -246,16 +249,16 @@ async def logout(payload: LogoutRequest, request: Request, db: DbSession) -> Non
         claims = _refresh_claims(payload.refresh_token)
     except _RefreshRejectedError as exc:
         detail = {"success": False, "reason": exc.reason}
-        await _audit(db, "auth.user.logout", user_id=None, ip=ip, detail=detail)
+        await _audit(db, AUDIT_LOGOUT, user_id=None, ip=ip, detail=detail)
         raise _invalid_refresh() from exc
 
     if await is_revoked(db, claims.jti):
         detail = {"success": False, "reason": "already_revoked"}
-        await _audit(db, "auth.user.logout", user_id=claims.user_id, ip=ip, detail=detail)
+        await _audit(db, AUDIT_LOGOUT, user_id=claims.user_id, ip=ip, detail=detail)
         raise _invalid_refresh()
 
     await revoke(db, jti=claims.jti, user_id=claims.user_id, expires_at=claims.expires_at)
-    await _audit(db, "auth.user.logout", user_id=claims.user_id, ip=ip, detail={"success": True})
+    await _audit(db, AUDIT_LOGOUT, user_id=claims.user_id, ip=ip, detail={"success": True})
 
 
 # A plain function: it awaits nothing (SonarQube python:S7503).

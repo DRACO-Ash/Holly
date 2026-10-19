@@ -89,7 +89,7 @@ export default function AuditLogPage() {
       <section className="card">
         <form onSubmit={onFilterSubmit} className="filter-form">
           <label>
-            Filter by action type
+            Filter by action type{" "}
             <input
               type="text"
               value={actionTypeInput}

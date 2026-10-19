@@ -34,7 +34,7 @@ Holly, the daily operations dashboard for Space Domain Awareness (SDA) watch ana
 ```
 python3.12 -m venv .venv && .venv/bin/pip install --require-hashes -r requirements-dev.txt   # install from the lockfile
 sh scripts/verify.sh                     # the verification loop: pin, format, lint, types, complexity, duplication, tests with coverage, audit
-PYTHONPATH=src .venv/bin/python -m app   # dev server on 0.0.0.0, at PORT or 8080
+PYTHONPATH=src .venv/bin/python -m app   # dev server on 127.0.0.1, at PORT or 8080
 sh scripts/simulate-pipeline.sh          # before every upload: package, check out and run both of the platform's test jobs
 sh scripts/smoke-container.sh            # before every upload: build the image from the upload, run it with PostgreSQL, probe the contract
 node scripts/mutation-battery.mjs        # after changing the contrast check, the licence plugin or their self-tests (CI runs it)

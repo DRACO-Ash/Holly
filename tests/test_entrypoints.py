@@ -15,7 +15,7 @@ def test_container_entry_point_is_the_factory_built_app() -> None:
 
 
 @pytest.mark.parametrize(("port_env", "expected_port"), [(None, 8080), ("9000", 9000)])
-def test_dev_server_binds_all_interfaces_on_the_resolved_port(
+def test_dev_server_binds_loopback_on_the_resolved_port(
     monkeypatch: pytest.MonkeyPatch, port_env: str | None, expected_port: int
 ) -> None:
     calls: list[dict[str, Any]] = []
@@ -29,4 +29,4 @@ def test_dev_server_binds_all_interfaces_on_the_resolved_port(
     else:
         monkeypatch.setenv("PORT", port_env)
     runpy.run_module("app", run_name="__main__")
-    assert calls == [{"app": "app.main:app", "host": "0.0.0.0", "port": expected_port}]
+    assert calls == [{"app": "app.main:app", "host": "127.0.0.1", "port": expected_port}]

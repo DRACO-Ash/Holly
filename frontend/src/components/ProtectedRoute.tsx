@@ -6,7 +6,7 @@ interface Props {
   children?: ReactNode;
 }
 
-export default function ProtectedRoute({ children }: Props) {
+export default function ProtectedRoute({ children }: Readonly<Props>) {
   const { isAuthenticated } = useAuth();
   if (!isAuthenticated) return <Navigate to="/login" replace />;
   return <>{children ?? <Outlet />}</>;

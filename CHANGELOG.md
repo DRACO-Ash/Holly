@@ -4,10 +4,30 @@
 
 **Data classification:** Unclassified (per ADR-006)
 **Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned the history below)
-**Version:** 0.6
+**Version:** 0.7
 **Last updated:** 2026-10-19
 
 All notable changes to Holly are recorded here, newest first. Holly V0.2 is the Daily Operations Dashboard fused into the Holly App Store project and renamed; the sections after it are the Daily Operations Dashboard's own record, kept as written. Holly's releases are numbered V<major>.<minor>, and each has a row in `docs/AUDIT-LOG.md` with the checks that ran.
+
+## Holly V0.6 (2026-10-19)
+
+### Fixed
+
+● **The 68 findings the App Store's Code Quality gate reported on V0.5's upload, which it failed.** V0.5 passed the test stage; the gate then listed 5 bugs, 2 vulnerabilities and 61 code smells, and each is fixed in the code it names.
+
+● **Each notice on the dashboard is a link.** The whole item opened its notice on a click, with no way in from the keyboard; it is now one link to the notice, reached with Tab and opened with Enter, with the focus ring every control shows.
+
+● **Sortable columns tell a screen reader how the list is sorted.** The sort order sat on the column's button, where assistive technology does not read it; it is now on the column header the list is sorted by.
+
+● **The development servers listen on this machine only.** `python -m app` and the dashboard's Vite server bind 127.0.0.1; the container still listens on every interface, as the App Store requires.
+
+● **The container installs Python packages from wheels only**, so no package's build step runs while the image is built, and its base images are named by digest alone.
+
+● **Cross-Origin Resource Sharing (CORS) answers first.** Every response to an allowed origin carries its headers, a refusal for too many requests included; a preflight is answered before the security headers, the request id and the rate limit (SECURITY.md); no origin is allowed by default, as before.
+
+### Added
+
+● **Packaging records where the gate's window opens.** The App Store scores new code against the previous upload, passed or failed, and records that nowhere in this repository. `scripts/upload-baseline.txt` records each upload handed over, and packaging for upload refuses without it, prints the files that changed since, and refuses an upload that changed without a higher version.
 
 ## Holly V0.5 (2026-10-19)
 

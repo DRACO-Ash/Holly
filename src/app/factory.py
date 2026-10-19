@@ -51,7 +51,7 @@ CONFIG_INPUTS = ("PORT", "APP_ENV", "STORAGE_MOUNT_PATH", "PROCEDURE_STORAGE_PAT
 # where Holly serves the API alone.
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
-# The strictest policy, on every response that is not an HTML page.
+# The strictest policy, on every response that is not an HTML page, but a CORS preflight.
 API_CSP = "default-src 'none'; frame-ancestors 'none'"
 # HTML pages (the dashboard): its own scripts, styles and API only. No inline script, no eval,
 # nothing from another origin.
@@ -182,12 +182,19 @@ def create_app(static_dir: Path = STATIC_DIR) -> FastAPI:
         redirect_slashes=False,
         lifespan=_lifespan,
     )
-    # Starlette runs the middleware added last first, so a request passes the security
-    # headers, the request id, the coarse limit, CORS and the body-size cap, in that order, and
-    # every response, a 413 or a 429 included, leaves with the security headers and the
-    # request id. The body cap sits innermost so the route reads the body straight from it:
-    # its 413 error then reaches FastAPI as itself, not wrapped by the layers above.
+    # Starlette runs the middleware added last first, so a request passes CORS, the security
+    # headers, the request id, the coarse limit and the body-size cap, in that order. CORS sits
+    # outermost (SonarQube S8414), so every response to an allowed origin carries its headers,
+    # a 429 from the coarse limit included, and a preflight is answered there, before the rest:
+    # it carries no body, costs nothing to answer, and leaves without the security headers or a
+    # request id, refused with a 400 while APP_ALLOWED_ORIGINS is empty (SECURITY.md). Every
+    # other response leaves with the security headers and the request id. The body cap sits
+    # innermost so the route reads the body straight from it: its 413 error then reaches FastAPI
+    # as itself, not wrapped by the layers above.
     app.add_middleware(BodySizeLimitMiddleware)
+    app.middleware("http")(_coarse_rate_limit)
+    app.add_middleware(RequestIDMiddleware)
+    app.middleware("http")(_security_headers)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.app_allowed_origins,
@@ -196,9 +203,6 @@ def create_app(static_dir: Path = STATIC_DIR) -> FastAPI:
         allow_headers=["Authorization", "Content-Type", REQUEST_ID_HEADER],
         expose_headers=[REQUEST_ID_HEADER],
     )
-    app.middleware("http")(_coarse_rate_limit)
-    app.add_middleware(RequestIDMiddleware)
-    app.middleware("http")(_security_headers)
 
     @app.exception_handler(RequestValidationError)
     def _invalid_request(_request: Request, exc: RequestValidationError) -> JSONResponse:

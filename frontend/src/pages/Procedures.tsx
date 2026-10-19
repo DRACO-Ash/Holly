@@ -115,7 +115,7 @@ export default function ProceduresPage() {
         <h2>Upload a procedure</h2>
         <form onSubmit={onSubmit} className="ingest-form">
           <label>
-            Name
+            Name{" "}
             <input
               type="text"
               value={name}
@@ -125,7 +125,7 @@ export default function ProceduresPage() {
             />
           </label>
           <label>
-            Description (optional)
+            Description (optional){" "}
             <input
               type="text"
               value={description}
@@ -134,7 +134,7 @@ export default function ProceduresPage() {
             />
           </label>
           <label>
-            File
+            File{" "}
             <input
               id="procedure-file"
               type="file"

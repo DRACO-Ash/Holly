@@ -670,6 +670,11 @@ PY
 [ "$(git -C "$WORK/rec" log -1 --format=%H -G'^__version__ = ' HEAD -- src/app/__init__.py)" = "$early" ] \
   || { echo "FAIL: the premise failed: the commit-graph does not move the bump"; exit 1; }
 package_rec refuse "comes before" "verdicts before the bump, behind a forged commit-graph"
+# Nor when the environment turns the commit-graph back on through git -c's channel, which would
+# win over the review check's own setting.
+export GIT_CONFIG_PARAMETERS="'core.commitgraph'='true'"
+package_rec refuse "comes before" "verdicts before the bump, behind a forged commit-graph and GIT_CONFIG_PARAMETERS"
+unset GIT_CONFIG_PARAMETERS
 rm -f -- "$graph"
 side="$(rec_git commit-tree -p "$bump" -m "a side commit" "$bump^{tree}")"
 set_record "$E PASS $side" "$S PASS $side"
@@ -709,7 +714,7 @@ set_record "$E PASS $bump" "$S PASS $bump"
 package_rec pass "upload baseline: $(printf '%.7s' "$base0"), version $v0, failed (line 1)" \
   "an upload with a baseline, which prints it"
 case "$out" in
-  *"the gate's window: 1 files"*"M${TAB}src/app/__init__.py"*) echo "ok: the window names the one file changed" ;;
+  *"the gate's window: 1 files differ"*"M${TAB}src/app/__init__.py"*) echo "ok: the window names the one file changed" ;;
   *) printf 'FAIL: the window does not name src/app/__init__.py alone\n%s\n' "$out"; exit 1 ;;
 esac
 set_baseline "# uploads" "upload $base0 $v0 failed" "" "upload $bump 9.10 pending # handed over"
@@ -722,6 +727,35 @@ rec_commit "the upload moves on under 9.10" README.md
 printf '%s\n' "$E PASS $(head_of_rec)" "$S PASS $(head_of_rec)" >> "$WORK/rec/scripts/upload-record.txt"
 rec_commit "the reviews of the move" scripts/upload-record.txt
 package_rec refuse "version 9.10 is the baseline's: bump the version" "an upload changed under the baseline's version"
+# Nor can a commit-graph file, from which git diff takes a commit's tree: one that gives the
+# baseline the packaged commit's tree hides the change.
+graph="$WORK/rec/.git/objects/info/commit-graph"
+git -C "$WORK/rec" commit-graph write --reachable
+chmod u+w "$graph"
+python3 - "$graph" "$bump" "$(git -C "$WORK/rec" rev-parse 'HEAD^{tree}')" <<'PY2'
+import struct
+import sys
+
+path, commit, tree = sys.argv[1], bytes.fromhex(sys.argv[2]), bytes.fromhex(sys.argv[3])
+data = bytearray(open(path, "rb").read())
+table = range(data[6] + 1)
+chunks = {bytes(data[8 + 12 * i:12 + 12 * i]): struct.unpack(">Q", data[12 + 12 * i:20 + 12 * i])[0] for i in table}
+oids, cdat = chunks[b"OIDL"], chunks[b"CDAT"]
+index = [bytes(data[oids + 20 * i:oids + 20 * i + 20]) for i in range((cdat - oids) // 20)]
+data[cdat + 36 * index.index(commit):cdat + 36 * index.index(commit) + 20] = tree
+open(path, "wb").write(data)
+PY2
+[ -z "$(git -C "$WORK/rec" diff --name-only "$bump" HEAD -- README.md)" ] \
+  || { echo "FAIL: the premise failed: the commit-graph does not hide the change"; exit 1; }
+package_rec refuse "bump the version" "an upload changed under the baseline's version, behind a forged commit-graph"
+export GIT_CONFIG_PARAMETERS="'core.commitgraph'='true'"
+package_rec refuse "bump the version" \
+  "an upload changed under the baseline's version, behind a forged commit-graph and GIT_CONFIG_PARAMETERS"
+unset GIT_CONFIG_PARAMETERS
+rm -f -- "$graph"
+# The bump's parent sets 9.11, so the upload at 9.10 has changed under a lower version.
+set_baseline "upload $(git -C "$WORK/rec" rev-parse "$bump~1") 9.11 passed"
+package_rec refuse "is below the baseline's 9.11" "an upload changed under a version below the baseline's"
 set_baseline "upload $base0 9.11 failed"
 package_rec refuse "records version 9.11, and $(printf '%.7s' "$base0") sets $v0" "a baseline whose commit sets another version"
 set_baseline "upload 1234567890abcdef1234567890abcdef12345678 $v0 failed"
@@ -758,7 +792,37 @@ set_record "$E PASS $bump" "$S PASS $bump"
 sed '/^__version__ = /d' "$WORK/rec/src/app/__init__.py" > "$WORK/version.py"
 cp "$WORK/version.py" "$WORK/rec/src/app/__init__.py"
 rec_commit "no version" src/app/__init__.py
-package_rec refuse "no __version__" "a commit without a version"
+package_rec refuse "no single __version__" "a commit without a version"
+# Nor with two: Python keeps the last, 9.10, and a reader of both would see another version.
+set_record "$E PASS $bump" "$S PASS $bump"
+printf '__version__ = "9.12"\n' > "$WORK/twice.py"
+cat "$WORK/rec/src/app/__init__.py" >> "$WORK/twice.py"
+cp "$WORK/twice.py" "$WORK/rec/src/app/__init__.py"
+rec_commit "two versions" src/app/__init__.py
+package_rec refuse "no single __version__" "a commit that sets the version twice, read by the review check"
+status=0
+out="$(sh "$WORK/rec/scripts/check-baseline.sh" "$(head_of_rec)" src 2>&1)" || status=$?
+expect refuse "no single __version__" "a commit that sets the version twice, read by the baseline check" \
+  "$status" "$out"
+# Nor when the later one is annotated, which Python honours and a pattern for the strict form skips.
+set_record "$E PASS $bump" "$S PASS $bump"
+{ printf '__version__ = "9.12"\n'; grep -v '^__version__' "$WORK/rec/src/app/__init__.py"
+  printf '__version__: str = "9.10"\n'; } > "$WORK/twice.py"
+cp "$WORK/twice.py" "$WORK/rec/src/app/__init__.py"
+rec_commit "an annotated second version" src/app/__init__.py
+package_rec refuse "no single __version__" "an annotated second version, read by the review check"
+status=0
+out="$(sh "$WORK/rec/scripts/check-baseline.sh" "$(head_of_rec)" src 2>&1)" || status=$?
+expect refuse "no single __version__" "an annotated second version, read by the baseline check" \
+  "$status" "$out"
+# A version equal as numbers but not as text is the baseline's version, not a lower one.
+set_baseline "upload $bump 9.10 failed"
+sed 's/^__version__ = .*/__version__ = "9.10.0"/' "$WORK/rec/src/app/__init__.py" > "$WORK/version.py"
+cp "$WORK/version.py" "$WORK/rec/src/app/__init__.py"
+rec_commit "version 9.10.0" src/app/__init__.py
+printf '%s\n' "$E PASS $(head_of_rec)" "$S PASS $(head_of_rec)" >> "$WORK/rec/scripts/upload-record.txt"
+rec_commit "the reviews of 9.10.0" scripts/upload-record.txt
+package_rec refuse "version 9.10.0 is the baseline's: bump the version" "a version equal to the baseline's as numbers"
 
 # A PASS against a tree that has since moved refuses, until the moved tree is reviewed.
 set_record "$E PASS $bump" "$S PASS $bump"

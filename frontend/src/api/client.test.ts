@@ -125,11 +125,69 @@ describe("the API client", () => {
       refresh(config);
       return { status: 200 };
     });
-    apiClient.defaults.adapter = adapter(() => ({ status: 401 }));
+    let sent = 0;
+    apiClient.defaults.adapter = adapter(() => {
+      sent += 1;
+      return { status: 401 };
+    });
 
     await expect(apiClient.get("/a")).rejects.toThrow("status code 401");
     expect(refresh).not.toHaveBeenCalled();
+    expect(sent).toBe(1);
     expect(assign).toHaveBeenCalledWith("/login");
+  });
+
+  it("refreshes once only, then signs out, when the retry is refused too", async () => {
+    localStorage.setItem(ACCESS_TOKEN_KEY, "old-acc");
+    localStorage.setItem(REFRESH_TOKEN_KEY, "old-ref");
+    let refreshes = 0;
+    // A second refresh is refused, so a client that loops stops and fails the count.
+    axios.defaults.adapter = adapter(() => {
+      refreshes += 1;
+      if (refreshes > 1) return { status: 500 };
+      return { status: 200, data: { access_token: "new-acc", refresh_token: "new-ref" } };
+    });
+    apiClient.defaults.adapter = adapter(() => ({ status: 401 }));
+
+    await expect(apiClient.get("/a")).rejects.toThrow("status code 401");
+    expect(refreshes).toBe(1);
+    expect(assign).toHaveBeenCalledWith("/login");
+  });
+
+  it("never refreshes for a refused auth call, even with a refresh token held", async () => {
+    localStorage.setItem(REFRESH_TOKEN_KEY, "old-ref");
+    const refresh = vi.fn();
+    axios.defaults.adapter = adapter((config) => {
+      refresh(config);
+      return { status: 200, data: { access_token: "new-acc", refresh_token: "new-ref" } };
+    });
+    apiClient.defaults.adapter = adapter(() => ({ status: 401 }));
+
+    await expect(apiClient.post("/auth/logout", {})).rejects.toThrow("status code 401");
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it("keeps the caller's headers on the retry, replacing only the token", async () => {
+    localStorage.setItem(ACCESS_TOKEN_KEY, "old-acc");
+    localStorage.setItem(REFRESH_TOKEN_KEY, "old-ref");
+    axios.defaults.adapter = adapter(() => ({
+      status: 200,
+      data: { access_token: "new-acc", refresh_token: "new-ref" },
+    }));
+    const retried: { trace?: string; type?: string; auth?: string }[] = [];
+    apiClient.defaults.adapter = adapter((config) => {
+      if (bearer(config) !== "Bearer new-acc") return { status: 401 };
+      retried.push({
+        trace: config.headers.get("X-Trace")?.toString(),
+        type: config.headers.get("Content-Type")?.toString(),
+        auth: bearer(config),
+      });
+      return { status: 200, data: "done" };
+    });
+
+    await apiClient.post("/a", { x: 1 }, { headers: { "X-Trace": "t-1" } });
+
+    expect(retried).toEqual([{ trace: "t-1", type: "application/json", auth: "Bearer new-acc" }]);
   });
 
   it("never tries to refresh a failed sign-in", async () => {

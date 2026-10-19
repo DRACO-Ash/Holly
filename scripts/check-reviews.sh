@@ -40,6 +40,8 @@ GIT_CONFIG_COUNT=1
 GIT_CONFIG_KEY_0=core.commitGraph
 GIT_CONFIG_VALUE_0=false
 export GIT_NO_REPLACE_OBJECTS GIT_GRAFT_FILE GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0
+# Settings passed in GIT_CONFIG_PARAMETERS (git -c) would win over the ones above.
+unset GIT_CONFIG_PARAMETERS
 
 refuse() { echo "packaging refused: $1"; exit 1; }
 short() { printf '%.7s' "$1"; }
@@ -71,9 +73,12 @@ git -C "$ROOT" cat-file -e "$at:$RECORD" 2>/dev/null || refuse "$RECORD is not c
 odd="$(git -C "$ROOT" show "$at:$RECORD" | LC_ALL=C tr -d '\11\12\40-\176' | wc -c | tr -d ' ')"
 [ "$odd" = 0 ] || refuse "$RECORD holds $odd bytes outside printable ASCII and tab"
 record="$(git -C "$ROOT" show "$at:$RECORD")"
-version="$(git -C "$ROOT" show "$at:src/app/__init__.py" \
-  | sed -n 's/^__version__ = "\([0-9][0-9.]*\)"$/\1/p')"
-[ -n "$version" ] || refuse "no __version__ in src/app/__init__.py at $(short "$at")"
+# Exactly one line starts with __version__, in the strict form: Python honours an annotated or a
+# later assignment that a pattern for the strict one would skip.
+version="$(git -C "$ROOT" show "$at:src/app/__init__.py" | awk '/^__version__/ { n++; v = $0 } END {
+      if (n == 1 && v ~ /^__version__ = "[0-9][0-9.]*"$/) { sub(/^__version__ = "/, "", v); sub(/"$/, "", v); print v }
+    }')"
+[ -n "$version" ] || refuse "no single __version__ in src/app/__init__.py at $(short "$at")"
 # A local textconv could hide a version change from -G, and a signature line would garble the id.
 bump="$(git -C "$ROOT" log -1 --no-textconv --no-show-signature --format=%H -G'^__version__ = ' \
   "$at" -- src/app/__init__.py)"

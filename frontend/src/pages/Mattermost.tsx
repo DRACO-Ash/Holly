@@ -62,7 +62,7 @@ export default function MattermostPage() {
       <section className="card">
         <form onSubmit={onFilterSubmit} className="filter-form">
           <label>
-            Channel ID (filter)
+            Channel ID (filter){" "}
             <input
               type="text"
               value={channelInput}

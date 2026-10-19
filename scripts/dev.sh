@@ -2,7 +2,7 @@
 # dev.sh :: run Holly locally with the dashboard: `sh scripts/dev.sh`.
 # 1. Starts the local PostgreSQL (infra/docker-compose.yml) when Docker is available.
 # 2. Applies the migrations, as the container does at start.
-# 3. Runs the API on PORT or 8080 and the dashboard's dev server on http://localhost:3000,
+# 3. Runs the API on PORT or 8080 and the dashboard's dev server on http://127.0.0.1:3000,
 #    which sends /api to the API. Ctrl-C stops both.
 # Settings come from your shell or a local .env (docs/developer/setup.md lists them). The
 # database password is read from the environment and never written anywhere by this script.

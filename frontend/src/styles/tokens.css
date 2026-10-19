@@ -538,10 +538,6 @@ code {
   width: fit-content;
 }
 
-.rollup-count {
-  align-self: center;
-}
-
 [data-scanlines="on"] .crt-content h1,
 [data-scanlines="on"] .rollup-count {
   position: relative;
@@ -942,7 +938,7 @@ button:disabled {
 .detail-grid dd {
   margin: 0;
   color: var(--color-text);
-  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .raw-json {
@@ -992,7 +988,7 @@ button:disabled {
   font-family: var(--font-family);
   font-size: 0.9rem;
   white-space: pre-wrap;
-  word-break: break-word;
+  overflow-wrap: anywhere;
   color: var(--color-text);
 }
 
@@ -1247,6 +1243,7 @@ button:disabled {
 }
 
 .rollup-count {
+  align-self: center;
   font-family: var(--font-display);
   font-size: 2.4rem;
   font-weight: 400;
@@ -1311,16 +1308,21 @@ button:disabled {
   gap: var(--space-2);
 }
 
+/* Each item is one link to its notice: it keeps the body text's colour, with no underline, and
+   shows the phosphor focus ring like every control. */
 .action-feed-item {
+  display: block;
+  color: var(--color-text);
+  text-decoration: none;
   background: var(--color-bg);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   padding: var(--space-4);
-  cursor: pointer;
   transition: all 0.15s ease;
 }
 
 .action-feed-item:hover {
+  color: var(--color-text);
   border-color: var(--color-accent-dim);
   background: var(--color-surface);
   transform: translateY(-1px);
@@ -1547,7 +1549,7 @@ button:disabled {
   border-radius: var(--radius-sm);
   padding: var(--space-4);
   white-space: pre-wrap;
-  word-break: break-word;
+  overflow-wrap: anywhere;
   color: var(--color-text);
   max-height: 600px;
   overflow: auto;

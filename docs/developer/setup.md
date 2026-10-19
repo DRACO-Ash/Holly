@@ -61,7 +61,7 @@ Every setting Holly reads. Names are environment variable names. Secret values a
 
 | Setting | Purpose | Default | Required |
 |---------|---------|---------|----------|
-| `PORT` | Port Holly listens on, on `0.0.0.0`. A whole number from 1 to 65535 with no sign or leading zero; anything else stops the start. Environment only. | `8080` | No |
+| `PORT` | Port Holly listens on, on `0.0.0.0` in the container and `127.0.0.1` under `python -m app`. A whole number from 1 to 65535 with no sign or leading zero; anything else stops the start. Environment only. | `8080` | No |
 | `APP_ENV` | `production` or `development`. `development` allows `http://` UDL and Mattermost URLs and `UDL_VERIFY_SSL=false`. | `production` | No |
 | `APP_SECRET_KEY` | Signs and verifies sign-in tokens. At least 32 characters. Changing it signs every user out. Secret. | none | Yes |
 | `APP_ALLOWED_ORIGINS` | Browser origins allowed to call the API from another origin, as a JSON list such as `["https://ops.example"]`. `*` is refused. The dashboard is served from Holly's own origin and needs none. | `[]` | No |
@@ -225,7 +225,7 @@ No route or command creates an `analyst` or `operator` account; see the [operato
 sh scripts/dev.sh
 ```
 
-It starts the local database when Docker is available and `POSTGRES_PASSWORD` is set, applies the migrations, runs the API on `PORT` or 8080, and runs the dashboard's development server on `http://localhost:3000`, which sends `/api` to `http://localhost:8080`. Ctrl-C stops both. Uploaded procedures go to `data/procedures` in the checkout unless `PROCEDURE_STORAGE_PATH` is set. The dashboard's proxy target is fixed at port 8080 in [frontend/vite.config.ts](../../frontend/vite.config.ts), so leave `PORT` unset when you use `dev.sh`.
+It starts the local database when Docker is available and `POSTGRES_PASSWORD` is set, applies the migrations, runs the API on `PORT` or 8080, and runs the dashboard's development server on `http://127.0.0.1:3000`, which sends `/api` to `http://127.0.0.1:8080`; both listen on this machine only. Ctrl-C stops both. Uploaded procedures go to `data/procedures` in the checkout unless `PROCEDURE_STORAGE_PATH` is set. The dashboard's proxy target is fixed at port 8080 in [frontend/vite.config.ts](../../frontend/vite.config.ts), so leave `PORT` unset when you use `dev.sh`.
 
 To run the API alone:
 
@@ -233,7 +233,7 @@ To run the API alone:
 PYTHONPATH=src .venv/bin/python -m app
 ```
 
-It listens on `0.0.0.0`, on `PORT` or 8080. Without a built dashboard, `/` answers `{"service": "holly", "status": "ok"}`; `curl http://localhost:8080/healthz` prints `ok`.
+It listens on `127.0.0.1`, on `PORT` or 8080; the container listens on `0.0.0.0`. Without a built dashboard, `/` answers `{"service": "holly", "status": "ok"}`; `curl http://localhost:8080/healthz` prints `ok`.
 
 To run the dashboard's development server alone, `cd frontend && npm run dev`.
 

@@ -23,14 +23,14 @@ export function unlockAudio(): void {
   // Must be called from a user-initiated event handler the first time;
   // afterwards we can produce sounds whenever we like.
   const c = getCtx();
-  if (c && c.state === "suspended") {
+  if (c?.state === "suspended") {
     void c.resume();
   }
 }
 
 function beep(frequency: number, durationMs: number, gainAt = 0.18): void {
   const c = getCtx();
-  if (!c || c.state !== "running") return;
+  if (c?.state !== "running") return;
   const osc = c.createOscillator();
   const gain = c.createGain();
   osc.connect(gain);

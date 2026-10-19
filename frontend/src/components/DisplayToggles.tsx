@@ -7,7 +7,7 @@ interface DisplayTogglesProps {
 
 // The two screen effects of the Holly design document, switched per analyst. When the operating
 // system asks for reduced motion, flicker is off and its box is greyed out, saying why.
-export default function DisplayToggles({ prefs, onChange }: DisplayTogglesProps) {
+export default function DisplayToggles({ prefs, onChange }: Readonly<DisplayTogglesProps>) {
   const reduceMotion =
     typeof window !== "undefined" &&
     window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;

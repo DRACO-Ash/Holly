@@ -6,7 +6,8 @@ export interface EventTimer {
   label: string;
   target_time: string;
   pre_alert_minutes: number;
-  recurrence: TimerRecurrence | string;
+  // A TimerRecurrence as a rule; the server types it as any string.
+  recurrence: string;
   pre_alert_fired_at: string | null;
   dismissed_at: string | null;
   dismissed_by: string | null;

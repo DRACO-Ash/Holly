@@ -8,7 +8,9 @@
 # build-compliant-from-start checklist (section 3), by security-hardening, or by Holly's layout:
 #   - No `# syntax=` directive: it would pull a floating frontend image on every build, and
 #     nothing here needs one. The base is pinned to the python:3.12-slim multi-platform index
-#     digest (Python 3.12.15 on Debian trixie). Refresh it deliberately; never float the tag.
+#     digest (Python 3.12.15 on Debian trixie), named by the digest alone, with the tag it was
+#     taken from in a comment, since a tag beside a digest is ignored and misleads (SonarQube
+#     S8431). Refresh it deliberately; never float the tag.
 #   - Hygiene moves into a `prep` stage: OS packages patched; pip removed from the base and the
 #     venv; only src/ copied, root-owned and not group- or world-writable; then the
 #     setuid/setgid sweep over files AND directories as the LAST mutation, failing closed,
@@ -22,13 +24,17 @@
 #     maintained replacement for the deprecated uvicorn.workers module.
 #   - The dashboard is built from frontend/ in its own stage, from the committed lockfile, and
 #     only its static output is copied into app/static, so neither Node nor npm nor any
-#     node_modules reach the image. The node base is pinned to the node:22-alpine index digest
-#     (Node 22.23.3); refresh it deliberately, as with the Python base.
+#     node_modules reach the image. The node base is pinned the same way, to the node:22-alpine
+#     index digest (Node 22.23.3); refresh it deliberately, as with the Python base.
+#   - pip installs wheels only (--only-binary :all:), so no package's build step runs at
+#     install time (SonarQube S8541); every runtime package publishes a wheel for CPython 3.12
+#     on Linux x86_64.
 #   - No HEALTHCHECK: the platform runs on Kubernetes, which ignores it and probes the health
 #     paths itself.
 
 # ---- dashboard: compile the React app to static files ----
-FROM node:22-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402 AS dashboard
+# node:22-alpine
+FROM node@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402 AS dashboard
 WORKDIR /frontend
 COPY frontend/package.json frontend/package-lock.json ./
 # Install scripts stay off: nothing in the tree needs one, and none may run at build time.
@@ -37,16 +43,18 @@ COPY frontend/ ./
 RUN npm run build
 
 # ---- build: install from the hash-locked runtime requirements into an isolated venv ----
-FROM python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1 AS build
+# python:3.12-slim
+FROM python@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1 AS build
 ENV PYTHONDONTWRITEBYTECODE=1 PIP_NO_CACHE_DIR=1
 WORKDIR /app
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 COPY requirements-runtime.txt .
-RUN pip install --require-hashes -r requirements-runtime.txt
+RUN pip install --only-binary :all: --require-hashes -r requirements-runtime.txt
 
 # ---- prep: every hygiene step, so the shipped stage can be one clean layer ----
-FROM python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1 AS prep
+# python:3.12-slim
+FROM python@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1 AS prep
 # Patch OS packages. Fail-open by design and in its own RUN: an offline runner may not reach the
 # Debian mirror, and a tolerated miss here must never swallow a mandatory step below.
 # --error-on=any makes a failed index fetch reach the warning instead of passing as "0 upgraded".

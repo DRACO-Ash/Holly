@@ -92,6 +92,12 @@ describe("the assistant panel", () => {
               rationale: "Why now",
             },
             { action: "Act soon", urgency: "medium", deadline: null, rationale: "Why soon" },
+            {
+              action: "Act by shift end",
+              urgency: "medium",
+              deadline: "by end of shift",
+              rationale: "Why by shift end",
+            },
             { action: "Act later", urgency: "low", deadline: null, rationale: "Why later" },
             { action: "Act maybe", urgency: "unclear", deadline: null, rationale: "Why maybe" },
           ],
@@ -110,12 +116,14 @@ describe("the assistant panel", () => {
     expect(actions.map((li) => li.querySelector(".urgency-pill")?.className)).toEqual([
       "urgency-pill urgency-high",
       "urgency-pill urgency-medium",
+      "urgency-pill urgency-medium",
       "urgency-pill urgency-low",
       "urgency-pill",
     ]);
     expect(within(actions[0]).getByText("By 2026-01-02 06:00:00")).toBeTruthy();
     expect(within(actions[0]).getByText("Why now")).toBeTruthy();
     expect(actions[1].querySelector(".action-deadline")).toBeNull();
+    expect(within(actions[2]).getByText("By by end of shift")).toBeTruthy();
     expect(screen.getByText("Synthetic procedure")).toBeTruthy();
     expect(screen.getByText("Fits")).toBeTruthy();
     expect(screen.getByText("Synthetic question?")).toBeTruthy();

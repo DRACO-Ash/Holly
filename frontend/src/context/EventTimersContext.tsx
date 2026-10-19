@@ -41,6 +41,13 @@ interface EventTimersContextValue {
 
 const Ctx = createContext<EventTimersContextValue | null>(null);
 
+// A server's answer stays generic; only an error raised in the browser shows its own message.
+function loadErrorMessage(err: unknown): string {
+  if (err && typeof err === "object" && "response" in err) return "Could not load timers.";
+  if (err instanceof Error) return err.message;
+  return "Could not load timers.";
+}
+
 function classify(timers: EventTimer[]) {
   const now = Date.now();
   const firing: EventTimer[] = [];
@@ -65,7 +72,7 @@ function classify(timers: EventTimer[]) {
   return { firing, preAlerting, upcoming, dismissed };
 }
 
-export function EventTimersProvider({ children }: { children: ReactNode }) {
+export function EventTimersProvider({ children }: Readonly<{ children: ReactNode }>) {
   const [timers, setTimers] = useState<EventTimer[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -87,13 +94,7 @@ export function EventTimersProvider({ children }: { children: ReactNode }) {
       setTimers(data.items);
       setError(null);
     } catch (err) {
-      const message =
-        err && typeof err === "object" && "response" in err
-          ? "Could not load timers."
-          : err instanceof Error
-            ? err.message
-            : "Could not load timers.";
-      setError(message);
+      setError(loadErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -230,23 +231,43 @@ export function EventTimersProvider({ children }: { children: ReactNode }) {
     alertedPreAlertIdsRef.current.delete(id);
   }, []);
 
-  const value: EventTimersContextValue = {
-    timers,
-    firing,
-    preAlerting,
-    upcoming,
-    dismissed,
-    loading,
-    error,
-    audioEnabled,
-    notificationPermission,
-    enableAudio,
-    refresh,
-    createTimer,
-    acknowledgePreAlert: acknowledgePreAlertById,
-    dismissTimer: dismissTimerById,
-    deleteTimer: deleteTimerById,
-  };
+  // Memoised, so a consumer renders again only when something it can read has changed.
+  const value = useMemo<EventTimersContextValue>(
+    () => ({
+      timers,
+      firing,
+      preAlerting,
+      upcoming,
+      dismissed,
+      loading,
+      error,
+      audioEnabled,
+      notificationPermission,
+      enableAudio,
+      refresh,
+      createTimer,
+      acknowledgePreAlert: acknowledgePreAlertById,
+      dismissTimer: dismissTimerById,
+      deleteTimer: deleteTimerById,
+    }),
+    [
+      timers,
+      firing,
+      preAlerting,
+      upcoming,
+      dismissed,
+      loading,
+      error,
+      audioEnabled,
+      notificationPermission,
+      enableAudio,
+      refresh,
+      createTimer,
+      acknowledgePreAlertById,
+      dismissTimerById,
+      deleteTimerById,
+    ],
+  );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

@@ -1,4 +1,12 @@
-import { createContext, ReactNode, useContext, useEffect, useState } from "react";
+import {
+  createContext,
+  ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { ACCESS_TOKEN_KEY, REFRESH_TOKEN_KEY } from "../api/client";
 import { getCurrentUser, login as loginApi, logout as logoutApi } from "../api/auth";
 import type { User } from "../types";
@@ -12,7 +20,7 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
-export function AuthProvider({ children }: { children: ReactNode }) {
+export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
   const [accessToken, setAccessToken] = useState<string | null>(() =>
     localStorage.getItem(ACCESS_TOKEN_KEY),
   );
@@ -36,14 +44,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, [accessToken]);
 
-  async function login(username: string, password: string) {
+  const login = useCallback(async (username: string, password: string) => {
     const tokens = await loginApi({ username, password });
     localStorage.setItem(ACCESS_TOKEN_KEY, tokens.access_token);
     localStorage.setItem(REFRESH_TOKEN_KEY, tokens.refresh_token);
     setAccessToken(tokens.access_token);
-  }
+  }, []);
 
-  async function logout() {
+  const logout = useCallback(async () => {
     const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
     if (refreshToken) {
       try {
@@ -58,13 +66,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem(REFRESH_TOKEN_KEY);
     setAccessToken(null);
     setUser(null);
-  }
+  }, []);
 
-  return (
-    <AuthContext.Provider value={{ isAuthenticated: !!accessToken, user, login, logout }}>
-      {children}
-    </AuthContext.Provider>
+  // Memoised, so a consumer renders again only when the session it reads has changed.
+  const value = useMemo(
+    () => ({ isAuthenticated: !!accessToken, user, login, logout }),
+    [accessToken, user, login, logout],
   );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth(): AuthContextValue {

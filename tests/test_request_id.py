@@ -1,6 +1,6 @@
-"""A request id on every response and every log line. A client's id is reused only when it is
-a plain token; anything else is replaced, so a caller cannot write arbitrary text into the
-logs or the response headers."""
+"""A request id on every response but a CORS preflight, and every log line. A client's id is
+reused only when it is a plain token; anything else is replaced, so a caller cannot write
+arbitrary text into the logs or the response headers."""
 
 import json
 import uuid

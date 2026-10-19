@@ -1,5 +1,6 @@
 """Route contract: / and the health paths answer 200, unauthenticated, touching nothing; every
-other route is in a reviewed inventory; every response carries the security headers.
+other route is in a reviewed inventory; every response but a CORS preflight carries the
+security headers.
 
 Every expected value here is a literal on purpose. The contract comes from CLAUDE.md, the
 platform and security-hardening, not from the code under test, so loosening a policy or
@@ -21,6 +22,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from app import __version__, factory
+from app.config import get_settings
 from app.core.body_limit import LARGE_BODY_ROUTES
 from app.core.rate_limit import GLOBAL_LIMIT
 from app.dependencies import get_current_user
@@ -114,6 +116,43 @@ def test_every_response_carries_a_request_id(client: TestClient) -> None:
     assert client.get("/healthz", headers={"X-Request-ID": "trace-42"}).headers["x-request-id"] == (
         "trace-42"
     )
+
+
+PREFLIGHT = {"Origin": "https://ops.example", "Access-Control-Request-Method": "POST"}
+
+
+def test_a_preflight_is_refused_while_no_origin_is_allowed(client: TestClient) -> None:
+    headers = {**PREFLIGHT, "Access-Control-Request-Headers": "X-Probe-<b>"}
+    response = client.options("/api/v1/auth/login", headers=headers)
+    assert response.status_code == 400
+    assert "access-control-allow-origin" not in response.headers
+    # A fixed answer: nothing the client sent comes back.
+    assert response.content.startswith(b"Disallowed CORS ")
+    assert b"X-Probe" not in response.content
+    assert all("x-probe" not in value.lower() for value in response.headers.values())
+
+
+def test_cors_sits_outermost_for_an_allowed_origin(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("APP_ALLOWED_ORIGINS", '["https://ops.example"]')
+    get_settings.cache_clear()
+    with TestClient(create_app(static_dir=tmp_path / "not-built")) as cors_client:
+        preflight = cors_client.options("/api/v1/auth/login", headers=PREFLIGHT)
+        refused = cors_client.get(
+            "/api/v1/notifications", headers={"Origin": "https://ops.example"}
+        )
+    # The preflight is answered before the inner layers; a refusal from inside carries both
+    # the CORS headers and the security headers.
+    assert preflight.status_code == 200
+    assert preflight.headers["access-control-allow-origin"] == "https://ops.example"
+    assert "x-request-id" not in preflight.headers
+    assert "content-security-policy" not in preflight.headers
+    assert preflight.content == b"OK"
+    assert refused.status_code == 401
+    assert refused.headers["access-control-allow-origin"] == "https://ops.example"
+    assert refused.headers["x-request-id"]
+    assert_security_headers(refused)
 
 
 def test_a_server_error_is_generic_and_keeps_the_security_headers(tmp_path: Path) -> None:
@@ -423,6 +462,19 @@ class TestTheCoarseRateLimit:
         response = client.get("/status")
         assert response.status_code == 429
         assert int(response.headers["retry-after"]) >= 1
+        assert_security_headers(response)
+
+    def test_a_429_to_an_allowed_origin_carries_the_cors_headers(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("APP_ALLOWED_ORIGINS", '["https://ops.example"]')
+        get_settings.cache_clear()
+        with TestClient(create_app(static_dir=tmp_path / "not-built")) as cors_client:
+            for _ in range(GLOBAL_LIMIT.limit):
+                GLOBAL_LIMIT.record("testclient")
+            response = cors_client.get("/status", headers={"Origin": "https://ops.example"})
+        assert response.status_code == 429
+        assert response.headers["access-control-allow-origin"] == "https://ops.example"
         assert_security_headers(response)
 
     @pytest.mark.parametrize("path", ["/", *PROBE_PATHS])

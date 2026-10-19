@@ -284,7 +284,7 @@ class InvalidSettingsError(RuntimeError):
 
 def _problems(exc: ValidationError) -> str:
     problems = []
-    for error in exc.errors(include_url=False, include_context=False, include_input=False):
+    for error in exc.errors():
         message = error["msg"].removeprefix("Value error, ")
         location = error["loc"]
         problems.append(f"{str(location[0]).upper()}: {message}" if location else message)

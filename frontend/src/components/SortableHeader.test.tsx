@@ -29,6 +29,8 @@ describe("a sortable column header", () => {
     const button = header("date", "asc", onChange);
     expect(button.className).toBe("sort-header");
     expect(button.textContent).toBe("Name");
+    expect(button.closest("th")!.hasAttribute("aria-sort")).toBe(false);
+    expect(button.hasAttribute("aria-sort")).toBe(false);
     fireEvent.click(button);
     expect(onChange).toHaveBeenCalledWith("name");
   });
@@ -37,10 +39,13 @@ describe("a sortable column header", () => {
     const ascending = header("name", "asc");
     expect(ascending.className).toBe("sort-header active");
     expect(ascending.textContent).toBe("Name▲");
+    expect(screen.getByRole("columnheader").getAttribute("aria-sort")).toBe("ascending");
+    expect(ascending.hasAttribute("aria-sort")).toBe(false);
   });
 
   it("shows a descending order", () => {
     const descending = header("name", "desc");
     expect(descending.textContent).toBe("Name▼");
+    expect(screen.getByRole("columnheader").getAttribute("aria-sort")).toBe("descending");
   });
 });

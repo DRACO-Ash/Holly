@@ -64,7 +64,7 @@ The application is the `app` package under [src/app/](../../src/app/), in four l
 
 Cross-cutting concerns sit in [src/app/core/](../../src/app/core/) (structured logging, tokens and passwords, rate limits, the request body cap, request ids, single-flight jobs), [src/app/db/](../../src/app/db/) (engine and sessions), [src/app/config.py](../../src/app/config.py) (every setting, validated at boot) and [src/app/cli/](../../src/app/cli/) (the admin and audit-verification commands).
 
-`create_app` in [src/app/factory.py](../../src/app/factory.py) builds the application and never listens; [src/app/main.py](../../src/app/main.py) is the entry point gunicorn loads. A request passes the security headers, the request id, the coarse rate limit, Cross-Origin Resource Sharing (CORS) and the body-size cap, in that order. The interactive API documentation (`/docs`, `/redoc`, `/openapi.json`) is off.
+`create_app` in [src/app/factory.py](../../src/app/factory.py) builds the application and never listens; [src/app/main.py](../../src/app/main.py) is the entry point gunicorn loads. A request passes Cross-Origin Resource Sharing (CORS), the security headers, the request id, the coarse rate limit and the body-size cap, in that order; CORS answers a preflight itself, before the rest. The interactive API documentation (`/docs`, `/redoc`, `/openapi.json`) is off.
 
 ### Dashboard (React)
 
@@ -141,7 +141,7 @@ The Daily Operations Dashboard's Docker Compose stack (`backend`, `frontend`, `d
 
 ## Security boundaries
 
-● **Internet boundary:** the platform ingress terminates TLS (details `TBC, re-verify`). Holly sets its own security headers and Content Security Policy (CSP) on every response.
+● **Internet boundary:** the platform ingress terminates TLS (details `TBC, re-verify`). Holly sets its own security headers and Content Security Policy (CSP) on every response but a CORS preflight, which CORS answers before them.
 ● **Public paths:** the probes, `/status`, `/api/v1/health`, `/api/v1/health/detailed`, the sign-in, refresh and sign-out routes, and the dashboard's static files. Every other route under `/api/v1` requires a valid access token ([tests/test_app.py](../../tests/test_app.py)).
 ● **Authorisation:** `GET /api/v1/audit` requires the `operator` or `admin` role; every other signed-in route is open to any role.
 ● **Holly to database:** through the add-on's connection settings. Network isolation of the database is the platform's: `TBC, re-verify`.

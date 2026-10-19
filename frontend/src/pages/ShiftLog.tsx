@@ -29,7 +29,7 @@ interface NoteRowProps {
   onError: (msg: string) => void;
 }
 
-function NoteRow({ note, onSaved, onDeleted, onError }: NoteRowProps) {
+function NoteRow({ note, onSaved, onDeleted, onError }: Readonly<NoteRowProps>) {
   const [editing, setEditing] = useState(false);
   const [showRaw, setShowRaw] = useState(false);
   const [editText, setEditText] = useState(note.polished_text ?? note.raw_text);
@@ -136,6 +136,11 @@ function NoteRow({ note, onSaved, onDeleted, onError }: NoteRowProps) {
       )}
     </li>
   );
+}
+
+function summaryButtonLabel(generating: boolean, hasSummary: boolean): string {
+  if (generating) return "Composing...";
+  return hasSummary ? "Regenerate" : "Generate";
 }
 
 function formatShiftDateLabel(iso: string): string {
@@ -262,7 +267,7 @@ export default function ShiftLogPage() {
         </div>
         <div className="shift-toolbar">
           <label className="shift-date-picker">
-            Shift date
+            Shift date{" "}
             <input
               type="date"
               value={shiftDate}
@@ -350,7 +355,7 @@ export default function ShiftLogPage() {
         <div className="shift-summary-head">
           <h2>End-of-shift narrative</h2>
           <button type="button" onClick={onGenerateSummary} disabled={generating || !hasNotes}>
-            {generating ? "Composing..." : summary ? "Regenerate" : "Generate"}
+            {summaryButtonLabel(generating, summary !== null)}
           </button>
         </div>
         {!hasNotes && <p className="muted">Add at least one entry to generate a narrative.</p>}

@@ -2,14 +2,19 @@ import { useEffect, useState } from "react";
 import { getEvaluation, runEvaluation } from "../api/assistant";
 import type { AssistantEvaluation, NextAction } from "../types";
 import { extractErrorMessage } from "../utils/errors";
+import { withContentKeys } from "../utils/keys";
 
 interface AssistantPanelProps {
   notificationId: string;
 }
 
+// The model writes the deadline, so it may not be a date at all ("by end of shift"): such a value
+// is shown as written, never passed to toISOString, which would throw and blank the panel.
 function formatDateTime(value: string | null | undefined): string {
   if (!value) return "n/a";
-  return new Date(value).toISOString().replace("T", " ").slice(0, 19);
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toISOString().replace("T", " ").slice(0, 19);
 }
 
 function urgencyClass(urgency: string): string {
@@ -20,7 +25,7 @@ function urgencyClass(urgency: string): string {
   return "urgency-pill";
 }
 
-export default function AssistantPanel({ notificationId }: AssistantPanelProps) {
+export default function AssistantPanel({ notificationId }: Readonly<AssistantPanelProps>) {
   const [evaluation, setEvaluation] = useState<AssistantEvaluation | null>(null);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
@@ -115,18 +120,20 @@ export default function AssistantPanel({ notificationId }: AssistantPanelProps) 
         <>
           <h3>Next actions</h3>
           <ul className="assistant-actions">
-            {actions.map((a, idx) => (
-              <li key={idx}>
-                <div className="action-head">
-                  <span className={urgencyClass(a.urgency)}>{a.urgency}</span>
-                  <strong>{a.action}</strong>
-                </div>
-                {a.deadline && (
-                  <div className="action-deadline">By {formatDateTime(a.deadline)}</div>
-                )}
-                <div className="action-rationale">{a.rationale}</div>
-              </li>
-            ))}
+            {withContentKeys(actions, (a) => `${a.action}\n${a.rationale}`).map(
+              ({ key, item: a }) => (
+                <li key={key}>
+                  <div className="action-head">
+                    <span className={urgencyClass(a.urgency)}>{a.urgency}</span>
+                    <strong>{a.action}</strong>
+                  </div>
+                  {a.deadline && (
+                    <div className="action-deadline">By {formatDateTime(a.deadline)}</div>
+                  )}
+                  <div className="action-rationale">{a.rationale}</div>
+                </li>
+              ),
+            )}
           </ul>
         </>
       ) : (
@@ -137,8 +144,8 @@ export default function AssistantPanel({ notificationId }: AssistantPanelProps) 
         <>
           <h3>Applicable procedures</h3>
           <ul className="assistant-procedures">
-            {procedures.map((p, idx) => (
-              <li key={idx}>
+            {withContentKeys(procedures, (p) => p.name).map(({ key, item: p }) => (
+              <li key={key}>
                 <strong>{p.name}</strong>
                 <div className="muted">{p.reason}</div>
               </li>
@@ -151,8 +158,8 @@ export default function AssistantPanel({ notificationId }: AssistantPanelProps) 
         <>
           <h3>Open questions</h3>
           <ul>
-            {questions.map((q, idx) => (
-              <li key={idx}>{q}</li>
+            {withContentKeys(questions, (q) => q).map(({ key, item: q }) => (
+              <li key={key}>{q}</li>
             ))}
           </ul>
         </>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { getFeed } from "../api/assistant";
 import type { AssistantFeedItem } from "../types";
 import { extractErrorMessage } from "../utils/errors";
@@ -35,18 +35,17 @@ function urgencyLabel(urgency: string): string {
 }
 
 function feedBucketsByUrgency(items: AssistantFeedItem[]): Map<string, AssistantFeedItem[]> {
-  const order = ["high", "medium", "low", "none", "pending"];
+  const order = new Set(["high", "medium", "low", "none", "pending"]);
   const map = new Map<string, AssistantFeedItem[]>();
   for (const k of order) map.set(k, []);
   for (const item of items) {
-    const key = order.includes(item.urgency) ? item.urgency : "none";
+    const key = order.has(item.urgency) ? item.urgency : "none";
     map.get(key)!.push(item);
   }
   return map;
 }
 
 export default function Dashboard() {
-  const navigate = useNavigate();
   const [items, setItems] = useState<AssistantFeedItem[]>([]);
   const [windowHours, setWindowHours] = useState(120);
   const [loading, setLoading] = useState(true);
@@ -172,40 +171,40 @@ export default function Dashboard() {
                     const n = it.notification;
                     const summary = it.evaluation?.summary;
                     return (
-                      <li
-                        key={n.id}
-                        className="action-feed-item"
-                        onClick={() => navigate(`/notifications/${n.id}`)}
-                      >
-                        <div className="action-feed-head">
-                          <strong>{n.notso_identifier ?? n.notice_id ?? "Notification"}</strong>
-                          <span className="muted">{formatDateTime(n.udl_created_at)}</span>
-                        </div>
-                        {n.event_class && <div className="action-feed-class">{n.event_class}</div>}
-                        {it.event_summary && (
-                          <p className="action-feed-evolution">
-                            <span className="evolution-label">
-                              Event evolution
-                              {it.event_publication_count && it.event_publication_count > 1 && (
-                                <> &middot; {it.event_publication_count} publications</>
-                              )}
-                            </span>
-                            {it.event_summary}
-                          </p>
-                        )}
-                        {summary && <p className="action-feed-summary">{summary}</p>}
-                        {it.top_action && (
-                          <div className="action-feed-action">
-                            <strong>Next:</strong> {it.top_action}
+                      <li key={n.id}>
+                        <Link className="action-feed-item" to={`/notifications/${n.id}`}>
+                          <div className="action-feed-head">
+                            <strong>{n.notso_identifier ?? n.notice_id ?? "Notification"}</strong>
+                            <span className="muted">{formatDateTime(n.udl_created_at)}</span>
                           </div>
-                        )}
-                        {bucket === "pending" && (
-                          <div className="muted">
-                            {it.assistant_cleared
-                              ? "Awaiting assistant analysis..."
-                              : "Not sent to the assistant: its classification marking is not cleared."}
-                          </div>
-                        )}
+                          {n.event_class && (
+                            <div className="action-feed-class">{n.event_class}</div>
+                          )}
+                          {it.event_summary && (
+                            <p className="action-feed-evolution">
+                              <span className="evolution-label">
+                                Event evolution
+                                {it.event_publication_count && it.event_publication_count > 1 && (
+                                  <> &middot; {it.event_publication_count} publications</>
+                                )}
+                              </span>
+                              {it.event_summary}
+                            </p>
+                          )}
+                          {summary && <p className="action-feed-summary">{summary}</p>}
+                          {it.top_action && (
+                            <div className="action-feed-action">
+                              <strong>Next:</strong> {it.top_action}
+                            </div>
+                          )}
+                          {bucket === "pending" && (
+                            <div className="muted">
+                              {it.assistant_cleared
+                                ? "Awaiting assistant analysis..."
+                                : "Not sent to the assistant: its classification marking is not cleared."}
+                            </div>
+                          )}
+                        </Link>
                       </li>
                     );
                   })}

@@ -5,8 +5,10 @@
 # line:
 #   upload <full 40-hex id of the commit packaged> <__version__ there> <passed|failed|pending> [# note]
 # pending means handed over with the platform's outcome not yet known; a later line records the
-# outcome. The last line is the baseline, whatever its outcome. The note names the zip, the merge
-# request and the stage that failed. Packaging for upload refuses unless the record is committed
-# and its last line reads, and prints the files the upload changes since that baseline
-# (scripts/check-baseline.sh). Printable ASCII and tabs only. The file sits outside the upload.
+# outcome. The last line is the baseline, whatever its outcome. The note names the zip by the first
+# 8 hex digits of its SHA-256, the merge request and the stage that failed. Packaging for upload
+# refuses unless the record is committed and its last line reads, and prints the files the upload
+# changes since that baseline (scripts/check-baseline.sh). Printable ASCII and tabs only. The
+# file sits outside the upload.
 upload dccfbdceb9bcb249303adcd7ffe7e15da0ae974a 0.4.0 failed # V0.4, zip ff5d3658, merge request 2: both test jobs failed at the test stage
+upload 56c55a99aa315feb6c1eada916a474e3ac2c84c7 0.5.0 failed # V0.5, zip d947cfea, merge request TBC, re-verify: the test stage passed; Code Quality failed it on 68 findings (5 bugs, 2 vulnerabilities, 61 code smells)

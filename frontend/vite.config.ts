@@ -5,12 +5,13 @@ import { bundledLicences } from "./bundled-licences.mjs";
 export default defineConfig({
   plugins: [react(), bundledLicences()],
   server: {
-    host: true,
+    // Loopback only, as the API under `python -m app`: neither is reachable from the network.
+    host: "127.0.0.1",
     port: 3000,
     strictPort: true,
     // The Holly server in development: `python -m app` listens on PORT or 8080.
     proxy: {
-      "/api": "http://localhost:8080",
+      "/api": "http://127.0.0.1:8080",
     },
   },
   test: {

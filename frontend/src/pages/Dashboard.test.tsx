@@ -121,7 +121,7 @@ describe("the dashboard", () => {
     expect(groups.map((g) => g.lastElementChild?.textContent)).toEqual(["1", "1", "1", "1", "1"]);
   });
 
-  it("shows each notice's evolution, summary and next action, and opens it when clicked", async () => {
+  it("shows each notice's evolution, summary and next action, and opens it by its link", async () => {
     vi.mocked(getFeed).mockResolvedValue(
       feed([
         item("h1", "high", {
@@ -146,7 +146,9 @@ describe("the dashboard", () => {
     expect(within(second).queryByText(/publications/)).toBeNull();
     const third = screen.getByText("NOTSO-h3").closest("li")!;
     expect(within(third).queryByText(/publications/)).toBeNull();
-    fireEvent.click(first);
+    const link = within(first).getByRole("link", { name: /NOTSO-h1/ });
+    expect(link.getAttribute("href")).toBe("/notifications/h1");
+    fireEvent.click(link);
     expect(landedAt()).toBe("/notifications/h1");
   });
 
