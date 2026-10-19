@@ -9,8 +9,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
+      # Full history: the upload nets' self-test forges a commit-graph, which git never writes in a
+      # shallow clone, and checkout fetches only the last commit by default.
       - uses: actions/checkout@v4
-        with: { persist-credentials: false }
+        with: { persist-credentials: false, fetch-depth: 0 }
       - uses: actions/setup-python@v5
         with: { python-version-file: ".python-version" }
       # The dashboard's toolchain; its packages come only from frontend/package-lock.json.

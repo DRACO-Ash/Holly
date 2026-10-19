@@ -19,6 +19,9 @@ set -eu
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
+# The record cases forge a commit-graph, which git never writes in a shallow clone.
+[ "$(git -C "$ROOT" rev-parse --is-shallow-repository)" = false ] \
+  || { echo "FAIL: the self-test needs a full clone: run git fetch --unshallow"; exit 1; }
 HOOK="$ROOT/.claude/hooks/secret-scan.mjs"
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/holly-net-test.XXXXXX")"
 trap 'rm -rf -- "$WORK"' EXIT
@@ -371,8 +374,8 @@ expect pass "a REHEARSAL, never the upload" "a rehearsal over an empty file" "$s
 echo "ok: a rehearsal replaces an empty file with the zip"
 # A rehearsal never writes into dist/ or below it, compared by inode, so neither a symlink to
 # dist/, nor a symlink with .., nor a symlinked dist/ can steer it there; it is never named like
-# the upload; and it never replaces a file that is not an earlier .zip rehearsal. A killed run's
-# temporary zip is cleared from a symlinked dist/ too.
+# the upload; and it replaces only an empty file, or a .zip file that already holds a zip. A
+# killed run's temporary zip is cleared from a symlinked dist/ too.
 ln -s "$WORK/repo/dist" "$WORK/dist-link"
 status=0
 out="$(sh "$WORK/repo/scripts/package-appstore.sh" --rehearsal "$WORK/dist-link/r.zip" 2>&1)" \
@@ -418,12 +421,17 @@ rm -- "$WORK/repo/dist"
 mv "$WORK/dist-elsewhere" "$WORK/repo/dist"
 status=0
 out="$(sh "$WORK/repo/scripts/package-appstore.sh" --rehearsal "$WORK/repo/.git/HEAD" 2>&1)" || status=$?
-expect refuse "is neither" "a rehearsal over a file that is not a zip" "$status" "$out"
+expect refuse "is neither" "a rehearsal over a file not named .zip" "$status" "$out"
 printf 'PK not a rehearsal\n' > "$WORK/report.docx"
 status=0
 out="$(sh "$WORK/repo/scripts/package-appstore.sh" --rehearsal "$WORK/report.docx" 2>&1)" || status=$?
 expect refuse "is neither" "a rehearsal over a zip that is not named .zip" "$status" "$out"
 [ "$(cat "$WORK/report.docx")" = "PK not a rehearsal" ] || { echo "FAIL: the .docx was replaced"; exit 1; }
+printf 'notes\n' > "$WORK/notes.zip"
+status=0
+out="$(sh "$WORK/repo/scripts/package-appstore.sh" --rehearsal "$WORK/notes.zip" 2>&1)" || status=$?
+expect refuse "is neither" "a rehearsal over a .zip that does not hold a zip" "$status" "$out"
+[ "$(cat "$WORK/notes.zip")" = notes ] || { echo "FAIL: a .zip holding no zip was replaced"; exit 1; }
 # Every run clears the temporary zip a killed run left in dist/.
 printf 'PK unchecked\n' > "$WORK/repo/dist/.appstore.killed"
 status=0
@@ -520,6 +528,7 @@ expect refuse "outside printable ASCII" "an executable with a byte above 0x7E, u
 git clone -q "$ROOT" "$WORK/rec"
 recbranch=nets-test
 git -C "$WORK/rec" checkout -q -B "$recbranch"
+git -C "$WORK/rec" branch -q --unset-upstream 2>/dev/null || true
 cp "$HERE/package-appstore.sh" "$HERE/check-package.sh" "$HERE/scan-package.mjs" \
   "$HERE/check-reviews.sh" "$WORK/rec/scripts/"
 rm -f -- "$WORK/rec/scripts/upload-record.txt"
@@ -810,8 +819,9 @@ git -C "$WORK/rec" config --remove-section filter.pair
 # The record counts the verdicts committed at or before the commit packaged, so an upload comes
 # from the tip of a local branch: never a detached HEAD or one on another ref, nor a branch whose
 # passing record predates a FAIL its upstream holds, even behind a graft that hides the lag or a
-# file named like the range compared, nor one whose upstream has gone. A branch level with its
-# upstream packages; one with none, as in every case above, is not compared, and the run says so.
+# file named like the range compared, nor one whose upstream has gone or cannot be read. A
+# branch level with its upstream packages; one with none, as in every case above, is not
+# compared, and the run says so.
 set_record "$E PASS $bump" "$S PASS $bump"
 stale="$(head_of_rec)"
 package_rec pass "$recbranch has no upstream" "a branch with no upstream, which is not compared"
@@ -838,6 +848,13 @@ rm -f -- "$WORK/rec/.git/info/grafts"
 : > "$WORK/rec/$stale..$ahead"
 package_rec refuse "lacks 1 of its upstream's commits" "a file named like the range compared"
 rm -f -- "$WORK/rec/$stale..$ahead"
+missing=1234567890abcdef1234567890abcdef12345678
+broken="$(printf '%s\n' "tree $(git -C "$WORK/rec" rev-parse "$ahead^{tree}")" "parent $ahead" \
+  "parent $missing" 'author t <t@l> 1 +0000' 'committer t <t@l> 1 +0000' '' 'a parent that is missing' \
+  | git -C "$WORK/rec" hash-object -t commit --literally -w --stdin)"
+git -C "$WORK/rec" branch -q -f upstream "$broken"
+package_rec refuse "could not compare" "an upstream whose history cannot be read"
+git -C "$WORK/rec" branch -q -f upstream "$ahead"
 git -C "$WORK/rec" branch -q -D upstream
 package_rec refuse "does not resolve" "a branch whose upstream has gone"
 git -C "$WORK/rec" checkout -q "$recbranch"
