@@ -9,7 +9,7 @@
 
 All notable changes to Holly are recorded here, newest first. Holly V0.2 is the Daily Operations Dashboard fused into the Holly App Store project and renamed; the sections after it are the Daily Operations Dashboard's own record, kept as written. Holly's releases are numbered V<major>.<minor>, and each has a row in `docs/AUDIT-LOG.md` with the checks that ran.
 
-## Holly V0.4 (2026-10-17)
+## Holly V0.4 (2026-10-19)
 
 ### Added
 
