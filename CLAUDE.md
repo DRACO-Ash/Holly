@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-> Adoption note (delete when the open items are resolved): this file is inherited from the Bluestaq Foundations baseline, filled at scaffold and updated when the Daily Operations Dashboard was fused in (V0.2). Still open, each `TBC, re-verify`: the App Store slug; the platform's exact stage commands for the python template, install, test, check and build (rehearse the confirmed ones with `INSTALL_CMD='...' TEST_CMD='...' sh scripts/simulate-pipeline.sh`); whether the python template's coverage and issue gates count the dashboard's TypeScript, which its test stage cannot cover; the variable the POSTGRESQL add-on injects (Holly reads `DATABASE_URL` or the `POSTGRES_*` parts); the ingress addresses for `FORWARDED_ALLOW_IPS`; whether the platform offers a shell in the container for `python -m app.cli.create_admin`; and the upload baseline record and the rung that refuses without it, due before the first upload (appstore-gate-compliance section 3). Settings are listed in `docs/developer/setup.md` in place of a `.env.example`, which Claude's Write tool refuses under this project's `Read(./.env.*)` deny rule. Keep this file short; procedures live in `skills/`, not here.
+> Adoption note (delete when the open items are resolved): this file is inherited from the Bluestaq Foundations baseline, filled at scaffold and updated when the Daily Operations Dashboard was fused in (V0.2). Still open, each `TBC, re-verify`: the App Store slug; the platform's stage commands beyond those V0.4's job logs confirmed, which `scripts/simulate-pipeline.sh` runs (the python job's install and test, and the node job's `npm ci`), the node job's after `npm ci` among them; whether the Code Quality gate combines the python job's `coverage.xml` with the node job's `coverage/lcov.info` (each is held to 80% on its own meanwhile); the variable the POSTGRESQL add-on injects (Holly reads `DATABASE_URL` or the `POSTGRES_*` parts); the ingress addresses for `FORWARDED_ALLOW_IPS`; whether the platform offers a shell in the container for `python -m app.cli.create_admin`; and the upload baseline record and the rung that refuses without it, due before the first upload (appstore-gate-compliance section 3). Settings are listed in `docs/developer/setup.md` in place of a `.env.example`, which Claude's Write tool refuses under this project's `Read(./.env.*)` deny rule. Keep this file short; procedures live in `skills/`, not here.
 
 Always-true conventions for this project. Procedures live in `.claude/skills/`. The house voice is in `.claude/output-styles/house-voice.md`. When a rule here and a skill disagree, this file wins for conventions and the skill wins for procedure.
 
@@ -35,15 +35,15 @@ Holly, the daily operations dashboard for Space Domain Awareness (SDA) watch ana
 python3.12 -m venv .venv && .venv/bin/pip install --require-hashes -r requirements-dev.txt   # install from the lockfile
 sh scripts/verify.sh                     # the verification loop: pin, format, lint, types, complexity, duplication, tests with coverage, audit
 PYTHONPATH=src .venv/bin/python -m app   # dev server on 0.0.0.0, at PORT or 8080
-sh scripts/simulate-pipeline.sh          # before every upload: package, check out and test the way the platform does
+sh scripts/simulate-pipeline.sh          # before every upload: package, check out and run both of the platform's test jobs
 sh scripts/smoke-container.sh            # before every upload: build the image from the upload, run it with PostgreSQL, probe the contract
 node scripts/mutation-battery.mjs        # after changing the contrast check, the licence plugin or their self-tests (CI runs it)
 sh scripts/dev.sh                        # local run: PostgreSQL, migrations, the API on 8080, the dashboard on 3000
 ```
 
-The dashboard installs from its lockfile with `cd frontend && npm ci --ignore-scripts`; the loop runs its lint, format, build (which copies each bundled package's licence to `licences/` and stops on a package without one), unit tests, the theme's contrast check (`scripts/contrast-check.mjs`, WCAG AA for every token pair) and `npm audit`. Pin dashboard packages exactly and relock with `npm install --package-lock-only`, never by hand.
+The dashboard installs from its lockfile with `cd frontend && npm ci --ignore-scripts`; the loop runs its lint, format, build (which copies each bundled package's licence to `licences/` and stops on a package without one), unit tests with coverage (80% floor, `coverage/lcov.info`), the theme's contrast check (`scripts/contrast-check.mjs`, WCAG AA for every token pair) and `npm audit`. Pin dashboard packages exactly and relock with `npm install --package-lock-only`, never by hand. The root `package.json` holds no packages; it exists for the platform's node job, whose `npm ci` (and test and build, TBC, re-verify) it hands to the dashboard, installed with install scripts off. Lock a new dashboard package with a 15-day cooldown (`--before`).
 
-Relock after any dependency change with the `uv pip compile` command in the header of `requirements.in`, then `requirements-dev.in`; never edit a lockfile by hand. Packaging runs the upload nets in `scripts/check-package.sh` (required members, banned names, and a content scan with the secret-scan hook's rules), so it needs `node` and `unzip`; the loop's self-test of those nets also needs `python3`. The upload may carry only strict UTF-8 text, plus any binary pinned by SHA-256 with a reason in `scripts/upload-binaries.txt` (read from HEAD); treat any change there as a security change. Packaging for upload also refuses unless the last verdict from each gate in the committed `scripts/upload-record.txt` is a PASS on a commit with the same upload and packaging (`scripts/check-reviews.sh`); the rungs package with `--rehearsal <file>` into their own temporary files, never the upload.
+Relock after any dependency change with the `uv pip compile` command in the header of `requirements-runtime.in` (the image's set), then `requirements.in` (the platform test job's), then `requirements-dev.in`; never edit a lockfile by hand. Packaging runs the upload nets in `scripts/check-package.sh` (required members, banned names, and a content scan with the secret-scan hook's rules), so it needs `node` and `unzip`; the loop's self-test of those nets also needs `python3`. The upload may carry only strict UTF-8 text, plus any binary pinned by SHA-256 with a reason in `scripts/upload-binaries.txt` (read from HEAD); treat any change there as a security change. Packaging for upload also refuses unless the last verdict from each gate in the committed `scripts/upload-record.txt` is a PASS on a commit with the same upload and packaging (`scripts/check-reviews.sh`); the rungs package with `--rehearsal <file>` into their own temporary files, never the upload.
 
 Every change runs the verification loop, then passes the `engineering-reviewer` and `security-reviewer` gates before it is done; append each verdict to `scripts/upload-record.txt` in the commit that records the round. Anything that deploys, publishes, or mutates external state requires the `deploy-gate` verdict and an explicit human confirmation.
 
@@ -53,13 +53,15 @@ Every change runs the verification loop, then passes the `engineering-reviewer` 
 src/app/                the application: factory.py (create_app), main.py (ASGI entry), config.py, gunicorn_conf.py,
                         migrate.py; api/ (routes), core/, db/, models/, schemas/, services/, cli/
 src/app/migrations/     the Alembic migrations, applied at container start (alembic.ini serves the CLI)
-frontend/               the React dashboard (Vite, TypeScript), built into src/app/static by the Dockerfile
+frontend/               the React dashboard (Vite, TypeScript), built into src/app/static by the Dockerfile;
+                        its Vitest suite writes coverage/lcov.info (80% floor)
+package.json            the root Node project for the platform's node job, handing npm ci, test and build to frontend/
 infra/docker-compose.yml  a local PostgreSQL for development only
 Dockerfile              the container build: the dashboard stage, then hardened and flattened to one layer
 scripts/                verify.sh (the loop), package-appstore.sh with check-package.sh, scan-package.mjs,
                         upload-binaries.txt and test-package-nets.sh (the upload nets), check-reviews.sh
-                        and upload-record.txt (the review record), simulate-pipeline.sh, smoke-container.sh,
-                        contrast-check.mjs, the self-tests test-contrast-check.mjs and
+                        and upload-record.txt (the review record), simulate-pipeline.sh with check-lcov.sh,
+                        smoke-container.sh, contrast-check.mjs, the self-tests test-contrast-check.mjs and
                         test-bundled-licences.mjs, and mutation-battery.mjs, which proves them
 tests/                  the pytest suite (coverage.xml, 80% floor); tests/fakes.py holds the session fake
 docs/                   architecture, runbook, user handbook, security and developer setup (settings reference)

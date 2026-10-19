@@ -1,32 +1,11 @@
-# Runtime dependencies for Holly (server archetype). Exact pins only; never a range.
-# This is the manifest. The lock is requirements.txt, hash-pinned and generated from this file:
+# The set the App Store's python test job installs: it runs `pip install -r requirements.txt`, then
+# `pytest --cov --cov-report=xml:coverage.xml`, so this lock carries the runtime set and the test
+# runner, and nothing else. Exact pins only; never a range. The runtime set is held to the exact
+# versions in the runtime lock, so the tests run against what the image ships.
 #   uv pip compile requirements.in --universal --python-version 3.12 --generate-hashes -o requirements.txt
-# Never edit requirements.txt by hand. Recompile it, then recompile requirements-dev.txt.
-fastapi==0.143.0
-gunicorn==26.2.0
-uvicorn==0.54.0
-# Reason recorded (dependencies skill): the template's uvicorn.workers.UvicornWorker is deprecated
-# upstream in favour of this package, which is maintained by the uvicorn maintainer.
-uvicorn-worker==0.4.0
-# The reasons below are recorded per the dependencies skill. Each arrived with the Daily Operations
-# Dashboard code that Holly is built from.
-# Configuration read from the environment and validated at boot.
-pydantic-settings==2.15.0
-# PostgreSQL through the App Store POSTGRESQL add-on: the async ORM, the asyncpg driver, and
-# Alembic for the schema migrations applied at container start.
-sqlalchemy[asyncio]==2.1.4
-asyncpg==0.32.0
-alembic==1.20.0
-# Sign-in: HS256 JSON Web Tokens and bcrypt password hashes. PyJWT replaces the dashboard's
-# python-jose, whose ecdsa dependency carries an advisory with no fixed release.
-pyjwt==2.15.1
-bcrypt==5.0.0
-# The assistant: notification evaluations, shift-log polish and summaries, event narratives.
-anthropic==1.13.0
-# The HTTP client for the UDL and Mattermost integrations; also the one anthropic and Starlette's
-# test client use, so there is a single HTTP stack.
-httpx2==2.13.1
-# Multipart form parsing for procedure uploads (FastAPI needs it for File and Form fields).
-python-multipart==0.0.32
-# Month-end-safe recurrence for event timers.
-python-dateutil==2.9.0.post0
+-c requirements-runtime.txt
+-r requirements-runtime.in
+pytest==9.1.1
+pytest-cov==7.1.0
+# Runs the async route and service tests (asyncio_mode = auto in pyproject.toml).
+pytest-asyncio==1.4.0

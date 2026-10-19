@@ -1,8 +1,10 @@
 #!/bin/sh
 # check-package.sh :: the upload nets, run on a built zip by package-appstore.sh.
 # Usage: sh scripts/check-package.sh <zip> [<commit> <upload path>...]
-#   1. Required members at the root: requirements.txt, Dockerfile and pyproject.toml (the pytest
-#      configuration the platform's test stage depends on).
+#   1. Required members at the root, what the platform's jobs install from and read:
+#      requirements.txt and pyproject.toml (the pytest configuration) for the python job,
+#      package.json and package-lock.json for the node job, and the Dockerfile with the runtime
+#      lock it installs, requirements-runtime.txt, for the image.
 #   2. Name net, matched without regard to case: no virtualenv, tool cache, coverage output,
 #      environment file (.env, .env.*, .env-*, .envrc, *.env), or archive or compressed file by
 #      extension (zip and its family such as docx, xlsx, jar and apk; tar, gz, xz, 7z and the
@@ -54,7 +56,8 @@ trap 'exit 143' TERM
 # Read member NAMES only (unzip -Z1), so the patterns anchor on the real path and are not
 # defeated by the size and date columns of a plain `unzip -l` listing.
 names="$(unzip -Z1 "$ZIP")"
-for required in requirements.txt Dockerfile pyproject.toml; do
+for required in requirements.txt pyproject.toml package.json package-lock.json Dockerfile \
+  requirements-runtime.txt; do
   printf '%s\n' "$names" | grep -qx "$required" || { echo "package is missing $required"; exit 1; }
 done
 

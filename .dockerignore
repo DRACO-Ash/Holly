@@ -1,11 +1,12 @@
-# An allowlist (packaging): the image needs only the locked runtime requirements, the source and
-# the dashboard's source.
+# An allowlist (packaging): the image needs only the locked runtime requirements
+# (requirements-runtime.txt; requirements.txt adds the test runner), the source and the dashboard's
+# source.
 # Everything else stays out of the build context: tests, tooling, docs, .git, .claude, the
 # virtualenv, coverage output and any .env file. The upload allowlist is a separate contract,
 # kept in scripts/package-appstore.sh, and scripts/smoke-container.sh builds from that upload
 # artefact rather than the working tree, so untracked files never reach a release image.
 *
-!requirements.txt
+!requirements-runtime.txt
 !src/
 !frontend/
 # `!src/` and `!frontend/` re-admit whole subtrees, so these are excluded again inside them,
@@ -19,3 +20,7 @@ frontend/node_modules
 frontend/dist
 frontend/coverage
 src/app/static
+# The dashboard's tests and their helpers: the image builds the dashboard, never tests it.
+frontend/src/**/*.test.ts
+frontend/src/**/*.test.tsx
+frontend/src/test

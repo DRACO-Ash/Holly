@@ -36,14 +36,14 @@ RUN npm ci --ignore-scripts --no-audit --no-fund
 COPY frontend/ ./
 RUN npm run build
 
-# ---- build: install from the hash-locked requirements into an isolated venv ----
+# ---- build: install from the hash-locked runtime requirements into an isolated venv ----
 FROM python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1 AS build
 ENV PYTHONDONTWRITEBYTECODE=1 PIP_NO_CACHE_DIR=1
 WORKDIR /app
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
-COPY requirements.txt .
-RUN pip install --require-hashes -r requirements.txt
+COPY requirements-runtime.txt .
+RUN pip install --require-hashes -r requirements-runtime.txt
 
 # ---- prep: every hygiene step, so the shipped stage can be one clean layer ----
 FROM python:3.12-slim@sha256:a6e34c598f2467ed0e9a8d349809fcd8b5c603269512df273a0bb1784edc11b1 AS prep

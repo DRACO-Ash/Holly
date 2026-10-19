@@ -1,0 +1,33 @@
+# Runtime dependencies for Holly (server archetype). Exact pins only; never a range.
+# This is the manifest. The lock is requirements-runtime.txt, the set the container image installs,
+# hash-pinned and generated from this file:
+#   uv pip compile requirements-runtime.in --universal --python-version 3.12 --generate-hashes -o requirements-runtime.txt
+# Never edit a lock by hand. Recompile this one, then requirements.txt, then requirements-dev.txt.
+fastapi==0.143.0
+gunicorn==26.2.0
+uvicorn==0.54.0
+# Reason recorded (dependencies skill): the template's uvicorn.workers.UvicornWorker is deprecated
+# upstream in favour of this package, which is maintained by the uvicorn maintainer.
+uvicorn-worker==0.4.0
+# The reasons below are recorded per the dependencies skill. Each arrived with the Daily Operations
+# Dashboard code that Holly is built from.
+# Configuration read from the environment and validated at boot.
+pydantic-settings==2.15.0
+# PostgreSQL through the App Store POSTGRESQL add-on: the async ORM, the asyncpg driver, and
+# Alembic for the schema migrations applied at container start.
+sqlalchemy[asyncio]==2.1.4
+asyncpg==0.32.0
+alembic==1.20.0
+# Sign-in: HS256 JSON Web Tokens and bcrypt password hashes. PyJWT replaces the dashboard's
+# python-jose, whose ecdsa dependency carries an advisory with no fixed release.
+pyjwt==2.15.1
+bcrypt==5.0.0
+# The assistant: notification evaluations, shift-log polish and summaries, event narratives.
+anthropic==1.13.0
+# The HTTP client for the UDL and Mattermost integrations; also the one anthropic and Starlette's
+# test client use, so there is a single HTTP stack.
+httpx2==2.13.1
+# Multipart form parsing for procedure uploads (FastAPI needs it for File and Form fields).
+python-multipart==0.0.32
+# Month-end-safe recurrence for event timers.
+python-dateutil==2.9.0.post0

@@ -27,4 +27,9 @@ export default tseslint.config(
       "react-refresh/only-export-components": ["warn", { allowConstantExport: true }],
     },
   },
+  {
+    // Tests and their support files are never hot-reloaded, so the fast-refresh check is off.
+    files: ["src/test/**", "src/**/*.test.{ts,tsx}"],
+    rules: { "react-refresh/only-export-components": "off" },
+  },
 );

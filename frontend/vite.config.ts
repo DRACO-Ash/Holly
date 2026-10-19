@@ -14,12 +14,23 @@ export default defineConfig({
     },
   },
   test: {
+    // Node by default; a test of the page opts into a browser with @vitest-environment jsdom.
     environment: "node",
-    include: ["src/**/*.test.ts"],
+    include: ["src/**/*.test.{ts,tsx}"],
+    // Testing Library unmounts what each test rendered when it finds a global afterEach. A setup
+    // file could register that instead, but Vitest leaves setup files out of every coverage
+    // report, and the gate scores a file it cannot find at 0%.
+    globals: true,
     coverage: {
       provider: "v8",
-      reporter: ["text", "lcov"],
+      // The App Store's node job runs the tests at the upload's root and its Code Quality gate
+      // reads coverage/lcov.info there, so the report is written there too, naming each file
+      // from the root (frontend/src/...): a file the gate cannot find scores 0%.
+      reporter: ["text", ["lcov", { projectRoot: ".." }]],
+      reportsDirectory: "../coverage",
       include: ["src/**/*.{ts,tsx}"],
+      // The floor the gate holds the upload to, held here for the dashboard on its own.
+      thresholds: { lines: 80, branches: 80, functions: 80, statements: 80 },
     },
   },
 });

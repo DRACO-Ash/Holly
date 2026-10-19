@@ -4,10 +4,24 @@
 
 **Data classification:** Unclassified (per ADR-006)
 **Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned the history below)
-**Version:** 0.5
-**Last updated:** 2026-10-18
+**Version:** 0.6
+**Last updated:** 2026-10-19
 
 All notable changes to Holly are recorded here, newest first. Holly V0.2 is the Daily Operations Dashboard fused into the Holly App Store project and renamed; the sections after it are the Daily Operations Dashboard's own record, kept as written. Holly's releases are numbered V<major>.<minor>, and each has a row in `docs/AUDIT-LOG.md` with the checks that ran.
+
+## Holly V0.5 (2026-10-19)
+
+### Fixed
+
+● **Both of the App Store's test jobs failed on V0.4's upload; each now passes in a simulation of it.** The python job installs `requirements.txt`, then runs `pytest --cov --cov-report=xml:coverage.xml`, but that lock held only the runtime set, so pytest was not there to run. It now holds the runtime set and the test runner, and the image installs the runtime set alone, from the new `requirements-runtime.txt`, so no test tool reaches it. The node job runs `npm ci` at the upload's root, where V0.4 had no package to install. A root `package.json` and lockfile, holding no packages of their own, now hand the install, the tests and the build to the dashboard, which installs from its own lockfile with install scripts off.
+
+### Added
+
+● **The dashboard's code is tested, and held to 80% coverage.** Vitest renders every page, component and context in a simulated browser (jsdom, with Testing Library) and checks what an analyst sees and what each page sends to Holly's API, where 11.67% of the dashboard's lines were tested before. The tests write their coverage to `coverage/lcov.info` at the upload's root, naming each file as the platform finds it, and fail under 80%, the floor the platform's Code Quality gate holds an upload to. The test packages were locked so that none was younger than 15 days when added, and the image's build leaves the tests out.
+
+● **The pipeline simulation runs both of the platform's test jobs**, each on its own fresh checkout of the upload, with the commands V0.4's job logs show, and fails if either fails. The node job's commands after `npm ci` follow the platform's node template until they are confirmed.
+
+● **The loop holds the three Python locks to one set of pins**, each package at the same version, under the same marker and with the same hashes in every lock that carries it, so the platform's test job tests what the image ships, and it audits all three.
 
 ## Holly V0.4 (2026-10-19)
 

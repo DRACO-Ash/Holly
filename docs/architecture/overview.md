@@ -125,7 +125,7 @@ Holly serves plain HTTP on `0.0.0.0`, on `PORT` or 8080. TLS termination, the pu
 Holly is one container on the Bluestaq App Store, `python` template, with the [Dockerfile](../../Dockerfile) at the repository root:
 
 ● **dashboard** stage: `node:22-alpine`, pinned by digest, builds the React app.
-● **build** stage: `python:3.12-slim`, pinned by digest, installs the hash-locked `requirements.txt` into a virtualenv.
+● **build** stage: `python:3.12-slim`, pinned by digest, installs the hash-locked runtime set, `requirements-runtime.txt`, into a virtualenv.
 ● **prep** stage: patches OS packages, removes pip, adds the numeric user and group 10001 with no home directory, and strips every setuid and setgid bit.
 ● **ship** stage: `FROM scratch` with one copy of the prepared filesystem, so the image is a single layer. It runs as `10001:10001` and starts `gunicorn --chdir /app --config python:app.gunicorn_conf app.main:app` in exec form.
 

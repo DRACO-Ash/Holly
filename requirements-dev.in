@@ -1,12 +1,9 @@
 # Development and verification tooling for Holly. Exact pins only; never a range.
-# Installs the runtime set too, held to the exact versions in the runtime lock.
+# Installs the test job's set too (requirements.in, which carries the runtime set), held to the
+# exact versions in its lock.
 #   uv pip compile requirements-dev.in --universal --python-version 3.12 --generate-hashes -o requirements-dev.txt
 -c requirements.txt
 -r requirements.in
-pytest==9.1.1
-pytest-cov==7.1.0
-# Runs the async route and service tests (asyncio_mode = auto in pyproject.toml).
-pytest-asyncio==1.4.0
 ruff==0.17.0
 mypy==2.4.0
 # Type stubs for python-dateutil, so strict mypy can check the event-timer recurrence code.

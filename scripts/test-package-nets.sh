@@ -37,6 +37,8 @@ NL='
 TAB="$(printf '\t')"
 DEL="$(printf '\177')"
 n=0
+# The members every upload must hold at its root (check-package.sh).
+MEMBERS="requirements.txt pyproject.toml package.json package-lock.json Dockerfile requirements-runtime.txt"
 
 # $1: output zip, then member name and content pairs. A content of KIND:TEXT encodes TEXT as
 # named below; any other content is stored as UTF-8.
@@ -124,6 +126,15 @@ with zipfile.ZipFile(out, "w") as archive:
 PY
 }
 
+# $1: output zip, then member name and content pairs: an upload holding the required members,
+# each empty but the Dockerfile, and the pairs given.
+zip_required() {
+  out="$1"
+  shift
+  zip_of "$out" Dockerfile 'FROM scratch' requirements.txt '' pyproject.toml '' package.json '' \
+    package-lock.json '' requirements-runtime.txt '' "$@"
+}
+
 sha256_of() {
   python3 -c 'import hashlib, sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' "$1"
 }
@@ -146,7 +157,7 @@ check() {  # $1: pass or refuse, $2: text the output must hold, $3: label, then 
   fragment="$2"
   label="$3"
   shift 3
-  zip_of "$WORK/case$n.zip" Dockerfile 'FROM scratch' requirements.txt '' pyproject.toml '' "$@"
+  zip_required "$WORK/case$n.zip" "$@"
   status=0
   out="$(sh "$HERE/check-package.sh" "$WORK/case$n.zip" 2>&1)" || status=$?
   expect "$expected" "$fragment" "$label" "$status" "$out"
@@ -231,11 +242,21 @@ check refuse "holds rar content" "a rar signature" tests/data.bin 'magic:5261722
 check refuse "holds lz4 content" "an lz4 signature" tests/data.bin 'magic:04224d18'
 check refuse "holds compress content" "a compress signature" tests/data.bin 'magic:1f9d'
 
-# The required-member check: an upload without its pytest configuration is refused.
-zip_of "$WORK/bare.zip" Dockerfile 'FROM scratch' requirements.txt ''
-status=0
-out="$(sh "$HERE/check-package.sh" "$WORK/bare.zip" 2>&1)" || status=$?
-expect refuse "missing pyproject.toml" "a missing pyproject.toml" "$status" "$out"
+# The required-member check: an upload without any one of them is refused.
+without() {  # $1: the required member to leave out of $WORK/bare.zip
+  leave="$1"
+  set --
+  for member in $MEMBERS; do
+    [ "$member" = "$leave" ] || set -- "$@" "$member" ''
+  done
+  zip_of "$WORK/bare.zip" "$@"
+}
+for missing in $MEMBERS; do
+  without "$missing"
+  status=0
+  out="$(sh "$HERE/check-package.sh" "$WORK/bare.zip" 2>&1)" || status=$?
+  expect refuse "missing $missing" "a missing $missing" "$status" "$out"
+done
 
 # A grep that fails reads as a refusal, never as "no match": a stand-in grep that errors on the
 # case-blind name patterns refuses a clean upload.
@@ -243,7 +264,7 @@ mkdir "$WORK/badgrep"
 printf '#!/bin/sh\ncase " $* " in *" -iE "*) exit 2 ;; esac\nexec %s "$@"\n' "$(command -v grep)" \
   > "$WORK/badgrep/grep"
 chmod +x "$WORK/badgrep/grep"
-zip_of "$WORK/grepfail.zip" Dockerfile 'FROM scratch' requirements.txt '' pyproject.toml ''
+zip_required "$WORK/grepfail.zip"
 status=0
 out="$(PATH="$WORK/badgrep:$PATH" sh "$HERE/check-package.sh" "$WORK/grepfail.zip" 2>&1)" || status=$?
 expect refuse "could not check the member names" "a grep that fails on the name patterns" "$status" "$out"
@@ -770,10 +791,10 @@ forged="$( { git -C "$WORK/rec" cat-file blob "$allowed"
 } | git -C "$WORK/rec" hash-object -w --stdin)"
 git -C "$WORK/rec" replace "$allowed" "$forged"
 GIT_NO_REPLACE_OBJECTS=1 git -C "$WORK/rec" archive --format=zip -o "$WORK/binary.zip" "$binc" -- \
-  Dockerfile requirements.txt pyproject.toml tests/fixtures
+  $MEMBERS tests/fixtures
 status=0
 out="$(sh "$WORK/rec/scripts/check-package.sh" "$WORK/binary.zip" "$binc" \
-  Dockerfile requirements.txt pyproject.toml tests/fixtures 2>&1)" || status=$?
+  $MEMBERS tests/fixtures 2>&1)" || status=$?
 expect refuse "is not text" "a replaced allowlist, read by the nets alone" "$status" "$out"
 git -C "$WORK/rec" replace -d "$allowed" > /dev/null
 set_record "$E PASS $bump" "$S PASS $bump"
@@ -892,10 +913,10 @@ out="$(sh "$twin/scripts/package-appstore.sh" --rehearsal "$WORK/twin.zip" 2>&1)
 expect refuse "secret-scan rules matched" "a key in a clone named with a final newline, beside a twin with no scanner" \
   "$status" "$out"
 keyedc="$(git -C "$twin" rev-parse HEAD)"
-git -C "$twin" archive --format=zip -o "$WORK/twin-keyed.zip" "$keyedc" -- Dockerfile requirements.txt pyproject.toml src
+git -C "$twin" archive --format=zip -o "$WORK/twin-keyed.zip" "$keyedc" -- $MEMBERS src
 status=0
 out="$(cd "$twin" && CDPATH="$WORK/twin" sh scripts/check-package.sh "$WORK/twin-keyed.zip" "$keyedc" \
-  Dockerfile requirements.txt pyproject.toml src 2>&1)" || status=$?
+  $MEMBERS src 2>&1)" || status=$?
 expect refuse "secret-scan rules matched" "the nets alone, with a CDPATH that names the twin with no scanner" \
   "$status" "$out"
 

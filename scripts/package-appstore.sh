@@ -99,10 +99,12 @@ trap 'rm -f -- "$TMP"' EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-# frontend/ is the dashboard's source, which the Dockerfile compiles; alembic.ini is the
-# developer's migration entry point, which the test suite checks against the packaged
+# frontend/ is the dashboard's source, which the Dockerfile compiles and the platform's node job
+# installs, tests and builds through package.json and package-lock.json at the root; alembic.ini
+# is the developer's migration entry point, which the test suite checks against the packaged
 # migrations in src/app/migrations. The review check and the nets compare the same list.
 PATHS="Dockerfile .dockerignore .python-version pyproject.toml README.md alembic.ini
+  package.json package-lock.json requirements-runtime.in requirements-runtime.txt
   requirements.in requirements.txt requirements-dev.in requirements-dev.txt
   sonar-project.properties src tests frontend"
 
