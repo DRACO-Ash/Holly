@@ -4,6 +4,14 @@ import { withJsonErrorBody } from "../utils/errors";
 
 export const ACCESS_TOKEN_KEY = "holly.auth.access";
 export const REFRESH_TOKEN_KEY = "holly.auth.refresh";
+// Holly's access token travels in its own header. The App Store's gateway refused Holly's token in
+// Authorization, reading it as the platform's own (ADR-013). tests/test_token_header.py holds this
+// name equal to the server's.
+export const TOKEN_HEADER = "X-Holly-Token";
+
+// A refused sign-in, refresh or sign-out has nothing to refresh. Any other call, /auth/me among
+// them, refreshes once first, so a page reloaded after the access token expires stays signed in.
+const SESSION_CALLS = new Set(["/auth/login", "/auth/refresh", "/auth/logout"]);
 
 export const apiClient = axios.create({
   baseURL: "/api/v1",
@@ -25,7 +33,7 @@ function redirectToLogin(): void {
 apiClient.interceptors.request.use((config) => {
   const token = localStorage.getItem(ACCESS_TOKEN_KEY);
   if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+    config.headers.set(TOKEN_HEADER, token);
   }
   return config;
 });
@@ -69,9 +77,7 @@ apiClient.interceptors.response.use(
       throw error;
     }
 
-    const isAuthEndpoint = config.url?.includes("/auth/") ?? false;
-
-    if (config._retry || isAuthEndpoint) {
+    if (config._retry || SESSION_CALLS.has(config.url ?? "")) {
       redirectToLogin();
       throw error;
     }
@@ -81,7 +87,7 @@ apiClient.interceptors.response.use(
       const newAccess = await attemptRefresh();
       config.headers = {
         ...config.headers,
-        Authorization: `Bearer ${newAccess}`,
+        [TOKEN_HEADER]: newAccess,
       };
       return apiClient.request(config);
     } catch {

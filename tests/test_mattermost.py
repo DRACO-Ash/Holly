@@ -21,6 +21,7 @@ from sqlalchemy import Insert, Table, UniqueConstraint
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.dependencies import TOKEN_HEADER
 from app.models.mattermost_message import MattermostMessage
 from app.models.user import User
 from app.services import mattermost_ingest
@@ -771,12 +772,12 @@ def stored_message(post_id: str, posted_at: datetime) -> MattermostMessage:
 
 
 class TestTheMessagesRoute:
-    @pytest.mark.parametrize("authorization", [None, "Bearer not.a.real.jwt"])
+    @pytest.mark.parametrize("token", [None, "not.a.real.jwt"])
     async def test_it_requires_sign_in(
-        self, api: httpx2.AsyncClient, use_session: UseSession, authorization: str | None
+        self, api: httpx2.AsyncClient, use_session: UseSession, token: str | None
     ) -> None:
         session = use_session(FakeSession())
-        headers = {"Authorization": authorization} if authorization else {}
+        headers = {TOKEN_HEADER: token} if token else {}
         response = await api.get(MESSAGES, params=SINCE_JUNE, headers=headers)
         assert response.status_code == 401
         assert response.headers["www-authenticate"] == "Bearer"

@@ -4,8 +4,8 @@
 
 **Data classification:** Unclassified (per ADR-006)
 **Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned the edition this one replaces)
-**Version:** 0.4
-**Last updated:** 2026-10-17
+**Version:** 0.5
+**Last updated:** 2026-10-20
 **Audience:** Watch analysts new to Holly, plus the trainers delivering induction. Sections labelled **Trainer note** are for delivery, not for the trainee handout.
 
 > **BLUF**
@@ -46,7 +46,7 @@ Holly is your watch-stand surface. It pulls Tactical Reports and Notices to Spac
 
 ## Signing in
 
-1. Open `https://<slug>.apps.bluestaq.com` in your browser (the slug is `TBC, re-verify`; your operator will give you the address).
+1. Open `https://holly.appstore.bluestaq.com` in your browser.
 2. Enter your username and password and select **Sign in**.
 3. You arrive on the **Dashboard** page.
 

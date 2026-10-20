@@ -237,9 +237,19 @@ docker logs "$cid" 2>&1 | grep -q '"event": "admin_bootstrap", .*"status": "crea
   || fail "the bootstrap did not create one admin named smoke-admin"
 [ "$(users "SELECT count(*) FROM audit.audit_log WHERE action_type = 'auth.user.admin_bootstrap'")" = 1 ] \
   || fail "the admin bootstrap is not in the audit log"
-code="$(curl -s -o /dev/null -w '%{http_code}' -H 'Content-Type: application/json' \
+signed_in="$(curl -s -w '\n%{http_code}' -H 'Content-Type: application/json' \
   -d "{\"username\": \"smoke-admin\", \"password\": \"$ADMIN_SECRET\"}" "$base/api/v1/auth/login")"
+code="$(printf '%s\n' "$signed_in" | tail -n 1)"
 [ "$code" = 200 ] || fail "the bootstrapped admin could not sign in ($code)"
+# The dashboard sends the token in X-Holly-Token: the App Store's gateway answered a Holly token
+# in Authorization with a refusal of its own (ADR-013), so Holly reads its own header and never
+# Authorization.
+access="$(printf '%s\n' "$signed_in" | head -n 1 | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p')"
+[ -n "$access" ] || fail "the sign-in answer held no access token"
+code="$(curl -s -o /dev/null -w '%{http_code}' -H "X-Holly-Token: $access" "$base/api/v1/auth/me")"
+[ "$code" = 200 ] || fail "the admin's token in X-Holly-Token was refused ($code)"
+code="$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $access" "$base/api/v1/auth/me")"
+[ "$code" = 401 ] || fail "a token in Authorization answered $code, not 401: Holly reads X-Holly-Token alone"
 if docker logs "$cid" 2>&1 | grep -qF "$ADMIN_SECRET"; then fail "the admin password reached the log"; fi
 cid="$(run_holly "" "$WRITABLE" -e ADMIN_USERNAME=someone-else -e "ADMIN_PASSWORD=$(random_hex 16)")"
 CIDS="$CIDS $cid"
@@ -262,7 +272,7 @@ until docker logs "$cid" 2>&1 | grep -q '"event": "admin_bootstrap", .*"status":
 done
 sleep 2
 [ "$(docker inspect -f '{{.State.Running}}' "$cid")" = true ] || { docker logs "$cid"; fail "a start with the password removed stopped"; }
-echo "the first admin is created from the environment once, signs in, a later pair changes nothing, and a start with the password removed runs"
+echo "the first admin is created from the environment once, signs in, is known by its token in X-Holly-Token and not in Authorization, a later pair changes nothing, and a start with the password removed runs"
 
 # 3d. The App Store's DAST scan runs the image with APPSTORE_DAST_SCAN=true and none of Holly's
 #     settings, then gives up if port 8080 has not answered within 300 seconds. Run it the same

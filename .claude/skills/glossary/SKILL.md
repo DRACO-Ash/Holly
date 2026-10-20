@@ -98,7 +98,7 @@ Find the term below and read its definition. If a term used in another skill is 
 - **Seed:** initial data written to the store so the app is not empty on first run. Owner: `data-layer`.
 - **Single-flight:** allowing at most one instance of an expensive operation to run at a time. Owner: `api-and-integration`.
 - **Single-file model:** all CSS, JavaScript, fonts, and images inline in one HTML file with no build step. Static. Owner: `code-architecture`.
-- **Slug:** the App Store path identifier and URL component: `{app-name}.apps.bluestaq.com`. Owner: `app-store-deployment`.
+- **Slug:** the App Store path identifier and URL component: `{app-name}.appstore.bluestaq.com` (inference from Holly's address, seen 20 October 2026; earlier notes said `apps.bluestaq.com`). Owner: `app-store-deployment`.
 - **Smoke test:** the single browser (Playwright) test that boots the seeded server, renders every view asserting zero page errors, and exercises a critical flow with external calls mocked. Owner: `testing-standards`.
 - **SPA (Single-Page Application):** a web frontend that runs in one page and updates without full reloads. Owner: `frontend-and-rendering`.
 - **SSO (Single Sign-On):** a per-user identity provider; the shared team token leaves a seam where SSO would later attach. Owner: `security-hardening`.

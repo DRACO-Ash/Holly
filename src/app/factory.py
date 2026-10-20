@@ -38,6 +38,7 @@ from app.core.net import client_ip
 from app.core.rate_limit import GLOBAL_LIMIT
 from app.core.request_id import REQUEST_ID_HEADER, RequestIDMiddleware
 from app.db.session import dispose_engine
+from app.dependencies import TOKEN_HEADER
 from app.services.background_refresh import start_background_loops, stop_background_loops
 from app.services.procedure_storage import prepare_storage
 
@@ -198,9 +199,10 @@ def create_app(static_dir: Path = STATIC_DIR) -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.app_allowed_origins,
-        allow_credentials=True,
+        # Holly reads no cookie: its token travels in TOKEN_HEADER, set by script (ADR-013).
+        allow_credentials=False,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
-        allow_headers=["Authorization", "Content-Type", REQUEST_ID_HEADER],
+        allow_headers=[TOKEN_HEADER, "Content-Type", REQUEST_ID_HEADER],
         expose_headers=[REQUEST_ID_HEADER],
     )
 

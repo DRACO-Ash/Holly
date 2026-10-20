@@ -4,8 +4,8 @@
 
 **Data classification:** Unclassified (per ADR-006)
 **Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned the edition this one replaces)
-**Version:** 0.5
-**Last updated:** 2026-10-19
+**Version:** 0.6
+**Last updated:** 2026-10-20
 **Audience:** Operators and on-call engineers responsible for keeping Holly healthy on the Bluestaq App Store.
 
 > **BLUF**
@@ -22,7 +22,7 @@
 ● **TLS:** terminated by the platform before requests reach Holly.
 ● **Outbound:** UDL, the team's Mattermost server and the Anthropic API, over HTTPS.
 
-Holly's address is `https://holly.apps.bluestaq.com`, the slug `holly`. Below, `<host>` stands for that address. There is no nginx and no Docker Compose deployment: the Daily Operations Dashboard's four-container stack is retired (ADR-012).
+Holly's address is `https://holly.appstore.bluestaq.com`, the slug `holly` (the address the app owner's browser showed on 20 October 2026). Below, `<host>` stands for that address. There is no nginx and no Docker Compose deployment: the Daily Operations Dashboard's four-container stack is retired (ADR-012).
 
 **SECTION 02**
 
@@ -84,7 +84,7 @@ The app record as the App Store console showed it on 19 October 2026 (fact, from
 
 | Parameter | Value |
 |---|---|
-| App name (slug) | `holly`, at `https://holly.apps.bluestaq.com` |
+| App name (slug) | `holly`, at `https://holly.appstore.bluestaq.com` |
 | Detected stack | `node-react` (inference: from the root `package.json`, which exists for the platform's node test job; the image still builds from the root `Dockerfile`, as the platform reference says of every container template) |
 | Service | `app`, the entrypoint |
 | Port | 8080 |
@@ -151,9 +151,11 @@ The answer is `{"access_token": "<token>", "refresh_token": "<token>", "token_ty
 ```sh
 export TOKEN=<the access_token value>
 curl -s -X POST https://<host>/api/v1/notifications/ingest \
-  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -H "X-Holly-Token: $TOKEN" -H 'Content-Type: application/json' \
   -d '{"msg_type": "TACREP_NOTSO", "created_at_gte": "<ISO 8601 time>", "data_mode": "REAL", "source": "JCO", "max_results": 100}'
 ```
+
+The token goes in `X-Holly-Token`, the token alone. Holly never reads `Authorization`, and the App Store's gateway refuses a Holly token there (section 10). Whether the gateway lets a request through without your App Store sign-in is `TBC, re-verify`.
 
 The answer is `{"pulled": <n>, "inserted": <n>, "updated": <n>, "skipped": <n>}`, and the audit row records your user id and address. `max_results` may be at most 10,000; a pull that names none, as the background pulls do, gets UDL's own default page size (`TBC, re-verify` its value). `POST /api/v1/elsets/ingest` takes `{"epoch_gte": "<ISO 8601 time>", "sat_no": <number>, "max_results": <number>}` and answers the same way; it is the only way element sets arrive. Manoeuvres and Mattermost chat are pulled only by the background loops.
 
@@ -164,7 +166,7 @@ The answer is `{"pulled": <n>, "inserted": <n>, "updated": <n>, "skipped": <n>}`
 The **Audit log** page (operators and admins) filters by action type: `udl.notification.ingest`, `udl.maneuver.ingest`, `udl.elset.ingest` or `mattermost.ingest`. Each row's detail holds the request and the counts. Through the API, with an operator's or admin's token:
 
 ```sh
-curl -s 'https://<host>/api/v1/audit?action_type=udl.notification.ingest&limit=20' -H "Authorization: Bearer $TOKEN"
+curl -s 'https://<host>/api/v1/audit?action_type=udl.notification.ingest&limit=20' -H "X-Holly-Token: $TOKEN"
 ```
 
 Rows come newest first. With a database shell (on the App Store, `TBC, re-verify`):
@@ -232,7 +234,9 @@ Holly cannot reach its database. Check the POSTGRESQL add-on's state and the dat
 
 ### Symptom: every signed-in request answers 401
 
-`APP_SECRET_KEY` changed, which invalidates every token: expected after a rotation, and users sign in again. Otherwise the user's access token expired and the refresh failed; the same answer applies.
+First tell whose 401 it is. Holly's own has the body `{"detail":"Could not validate credentials"}`, a bare `WWW-Authenticate: Bearer` and an `X-Request-ID`. A 401 with an empty body and a `WWW-Authenticate` naming `invalid_token` and `Signed JWT rejected` came from the App Store's gateway, which refused Holly's token in `Authorization` as one it could not verify with the platform's keys (by inference, before Holly saw the request, and for any bearer token there that the platform did not sign). The dashboard sends its token in `X-Holly-Token` from V0.9; a script, or a dashboard older than V0.9, sending it in `Authorization` meets that refusal. In the browser it shows as the dashboard appearing after sign-in, then returning to the sign-in page.
+
+For Holly's own 401: `APP_SECRET_KEY` changed, which invalidates every token: expected after a rotation, and users sign in again. Otherwise the user's access token expired and the refresh failed; the same answer applies.
 
 ### Symptom: HTTP 429 `Too many requests`, `Too many sign-in attempts from this address` or `Too many failed sign-ins`
 

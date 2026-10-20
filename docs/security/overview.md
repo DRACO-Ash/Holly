@@ -4,8 +4,8 @@
 
 **Data classification:** Unclassified (per ADR-006)
 **Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned the edition this one replaces)
-**Version:** 0.4
-**Last updated:** 2026-10-17
+**Version:** 0.5
+**Last updated:** 2026-10-20
 
 > **BLUF**
 >
@@ -175,7 +175,7 @@ Supply chain: Python installs only from the hash-pinned locks (`--require-hashes
 | Compromised UDL, Mattermost or Anthropic credentials | Held in environment variables, never in source. Holly only reads from UDL and Mattermost. Holly's daily token cap does not limit use of a stolen key outside Holly; rotate it at the source. |
 | SQL injection | SQLAlchemy parameterises every query; no SQL is built by string concatenation. |
 | Cross-site scripting (XSS) | React escapes by default and the dashboard uses no `dangerouslySetInnerHTML`. The CSP allows no inline or third-party script. Links from UDL data are limited to http and https. |
-| Cross-site request forgery (CSRF) | Tokens travel in the `Authorization` header, not a cookie, which removes the standard CSRF vector. |
+| Cross-site request forgery (CSRF) | Tokens travel in Holly's own `X-Holly-Token` header, not a cookie, which removes the standard CSRF vector: a page on another origin cannot send that header without a CORS preflight, which Holly refuses while `APP_ALLOWED_ORIGINS` is empty. `Authorization` is left to the App Store's gateway (ADR-013). |
 | Prompt injection through UDL data, chat or procedures | Model output is validated, bounded and shown as advice; the assistant has no tools and cannot act. |
 | Marked UDL content sent to Anthropic | Only notifications and manoeuvre records whose classification marking is listed in `ASSISTANT_CLEARED_MARKINGS` are sent, and each evaluation and narrative writes an audit row; once a sending may have gone, any failure to store it or its row stops that background phase for the cycle. |
 | Cost exhaustion | Per-user assistant limit and a daily token cap that fails closed. |

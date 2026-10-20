@@ -156,6 +156,31 @@ def test_cors_sits_outermost_for_an_allowed_origin(
     assert_security_headers(refused)
 
 
+def test_an_allowed_origin_may_send_holly_s_token_header_and_never_authorization(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The dashboard sends its token in X-Holly-Token and never Authorization (ADR-013); the
+    # preflight allows what it sends and nothing in place of it.
+    monkeypatch.setenv("APP_ALLOWED_ORIGINS", '["https://ops.example"]')
+    get_settings.cache_clear()
+    with TestClient(create_app(static_dir=tmp_path / "not-built")) as cors_client:
+        allowed, refused = (
+            cors_client.options(
+                "/api/v1/auth/me",
+                headers={**PREFLIGHT, "Access-Control-Request-Headers": requested},
+            )
+            for requested in ("x-holly-token", "authorization")
+        )
+    assert allowed.status_code == 200
+    listed = allowed.headers["access-control-allow-headers"].lower()
+    assert "x-holly-token" in listed
+    assert "authorization" not in listed
+    # No credentials mode: Holly reads no cookie, and the platform's own would only ride along.
+    assert "access-control-allow-credentials" not in allowed.headers
+    assert refused.status_code == 400
+    assert refused.content == b"Disallowed CORS headers"
+
+
 def test_a_server_error_is_generic_and_keeps_the_security_headers(tmp_path: Path) -> None:
     app = create_app(static_dir=tmp_path / "not-built")
 

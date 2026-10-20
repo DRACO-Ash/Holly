@@ -179,6 +179,14 @@ check pass "text files scanned, clean" "a text file that begins like a bzip2 sig
 check refuse "secret-scan rules matched" "a key in an ordinary file" src/app/leak.py "$LINE"
 check refuse "secret-scan rules matched" "a key in UTF-8 text with a byte-order mark" \
   src/app/leak.py "utf8bom:$LINE"
+# Holly's token in its own header, and a JSON Web Token, each split so this file's own source never
+# matches the rule (ADR-013).
+check refuse "secret-scan rules matched" "Holly's token in its own header" \
+  src/app/leak.py "X-Holly-Token"": abcdefghijklmnopqrstuvwxyz"
+check refuse "secret-scan rules matched" "a JSON Web Token" \
+  src/app/leak.py "T = \"eyJ""hbGciOiJIUzI1NiJ9.eyJ""zdWIiOiJyZXZpZXcifQ.c2lnbmF0dXJlLXZhbHVl\""
+check refuse "secret-scan rules matched" "a JSON Web Token glued to a word" \
+  src/app/leak.py "T = \"tok_eyJ""hbGciOiJIUzI1NiJ9.eyJ""zdWIiOiJyZXZpZXcifQ.c2lnbmF0dXJlLXZhbHVl\""
 check refuse "secret-scan rules matched" "a key behind a bracketed name" "src/app/[leak].py" "$LINE"
 check refuse "secret-scan rules matched" "a bracketed name beside a clean namesake" \
   src/app/x.py 'X = 1' "src/app/[x].py" "$LINE"

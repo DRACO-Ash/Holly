@@ -4,10 +4,22 @@
 
 **Data classification:** Unclassified (per ADR-006)
 **Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned the history below)
-**Version:** 0.9
-**Last updated:** 2026-10-19
+**Version:** 0.10
+**Last updated:** 2026-10-20
 
 All notable changes to Holly are recorded here, newest first. Holly V0.2 is the Daily Operations Dashboard fused into the Holly App Store project and renamed; the sections after it are the Daily Operations Dashboard's own record, kept as written. Holly's releases are numbered V<major>.<minor>, and each has a row in `docs/AUDIT-LOG.md` with the checks that ran.
+
+## Holly V0.9 (2026-10-20)
+
+### Fixed
+
+● **On the App Store, signing in showed the dashboard and then returned to the sign-in page at once.** The platform's gateway answered with a refusal of its own, rejecting Holly's token in the `Authorization` header as one the platform did not sign; it most likely reads any bearer token there as the platform's (inference). The dashboard now sends Holly's token in its own header, `X-Holly-Token`, and Holly never reads `Authorization`. Scripts that call the API send `X-Holly-Token: <token>`, the token alone.
+
+● **Reloading the page after the 30-minute access token had expired returned to the sign-in page,** even with a valid refresh token, because the dashboard never refreshed after its first call, `/auth/me`, was refused. It now refreshes once first, as for any other call.
+
+### Changed
+
+● **Holly's address is `https://holly.appstore.bluestaq.com`,** as the App Store serves it; the documents said `holly.apps.bluestaq.com`.
 
 ## Holly V0.8 (2026-10-19)
 

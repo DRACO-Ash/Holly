@@ -59,7 +59,7 @@ Run in order. Do not skip a gate. Each step states the expected result; do not p
 9. **Pass the security gate** for any security-relevant change. Invoke `security-reviewer`. Expect `VERDICT: PASS`.
 10. **Build the package or image.** Static: `./scripts/build-package.sh <version> <date>`, then `unzip -l` shows only `${ENTRYPOINT_NAME}` (`packaging`). Server: `docker build -t ${APP_SLUG} .` succeeds (`release-and-deploy`).
 11. **Pass the deploy gate.** Invoke `deploy-gate`. Expect `VERDICT: PASS` with every precondition green (clean tree, version bumped, both reviews PASS, package/image meets the contract, submission prepared per `app-store-deployment`, rollback known).
-12. **Deploy.** Follow `release-and-deploy`, which hands the prepared submission to `app-store-deployment` for the platform. The irreversible publish requires explicit human confirmation. Expect the deployment Healthy and the app reachable at `${APP_SLUG}.apps.bluestaq.com`.
+12. **Deploy.** Follow `release-and-deploy`, which hands the prepared submission to `app-store-deployment` for the platform. The irreversible publish requires explicit human confirmation. Expect the deployment Healthy and the app reachable at `${APP_SLUG}.appstore.bluestaq.com` (inference from Holly's address, seen 20 October 2026; earlier notes said `apps.bluestaq.com`).
 13. **Verify post-deploy.** Run the pre-flight routine: every pipeline stage green, pods Running and Healthy, `GET /` returns 200, rollback still available (`app-store-deployment` -> pre-flight).
 
 ## The App Store contract (know it before you package)

@@ -29,6 +29,7 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
+from app.dependencies import TOKEN_HEADER
 from app.models.user import User
 from fakes import FakeSession, make_user, scalar_result
 
@@ -265,22 +266,57 @@ class TestMe:
         user = make_user()
         use_session(user_lookup(user))
         token = create_access_token(str(user.id))
-        response = await api.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
+        response = await api.get("/api/v1/auth/me", headers={TOKEN_HEADER: token})
         assert response.status_code == 200
         assert response.json()["username"] == "alice"
         assert "password_hash" not in response.json()
 
-    @pytest.mark.parametrize(
-        "authorization",
-        [None, "Bearer not.a.real.jwt", "Basic YWxpY2U6c2VjcmV0", "Bearer"],
-    )
+    @pytest.mark.parametrize("token", [None, "not.a.real.jwt", "", "   ", "Basic YWxpY2U6c2VjcmV0"])
     async def test_me_rejects_a_missing_or_malformed_credential(
-        self, api: httpx2.AsyncClient, authorization: str | None
+        self, api: httpx2.AsyncClient, token: str | None
     ) -> None:
-        headers = {"Authorization": authorization} if authorization else {}
+        headers = {TOKEN_HEADER: token} if token is not None else {}
         response = await api.get("/api/v1/auth/me", headers=headers)
         assert response.status_code == 401
+        # The marks section 10 of the operator manual tells Holly's own 401 by, against the
+        # gateway's empty one.
         assert response.headers["www-authenticate"] == "Bearer"
+        assert response.headers["x-request-id"]
+        assert response.json() == {"detail": "Could not validate credentials"}
+
+    async def test_me_ignores_a_valid_token_in_authorization(
+        self, api: httpx2.AsyncClient, use_session: UseSession
+    ) -> None:
+        # The App Store's gateway owns Authorization: Holly reads its token from its own header
+        # alone, so a token anywhere else signs nobody in.
+        user = make_user()
+        session = use_session(user_lookup(user))
+        token = create_access_token(str(user.id))
+        response = await api.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
+        assert response.status_code == 401
+        session.execute.assert_not_awaited()
+
+    async def test_me_holds_whatever_the_gateway_puts_in_authorization(
+        self, api: httpx2.AsyncClient, use_session: UseSession
+    ) -> None:
+        user = make_user()
+        use_session(user_lookup(user))
+        headers = {
+            TOKEN_HEADER: create_access_token(str(user.id)),
+            "Authorization": "Bearer the.platforms.token",
+        }
+        response = await api.get("/api/v1/auth/me", headers=headers)
+        assert response.status_code == 200
+        assert response.json()["username"] == "alice"
+
+    async def test_me_takes_the_token_alone_not_a_scheme_and_token(
+        self, api: httpx2.AsyncClient, use_session: UseSession
+    ) -> None:
+        user = make_user()
+        use_session(user_lookup(user))
+        token = create_access_token(str(user.id))
+        response = await api.get("/api/v1/auth/me", headers={TOKEN_HEADER: f"Bearer {token}"})
+        assert response.status_code == 401
 
     async def test_me_rejects_refresh_token_used_as_access(
         self, api: httpx2.AsyncClient, use_session: UseSession
@@ -288,14 +324,14 @@ class TestMe:
         user = make_user()
         use_session(user_lookup(user))
         refresh = create_refresh_token(str(user.id))
-        response = await api.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {refresh}"})
+        response = await api.get("/api/v1/auth/me", headers={TOKEN_HEADER: refresh})
         assert response.status_code == 401
 
     async def test_me_rejects_a_subject_that_is_not_a_user_id(
         self, api: httpx2.AsyncClient
     ) -> None:
         token = create_access_token("not-a-uuid")
-        response = await api.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
+        response = await api.get("/api/v1/auth/me", headers={TOKEN_HEADER: token})
         assert response.status_code == 401
 
     @pytest.mark.parametrize("user", [None, make_user(is_active=False)])
@@ -304,7 +340,7 @@ class TestMe:
     ) -> None:
         use_session(user_lookup(user))
         token = create_access_token(str(uuid.uuid4()))
-        response = await api.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
+        response = await api.get("/api/v1/auth/me", headers={TOKEN_HEADER: token})
         assert response.status_code == 401
 
     async def test_elsets_ingest_requires_auth(self, api: httpx2.AsyncClient) -> None:

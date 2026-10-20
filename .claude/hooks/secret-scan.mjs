@@ -32,6 +32,9 @@ const RULES = [
   ['Google API key',             /\bAIza[0-9A-Za-z_\-]{35}\b/],
   ['Slack token',                /\bxox[baprs]-[0-9A-Za-z\-]{10,}\b/],
   ['GitLab personal token',      /\bglpat-[0-9A-Za-z_\-]{20,}\b/],
+  // Holly's access token travels in its own header, which the Bearer rule does not see (ADR-013).
+  ['Holly token header',         /X-Holly-Token['"]?\s*[:=]\s*['"]?[A-Za-z0-9._\-]{20,}/i],
+  ['JSON Web Token',             /eyJ[A-Za-z0-9_\-]{8,}\.eyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}/],
   // Banned anti-pattern: a hardcoded client-side access gate (public artifact PIN).
   ['Client-side access gate',    /\b(?:ADMIN_)?PIN\s*=\s*['"][0-9A-Za-z]{4,}['"]/],
   // Banned anti-pattern: ENV PORT in a Dockerfile silently overrides the platform port 8080.

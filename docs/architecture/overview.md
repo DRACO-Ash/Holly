@@ -4,8 +4,8 @@
 
 **Data classification:** Unclassified (per ADR-006)
 **Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned the edition this one replaces)
-**Version:** 0.4
-**Last updated:** 2026-10-17
+**Version:** 0.5
+**Last updated:** 2026-10-20
 
 > **BLUF**
 >
@@ -70,7 +70,7 @@ Cross-cutting concerns sit in [src/app/core/](../../src/app/core/) (structured l
 
 The dashboard's source is [frontend/](../../frontend/). The Dockerfile's `dashboard` stage builds it with Node 22 from the committed lockfile and copies only the static output into `src/app/static`, so no Node tooling reaches the image. The same process serves it at `/`. API routes are matched first and only a browser's page navigation falls back to `index.html`, so a bookmarked page loads while an unknown API path still answers 404. In a source checkout with no built dashboard, `/` answers `{"service": "holly", "status": "ok"}` instead.
 
-Sign-in state flows through the `AuthContext` provider. `ProtectedRoute` sends a visitor without an access token to `/login`; that redirect is a convenience, and the server's token check on every API route is the control. The axios client at [frontend/src/api/client.ts](../../frontend/src/api/client.ts) adds the bearer token to every call, refreshes once on a 401 (concurrent calls share one refresh), stores the rotated refresh token, and returns the analyst to `/login` when the refresh fails. Tokens live in the browser's `localStorage` under `holly.auth.access` and `holly.auth.refresh`. Downloads and exports are fetched with the token and handed to the browser to save ([frontend/src/utils/download.ts](../../frontend/src/utils/download.ts)), because a plain link cannot carry it.
+Sign-in state flows through the `AuthContext` provider. `ProtectedRoute` sends a visitor without an access token to `/login`; that redirect is a convenience, and the server's token check on every API route is the control. The axios client at [frontend/src/api/client.ts](../../frontend/src/api/client.ts) adds the access token to every call in its own `X-Holly-Token` header (ADR-013), refreshes once on a 401 (concurrent calls share one refresh), `/auth/me` included, stores the rotated refresh token, and returns the analyst to `/login` when the refresh fails. Tokens live in the browser's `localStorage` under `holly.auth.access` and `holly.auth.refresh`. Downloads and exports are fetched with the token and handed to the browser to save ([frontend/src/utils/download.ts](../../frontend/src/utils/download.ts)), because a plain link cannot carry it.
 
 The pages are Dashboard, Notifications (with a detail page per notice), Maneuvers, Comms, Procedures, Shift log (with the event timers) and Audit log, which only operators and admins see. The [analyst training manual](../user-handbook/training-manual.md) walks through each one.
 
@@ -105,7 +105,7 @@ Every assistant call goes through `call_claude` ([src/app/services/claude.py](..
 
 ### TLS and the platform ingress
 
-Holly serves plain HTTP on `0.0.0.0`, on `PORT` or 8080. TLS termination, the public hostname `<slug>.apps.bluestaq.com` (slug `TBC, re-verify`) and request routing are the platform's responsibility; the details of the ingress are `TBC, re-verify`. What Holly relies on the ingress for is listed in [SECURITY.md](../../SECURITY.md). There is no nginx and no in-app TLS.
+Holly serves plain HTTP on `0.0.0.0`, on `PORT` or 8080. TLS termination, the public hostname `holly.appstore.bluestaq.com` and request routing are the platform's responsibility; the details of the ingress are `TBC, re-verify`, but for one: a gateway in front of the app refused Holly's token in `Authorization` as one the platform did not sign (by inference, any such bearer token), so Holly's token travels in `X-Holly-Token` (ADR-013). What Holly relies on the ingress for is listed in [SECURITY.md](../../SECURITY.md). There is no nginx and no in-app TLS.
 
 **SECTION 04**
 

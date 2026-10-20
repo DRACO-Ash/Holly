@@ -4,12 +4,12 @@
 
 **Data classification:** Unclassified (per ADR-006)
 **Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned ADR-001 to ADR-011)
-**Version:** 0.4
-**Last updated:** 2026-10-18
+**Version:** 0.5
+**Last updated:** 2026-10-20
 
 > **HOW TO READ THIS LOG**
 >
-> Each Architectural Decision Record (ADR) captures a single decision, its rationale, and (where helpful) alternatives considered and risks accepted. Superseded decisions remain in the log; their status line points to the ADR that replaced them. New ADRs are appended; numbering does not reset. ADR-001 to ADR-011 were made for the Daily Operations Dashboard, which Holly was built from; ADR-012 is the first made for Holly.
+> Each Architectural Decision Record (ADR) captures a single decision, its rationale, and (where helpful) alternatives considered and risks accepted. Superseded decisions remain in the log; their status line points to the ADR that replaced them. New ADRs are appended; numbering does not reset. ADR-001 to ADR-011 were made for the Daily Operations Dashboard, which Holly was built from; ADR-012 and later were made for Holly.
 
 **ADR-001**
 
@@ -98,7 +98,7 @@
 ## JWT Authentication with Stateless Refresh
 
 **Date:** 2026-05-28
-**Status:** Superseded by ADR-011. Its operational note is replaced by ADR-012.
+**Status:** Superseded by ADR-011. Its operational note is replaced by ADR-012. Its token header is replaced by ADR-013.
 **Decision:** Authentication is HS256 JWT bearer tokens issued by `/api/v1/auth/login` and refreshed at `/api/v1/auth/refresh`. Access tokens last 30 minutes; refresh tokens last 7 days. Refresh is stateless: any validly signed refresh token within its expiry window is accepted. Logout is client-side only (delete both tokens from `localStorage`). `get_current_user` enforces a valid access token on protected routes. Supersedes ADR-009.
 **Rationale:** Stateless refresh keeps the Phase 1 schema simple (no refresh-token table, no blocklist). The 30-minute access window bounds the blast radius of a stolen token. Bcrypt via `passlib` hashes passwords with per-user salt. Tokens travel in `Authorization: Bearer ...` headers rather than cookies, which removes the standard CSRF vector. The frontend axios client transparently refreshes once on 401 before redirecting to the login page.
 **Risks accepted:** A stolen refresh token is valid until expiry (up to 7 days). Mitigations: HTTPS-only transport, refresh tokens never sent to non-auth endpoints, single-retry interceptor that breaks token-loss loops. Real revocation (refresh-token blocklist or a JTI table) is on the Phase 1 backlog for the slice that introduces incident response.
@@ -130,5 +130,23 @@
 ● `DATABASE_URL` is the assumed name of the add-on's connection variable (`TBC, re-verify`); Holly also accepts the `POSTGRES_*` parts. The App Store's upload page lists the add-on as PostgreSQL 16, its minor version `TBC, re-verify`; the container smoke rung tests 16.15, and local development uses 15.19.
 ● The first admin is created with `python -m app.cli.create_admin --username <name>` inside the running container, or anywhere with the database settings. The password comes from `ADMIN_PASSWORD` or a hidden prompt; the `--password` flag in ADR-010's operational note is gone. Whether the platform offers a shell in the running container is `TBC, re-verify`.
 ● Behind the platform ingress, the client address Holly writes to the audit log and rate-limits by is the ingress's own, unless gunicorn is set to trust the ingress's forwarded headers (`FORWARDED_ALLOW_IPS`). Whether the platform provides those headers, and which address to trust, is `TBC, re-verify`.
+
+**ADR-013**
+
+## Holly's Access Token Travels in X-Holly-Token
+
+**Date:** 2026-10-20 (Holly V0.9)
+**Decision:** The dashboard sends Holly's access token in a header of Holly's own, `X-Holly-Token`, holding the token alone, and `get_current_user` reads that header and never `Authorization`. The tokens, their signing and lifetimes, and the refresh and sign-out bodies are unchanged. Amends ADR-010, whose tokens travelled in `Authorization: Bearer ...`.
+**Rationale:** On the App Store, V0.8 signed the admin in and then returned to the sign-in page at once. The browser's record of the failing `GET /api/v1/auth/me` (20 October 2026) shows a 401 with an empty body and `WWW-Authenticate: Bearer error="invalid_token", error_description="An error occurred while attempting to decode the Jwt: Signed JWT rejected: Another algorithm expected, or no matching key(s) found"`, naming the platform's own `/.well-known/oauth-protected-resource`, and none of the headers Holly sets: the gateway in front of the app answered for Holly and refused Holly's token as one it could not verify with the platform's keys (fact). That it did so before Holly saw the request, and would do the same to any bearer token in `Authorization` the platform did not sign, are inference from the missing headers and from the wording, which is Spring Security's resource server. Sign-in carries no bearer token and passed. The same sequence against the V0.8 image locally, with no gateway, stayed signed in. A header of Holly's own leaves `Authorization` to the platform. The alternative, asking the platform team to stop checking bearer tokens on Holly's host, would relax a platform-wide control on their timeline, and exempting the path alone would not do, since such a gateway refuses a bad bearer token even on an open path (inference).
+**Consequences:**
+
+● Holly never reads `Authorization`: a token the gateway puts there changes nothing, and a Holly token there signs nobody in.
+● CORS no longer allows credentials mode for a listed origin: Holly reads no cookie, and the platform's own session cookie on Holly's host would only ride along.
+● The CSRF position of ADR-010 holds: the token is a header only the page's own script sets, never a cookie, and a page on another origin cannot send it without a CORS preflight, which Holly refuses while `APP_ALLOWED_ORIGINS` is empty.
+● Scripts send `X-Holly-Token: <token>` (operator manual, section 06). Whether the gateway lets a request through without the caller's App Store sign-in is `TBC, re-verify`.
+● That the gateway passes `X-Holly-Token` through unchanged is inference until V0.9 runs on the App Store. The container smoke rung proves Holly's side, signing in and then calling `/api/v1/auth/me` with the token in each header; only a gateway in front of the container can reproduce the refusal, and none is in the repository.
+● Leaving `Authorization` gives up the care intermediaries give it. A shared cache does not store the answer to a request carrying it unless told it may (RFC 9111, section 3.5), and log tools commonly redact it; neither holds for `X-Holly-Token`. Holly's `Cache-Control: no-store` on every response is now the only shared-cache protection for a signed-in answer, and whether the gateway logs the header is `TBC, re-verify` (SECURITY.md).
+● Holly's 401 still challenges `Bearer`, and sign-in still answers `token_type: "bearer"`, though the token no longer travels in `Authorization`. The bare challenge is how an operator tells Holly's 401 from the gateway's (operator manual, section 10), and the token type names what the token is, not where it goes.
+● The secret-scan hook gains rules for a JSON Web Token and for a token in `X-Holly-Token`, which its `Bearer` rule caught only in `Authorization`.
 
 Bluestaq Limited | Holly documentation | 2026

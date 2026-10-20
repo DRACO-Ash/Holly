@@ -1,6 +1,12 @@
 import axios, { AxiosError, type AxiosResponse, type InternalAxiosRequestConfig } from "axios";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ACCESS_TOKEN_KEY, REFRESH_TOKEN_KEY, apiClient, downloadFile } from "./client";
+import {
+  ACCESS_TOKEN_KEY,
+  REFRESH_TOKEN_KEY,
+  TOKEN_HEADER,
+  apiClient,
+  downloadFile,
+} from "./client";
 
 const { saveBlob } = vi.hoisted(() => ({ saveBlob: vi.fn() }));
 vi.mock("../utils/download", async (importOriginal) => ({
@@ -15,10 +21,12 @@ interface Reply {
 }
 type Handler = (config: InternalAxiosRequestConfig) => Reply;
 
-// An axios adapter that answers from `handler` and rejects a 4xx or 5xx as axios would.
+// An axios adapter that answers from `handler` and rejects a 4xx or 5xx as axios would. Like the
+// App Store's gateway (ADR-013), it refuses any request carrying Authorization with a 401, whatever
+// the handler says, so a call that sends Holly's token there fails in every test.
 function adapter(handler: Handler) {
   return async (config: InternalAxiosRequestConfig): Promise<AxiosResponse> => {
-    const reply = handler(config);
+    const reply = config.headers.has("Authorization") ? { status: 401 } : handler(config);
     const response: AxiosResponse = {
       data: reply.data,
       status: reply.status,
@@ -70,8 +78,8 @@ afterEach(() => {
   axios.defaults.adapter = undefined;
 });
 
-function bearer(config: InternalAxiosRequestConfig): string | undefined {
-  return config.headers.get("Authorization")?.toString();
+function sentToken(config: InternalAxiosRequestConfig): string | undefined {
+  return config.headers.get(TOKEN_HEADER)?.toString();
 }
 
 describe("the API client", () => {
@@ -79,11 +87,22 @@ describe("the API client", () => {
     localStorage.setItem(ACCESS_TOKEN_KEY, "acc-1");
     const seen: (string | undefined)[] = [];
     apiClient.defaults.adapter = adapter((config) => {
-      seen.push(bearer(config));
+      seen.push(sentToken(config));
       return { status: 200, data: { ok: true } };
     });
     await apiClient.get("/notifications");
-    expect(seen).toEqual(["Bearer acc-1"]);
+    expect(seen).toEqual(["acc-1"]);
+  });
+
+  it("leaves Authorization to the App Store's gateway, which refuses Holly's token there", async () => {
+    localStorage.setItem(ACCESS_TOKEN_KEY, "acc-1");
+    const seen: unknown[] = [];
+    apiClient.defaults.adapter = adapter((config) => {
+      seen.push(config.headers.get("Authorization"));
+      return { status: 200, data: { ok: true } };
+    });
+    await apiClient.get("/notifications");
+    expect(seen).toEqual([undefined]);
   });
 
   it("refreshes once on a 401, stores the new pair and retries", async () => {
@@ -95,7 +114,7 @@ describe("the API client", () => {
       return { status: 200, data: { access_token: "new-acc", refresh_token: "new-ref" } };
     });
     apiClient.defaults.adapter = adapter((config) =>
-      bearer(config) === "Bearer new-acc" ? { status: 200, data: "done" } : { status: 401 },
+      sentToken(config) === "new-acc" ? { status: 200, data: "done" } : { status: 401 },
     );
 
     const results = await Promise.all([apiClient.get("/a"), apiClient.get("/b")]);
@@ -176,24 +195,72 @@ describe("the API client", () => {
     }));
     const retried: { trace?: string; type?: string; auth?: string }[] = [];
     apiClient.defaults.adapter = adapter((config) => {
-      if (bearer(config) !== "Bearer new-acc") return { status: 401 };
+      if (sentToken(config) !== "new-acc") return { status: 401 };
       retried.push({
         trace: config.headers.get("X-Trace")?.toString(),
         type: config.headers.get("Content-Type")?.toString(),
-        auth: bearer(config),
+        auth: sentToken(config),
       });
       return { status: 200, data: "done" };
     });
 
     await apiClient.post("/a", { x: 1 }, { headers: { "X-Trace": "t-1" } });
 
-    expect(retried).toEqual([{ trace: "t-1", type: "application/json", auth: "Bearer new-acc" }]);
+    expect(retried).toEqual([{ trace: "t-1", type: "application/json", auth: "new-acc" }]);
   });
 
-  it("never tries to refresh a failed sign-in", async () => {
-    window.location.pathname = "/login";
+  it("refreshes a refused /auth/me, so a reload after the access token expires stays signed in", async () => {
+    localStorage.setItem(ACCESS_TOKEN_KEY, "old-acc");
+    localStorage.setItem(REFRESH_TOKEN_KEY, "old-ref");
+    axios.defaults.adapter = adapter(() => ({
+      status: 200,
+      data: { access_token: "new-acc", refresh_token: "new-ref" },
+    }));
+    apiClient.defaults.adapter = adapter((config) =>
+      sentToken(config) === "new-acc"
+        ? { status: 200, data: { username: "alice" } }
+        : { status: 401 },
+    );
+
+    const response = await apiClient.get("/auth/me");
+
+    expect(response.data).toEqual({ username: "alice" });
+    expect(localStorage.getItem(ACCESS_TOKEN_KEY)).toBe("new-acc");
+    expect(assign).not.toHaveBeenCalled();
+  });
+
+  it("never tries to refresh a refused refresh", async () => {
+    localStorage.setItem(REFRESH_TOKEN_KEY, "old-ref");
+    const refresh = vi.fn();
+    axios.defaults.adapter = adapter((config) => {
+      refresh(config);
+      return { status: 200, data: { access_token: "new-acc", refresh_token: "new-ref" } };
+    });
     apiClient.defaults.adapter = adapter(() => ({ status: 401 }));
+
+    await expect(apiClient.post("/auth/refresh", {})).rejects.toThrow("status code 401");
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it("never tries to refresh a failed sign-in, even with a refresh token held", async () => {
+    // A refresh and retry would send the password a second time, spend the refresh token and
+    // count the failure twice against the sign-in limits.
+    window.location.pathname = "/login";
+    localStorage.setItem(REFRESH_TOKEN_KEY, "old-ref");
+    const refresh = vi.fn();
+    axios.defaults.adapter = adapter((config) => {
+      refresh(config);
+      return { status: 200, data: { access_token: "new-acc", refresh_token: "new-ref" } };
+    });
+    let signIns = 0;
+    apiClient.defaults.adapter = adapter(() => {
+      signIns += 1;
+      return { status: 401 };
+    });
+
     await expect(apiClient.post("/auth/login", {})).rejects.toThrow("status code 401");
+    expect(refresh).not.toHaveBeenCalled();
+    expect(signIns).toBe(1);
     expect(assign).not.toHaveBeenCalled();
   });
 
@@ -212,7 +279,7 @@ describe("downloadFile", () => {
       seen.push({
         url: config.url,
         params: config.params,
-        auth: bearer(config),
+        auth: sentToken(config),
         type: config.responseType,
       });
       return {
@@ -228,7 +295,7 @@ describe("downloadFile", () => {
       {
         url: "/shift-log/export",
         params: { shift_date: "2026-06-05" },
-        auth: "Bearer acc-1",
+        auth: "acc-1",
         type: "blob",
       },
     ]);
