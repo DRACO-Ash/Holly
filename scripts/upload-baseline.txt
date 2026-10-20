@@ -13,3 +13,4 @@
 upload dccfbdceb9bcb249303adcd7ffe7e15da0ae974a 0.4.0 failed # V0.4, zip ff5d3658, merge request 2: both test jobs failed at the test stage
 upload 56c55a99aa315feb6c1eada916a474e3ac2c84c7 0.5.0 failed # V0.5, zip d947cfea, merge request TBC, re-verify: the test stage passed; Code Quality failed it on 68 findings (5 bugs, 2 vulnerabilities, 61 code smells)
 upload 452e3c7f5d2ceb13e602fcda73e893e8b3c0b63e 0.7.0 pending # V0.7, zip 91043942, merge request 3: handed over 19 October 2026, outcome pending
+upload 452e3c7f5d2ceb13e602fcda73e893e8b3c0b63e 0.7.0 failed # V0.7, zip 91043942, merge request 3, dated Oct 18, 2026 in the console: 8 of 10 stages passed; Code Quality failed it on 1 new code smell, DAST on no_report (no answer on 8080 within 300 seconds)

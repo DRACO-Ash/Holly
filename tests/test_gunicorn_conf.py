@@ -8,6 +8,8 @@ from typing import Any
 import pytest
 from gunicorn.config import Config
 
+from app.config import get_settings
+
 
 def load_settings(monkeypatch: pytest.MonkeyPatch, port: str | None) -> dict[str, Any]:
     if port is None:
@@ -57,6 +59,16 @@ def test_the_master_migrates_then_bootstraps_the_admin_before_any_worker_starts(
     )
     monkeypatch.setitem(
         settings["on_starting"].__globals__,
+        "prepare_scan_environment",
+        lambda env: calls.append(f"scan:{env is environ}"),
+    )
+    monkeypatch.setitem(
+        settings["on_starting"].__globals__,
+        "wait_for_database",
+        lambda url: calls.append(f"wait:{url.host}"),
+    )
+    monkeypatch.setitem(
+        settings["on_starting"].__globals__,
         "run_admin_bootstrap",
         # The bootstrap sees the live environment, with the password still in it.
         lambda env: calls.append(f"admin:{env is environ}:{'ADMIN_PASSWORD' in env}"),
@@ -66,10 +78,31 @@ def test_the_master_migrates_then_bootstraps_the_admin_before_any_worker_starts(
     server = SimpleNamespace(cfg=Config())
     assert server.cfg.env_orig["ADMIN_PASSWORD"] == "p" * 16
     settings["on_starting"](server)
-    assert calls == ["log", "migrate", "admin:True:True"]
+    # The scan step runs before anything reads the settings; the wait before the migrations.
+    assert calls == ["log", "scan:True", "wait:db.invalid", "migrate", "admin:True:True"]
     # The worker forks without the admin password in its environment or in gunicorn's copy.
     assert "ADMIN_PASSWORD" not in environ
     assert "ADMIN_PASSWORD" not in server.cfg.env_orig
+
+
+def test_with_no_database_under_the_scan_nothing_is_migrated_or_bootstrapped(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    settings = load_settings(monkeypatch, None)
+    hook = settings["on_starting"]
+    called: list[str] = []
+    for name in ("wait_for_database", "run_migrations", "run_admin_bootstrap"):
+        monkeypatch.setitem(hook.__globals__, name, lambda *_args, name=name: called.append(name))
+    monkeypatch.setitem(hook.__globals__, "configure_logging", lambda: None)
+    for name in ("DATABASE_URL", "APP_SECRET_KEY", "PROCEDURE_STORAGE_PATH"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("APPSTORE_DAST_SCAN", "true")
+    get_settings.cache_clear()
+    hook(SimpleNamespace(cfg=Config()))
+    assert called == []
+    assert '"event": "migrations", "service": "holly", "request_id": "-", "status": "skipped"' in (
+        capsys.readouterr().out
+    )
 
 
 def test_gunicorn_knows_every_setting_the_module_defines(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -83,6 +116,10 @@ def test_gunicorn_knows_every_setting_the_module_defines(monkeypatch: pytest.Mon
         "configure_logging",
         "run_migrations",
         "run_admin_bootstrap",
+        "get_settings",
+        "log_event",
+        "prepare_scan_environment",
+        "wait_for_database",
     }
     defined = {
         name

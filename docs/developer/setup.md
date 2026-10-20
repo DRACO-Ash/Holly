@@ -62,6 +62,7 @@ Every setting Holly reads. Names are environment variable names. Secret values a
 | Setting | Purpose | Default | Required |
 |---------|---------|---------|----------|
 | `PORT` | Port Holly listens on, on `0.0.0.0` in the container and `127.0.0.1` under `python -m app`. A whole number from 1 to 65535 with no sign or leading zero; anything else stops the start. Environment only. | `8080` | No |
+| `APPSTORE_DAST_SCAN` | Set to `true` by the App Store's DAST scan alone, which starts the container with none of Holly's other settings. Holly then generates a throwaway signing key and a temporary procedure store if none is set, turns the background pulls off, and may run with no database, each request that needs one answering 503. Never set it by hand. | `false` | No |
 | `APP_ENV` | `production` or `development`. `development` allows `http://` UDL and Mattermost URLs and `UDL_VERIFY_SSL=false`. | `production` | No |
 | `APP_SECRET_KEY` | Signs and verifies sign-in tokens. At least 32 characters. Changing it signs every user out. Secret. | none | Yes |
 | `APP_ALLOWED_ORIGINS` | Browser origins allowed to call the API from another origin, as a JSON list such as `["https://ops.example"]`. `*` is refused. The dashboard is served from Holly's own origin and needs none. | `[]` | No |

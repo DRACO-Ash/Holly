@@ -9,7 +9,11 @@ export function withContentKeys<T>(
   return items.map((item) => {
     const content = contentOf(item);
     let key = content;
-    for (let n = 2; issued.has(key); n++) key = `${content}#${n}`;
+    let occurrence = 1;
+    while (issued.has(key)) {
+      occurrence += 1;
+      key = `${content}#${occurrence}`;
+    }
     issued.add(key);
     return { key, item };
   });

@@ -4,10 +4,20 @@
 
 **Data classification:** Unclassified (per ADR-006)
 **Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned the history below)
-**Version:** 0.8
+**Version:** 0.9
 **Last updated:** 2026-10-19
 
 All notable changes to Holly are recorded here, newest first. Holly V0.2 is the Daily Operations Dashboard fused into the Holly App Store project and renamed; the sections after it are the Daily Operations Dashboard's own record, kept as written. Holly's releases are numbered V<major>.<minor>, and each has a row in `docs/AUDIT-LOG.md` with the checks that ran.
+
+## Holly V0.8 (2026-10-19)
+
+### Fixed
+
+● **V0.7's upload failed the App Store's DAST scan, which starts the container with none of Holly's settings.** Holly refused to start without its signing key and database, so the scan found nothing listening on port 8080. Under the scan's flag alone, Holly now fills in a throwaway signing key and a temporary store, turns its background pulls off, and serves without a database if the scan gives it none; a request that needs one answers 503.
+
+● **Holly waits about a minute at start for a database it cannot reach,** instead of stopping at once, as the platform advises; a database that answers and refuses, such as one given a wrong password, still stops the start at once, now naming the refusal's code.
+
+● **A code-quality finding in how the assistant panel keys its lists,** the one V0.7's upload failed Code Quality on. The loop that finds an unused key now tests and updates the same value (SonarQube S1994). The keys are unchanged.
 
 ## Holly V0.7 (2026-10-19)
 

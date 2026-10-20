@@ -31,7 +31,7 @@ from app.api.v1.routes import (
     procedures,
     shift_log,
 )
-from app.config import get_settings
+from app.config import DatabaseNotConfiguredError, get_settings
 from app.core.body_limit import BodySizeLimitMiddleware
 from app.core.logging import SERVICE_NAME, log_event
 from app.core.net import client_ip
@@ -214,6 +214,12 @@ def create_app(static_dir: Path = STATIC_DIR) -> FastAPI:
             for error in exc.errors()
         ]
         return JSONResponse({"detail": detail}, status_code=422)
+
+    @app.exception_handler(DatabaseNotConfiguredError)
+    def _no_database(_request: Request, _exc: DatabaseNotConfiguredError) -> JSONResponse:
+        # Only under the App Store's DAST scan with no database (app/dast_scan.py): a request
+        # that needs one is refused plainly, not failed as a server error.
+        return JSONResponse({"detail": "Service unavailable"}, status_code=503)
 
     @app.exception_handler(500)
     def _server_error(request: Request, _exc: Exception) -> PlainTextResponse:

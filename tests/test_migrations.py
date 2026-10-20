@@ -6,20 +6,26 @@ The online path, which holds the advisory lock, is exercised against a real Post
 container smoke rung (scripts/smoke-container.sh).
 """
 
+import asyncio
 import configparser
 import io
 import json
 import logging
 import re
+import socket
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import InterfaceError, OperationalError
 
+from app import migrate
 from app.db.base import Base
 from app.migrate import MIGRATIONS_DIR, alembic_config, run_migrations
 from app.models import (  # noqa: F401  registers every model on Base.metadata
@@ -155,3 +161,143 @@ def test_a_failed_migration_stops_the_start(monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.setattr(command, "upgrade", fail)
     with pytest.raises(RuntimeError, match="relation already exists"):
         run_migrations()
+
+
+class _AdaptedError(Exception):
+    """Shaped like SQLAlchemy's asyncpg adapter error: a sqlstate, the driver's error as its
+    cause."""
+
+    def __init__(self, sqlstate: str, driver: BaseException) -> None:
+        super().__init__("adapted")
+        self.sqlstate = sqlstate
+        self.__cause__ = driver
+
+
+_DRIVER_ERRORS = {
+    "28P01": "InvalidPasswordError",
+    "3D000": "InvalidCatalogNameError",
+    "57P03": "CannotConnectNowError",
+    "08006": "ConnectionFailureError",
+}
+
+
+def refused(sqlstate: str) -> OperationalError:
+    driver = type(_DRIVER_ERRORS[sqlstate], (Exception,), {})("no value in here")
+    return OperationalError("SELECT 1", {}, _AdaptedError(sqlstate, driver))
+
+
+class TestWaitForDatabase:
+    """The master asks for the database for about a minute before it gives up, since the
+    add-on's database, and the DAST scan's, may come up after the container."""
+
+    URL = make_url("postgresql+asyncpg://holly:not-a-real-password@db.invalid:5432/holly")
+
+    def run(
+        self, monkeypatch: pytest.MonkeyPatch, outcomes: list[BaseException | None]
+    ) -> list[float]:
+        # Each outcome in turn: an exception is raised, None means the database answered.
+        monkeypatch.setattr(migrate, "_database_answers", AsyncMock(side_effect=outcomes))
+        slept: list[float] = []
+        now = [0.0]
+
+        def sleep(seconds: float) -> None:
+            slept.append(seconds)
+            now[0] += seconds
+
+        migrate.wait_for_database(self.URL, deadline_seconds=5, clock=lambda: now[0], sleep=sleep)
+        return slept
+
+    def test_a_database_that_answers_at_once_is_not_waited_for(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        assert self.run(monkeypatch, [None]) == []
+        assert '"status": "ready", "attempts": 1' in capsys.readouterr().out
+
+    def test_a_database_that_comes_up_late_is_waited_for(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        slept = self.run(
+            monkeypatch,
+            [ConnectionRefusedError(), refused("57P03"), refused("08006"), None],
+        )
+        assert slept == [migrate.DATABASE_RETRY_SECONDS] * 3
+        out = capsys.readouterr().out
+        assert '"error": "ConnectionRefusedError"' in out
+        assert '"error": "CannotConnectNowError"' in out
+        assert '"status": "ready", "attempts": 4' in out
+
+    @pytest.mark.parametrize(
+        ("sqlstate", "named"),
+        [("28P01", "SQLSTATE 28P01, InvalidPasswordError"), ("3D000", "SQLSTATE 3D000")],
+    )
+    def test_a_database_that_answers_and_refuses_stops_the_start_at_once(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+        sqlstate: str,
+        named: str,
+    ) -> None:
+        with pytest.raises(RuntimeError, match=rf"refused the connection \({named}") as raised:
+            self.run(monkeypatch, [refused(sqlstate)])
+        # Not retried: a wrong password or a missing database will not clear on its own.
+        assert "database_wait" not in capsys.readouterr().out
+        assert raised.value.__cause__ is None
+        assert raised.value.__suppress_context__
+
+    def test_a_refusal_with_no_sqlstate_stops_the_start_naming_its_type(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        bare = InterfaceError("SELECT 1", {}, Exception("connection settings were not valid"))
+        with pytest.raises(RuntimeError, match=r"SQLSTATE none, Exception\)"):
+            self.run(monkeypatch, [bare])
+
+    def test_a_database_that_never_answers_stops_the_start_naming_the_error_alone(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        with pytest.raises(
+            RuntimeError,
+            match=r"could not be reached within about 5 seconds \(last error: gaierror\)",
+        ) as raised:
+            self.run(monkeypatch, [socket.gaierror("db.invalid holly not-a-real-password")] * 10)
+        assert "not-a-real-password" not in str(raised.value)
+        assert "not-a-real-password" not in capsys.readouterr().out
+        assert raised.value.__cause__ is None
+        assert raised.value.__suppress_context__
+
+    def test_any_other_failure_is_not_retried(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        with pytest.raises(ValueError, match="not a connection problem"):
+            self.run(monkeypatch, [ValueError("not a connection problem")])
+
+    def test_the_probe_hides_parameters_bounds_the_connect_and_always_disposes(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        made: list[dict[str, object]] = []
+        disposed: list[bool] = []
+
+        class Connection:
+            async def __aenter__(self) -> "Connection":
+                return self
+
+            async def __aexit__(self, *_exc: object) -> None:
+                return None
+
+            async def execute(self, statement: object) -> None:
+                assert str(statement) == "SELECT 1"
+                raise ConnectionResetError
+
+        class Engine:
+            def connect(self) -> Connection:
+                return Connection()
+
+            async def dispose(self) -> None:
+                disposed.append(True)
+
+        def engine(url: object, **kwargs: object) -> Engine:
+            made.append({"url": url, **kwargs})
+            return Engine()
+
+        monkeypatch.setattr(migrate, "create_async_engine", engine)
+        with pytest.raises(ConnectionResetError):
+            asyncio.run(migrate._database_answers(self.URL))
+        assert made == [{"url": self.URL, "hide_parameters": True, "connect_args": {"timeout": 5}}]
+        assert disposed == [True]

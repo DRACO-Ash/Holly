@@ -15,7 +15,7 @@ from pathlib import PurePosixPath
 from typing import Literal, Self
 from urllib.parse import urlsplit
 
-from pydantic import Field, SecretStr, ValidationError, model_validator
+from pydantic import Field, SecretStr, ValidationError, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict, SettingsError
 from sqlalchemy.engine import URL, make_url
 from sqlalchemy.exc import ArgumentError
@@ -134,6 +134,9 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     app_env: Literal["development", "production"] = "production"
+    # Set to true by the App Store when its DAST scan starts the container with none of Holly's
+    # settings (app/dast_scan.py). Only then may the database settings be absent.
+    appstore_dast_scan: bool = False
     app_secret_key: SecretStr
     # Browser origins allowed to call the API cross-origin. Empty by default: the dashboard is
     # served from the same origin, so no cross-origin access is needed.
@@ -193,11 +196,25 @@ class Settings(BaseSettings):
     background_maneuver_interval_seconds: int = Field(default=600, ge=60)
     background_maneuver_window_hours: int = Field(default=48, ge=1)
 
+    @field_validator(
+        "database_url",
+        "postgres_host",
+        "postgres_db",
+        "postgres_user",
+        "postgres_password",
+        mode="before",
+    )
+    @classmethod
+    def _blank_is_unset(cls, value: object) -> object:
+        # A database variable set to nothing reads as unset, everywhere: outside the DAST scan
+        # it is refused as missing, and under the scan it does not stop a start with no database.
+        return None if isinstance(value, str) and not value.strip() else value
+
     @model_validator(mode="after")
     def _fail_closed(self) -> Self:
         problems = [
             *self._secret_problems(),
-            *self._database_problems(),
+            *([] if self._scan_without_database() else self._database_problems()),
             *self._transport_problems(),
             *self._storage_problems(),
         ]
@@ -207,11 +224,33 @@ class Settings(BaseSettings):
 
     def _secret_problems(self) -> list[str]:
         problems = []
-        if len(self.app_secret_key.get_secret_value()) < MIN_SECRET_KEY_LENGTH:
+        key = self.app_secret_key.get_secret_value()
+        if len(key) < MIN_SECRET_KEY_LENGTH:
             problems.append(f"APP_SECRET_KEY must be at least {MIN_SECRET_KEY_LENGTH} characters")
+        elif not key.strip():
+            problems.append("APP_SECRET_KEY must not be blank")
         if "*" in self.app_allowed_origins:
             problems.append("APP_ALLOWED_ORIGINS must list origins, never the * wildcard")
         return problems
+
+    def has_database(self) -> bool:
+        """Whether database settings are present; the validator holds them complete if so."""
+        return self.database_url is not None or self.postgres_host is not None
+
+    def _scan_without_database(self) -> bool:
+        """The DAST scan gives the container no settings: then, and only then, Holly serves
+        without a database, and each request that needs one answers 503
+        (DatabaseNotConfiguredError). Half a set of database settings is still refused."""
+        no_database_setting = self.database_url is None and all(
+            value is None
+            for value in (
+                self.postgres_host,
+                self.postgres_db,
+                self.postgres_user,
+                self.postgres_password,
+            )
+        )
+        return self.appstore_dast_scan and no_database_setting
 
     def _database_problems(self) -> list[str]:
         if self.database_url is not None:
@@ -260,6 +299,8 @@ class Settings(BaseSettings):
     def sqlalchemy_url(self) -> URL:
         """The asyncpg connection URL, parsed once and handed to the engine as it is. It carries
         the password: SQLAlchemy masks it when the URL is printed, so never render it otherwise."""
+        if not self.has_database():
+            raise DatabaseNotConfiguredError
         if self.database_url is not None:
             return asyncpg_url(self.database_url.get_secret_value())
         # The validator guarantees every part is present when DATABASE_URL is unset. Built from
@@ -273,6 +314,13 @@ class Settings(BaseSettings):
             port=self.postgres_port,
             database=self.postgres_db,
         )
+
+
+class DatabaseNotConfiguredError(RuntimeError):
+    """Holly runs without a database, as it does only in the App Store's DAST scan."""
+
+    def __init__(self) -> None:
+        super().__init__("Holly has no database in this DAST scan")
 
 
 class InvalidSettingsError(RuntimeError):

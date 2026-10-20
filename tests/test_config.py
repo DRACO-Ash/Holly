@@ -16,7 +16,14 @@ import sqlalchemy.ext.asyncio
 from pydantic import SecretStr, ValidationError
 from sqlalchemy.engine import URL
 
-from app.config import InvalidSettingsError, Settings, asyncpg_url, get_settings, resolve_port
+from app.config import (
+    DatabaseNotConfiguredError,
+    InvalidSettingsError,
+    Settings,
+    asyncpg_url,
+    get_settings,
+    resolve_port,
+)
 from app.factory import create_app
 
 # Non-ASCII digits, built from code points so the source stays plain ASCII.
@@ -226,6 +233,49 @@ class TestSettingsFailClosed:
         monkeypatch.delenv("DATABASE_URL")
         with pytest.raises(ValidationError, match="set DATABASE_URL, or POSTGRES_HOST"):
             build()
+
+    def test_only_the_dast_scan_may_start_with_no_database_settings(
+        self, build: Build, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("DATABASE_URL")
+        settings = build(appstore_dast_scan=True)
+        assert settings.has_database() is False
+        with pytest.raises(DatabaseNotConfiguredError, match="no database in this DAST scan"):
+            settings.sqlalchemy_url()
+        # A database variable set to nothing is no database setting.
+        assert build(appstore_dast_scan=True, database_url="  ").has_database() is False
+
+    @pytest.mark.parametrize(
+        ("part", "value"),
+        [
+            ("postgres_host", "db"),
+            ("postgres_db", "holly"),
+            ("postgres_user", "holly"),
+            ("postgres_password", SecretStr("unused-in-tests")),
+        ],
+    )
+    def test_half_a_set_of_database_settings_is_refused_scan_or_not(
+        self, build: Build, monkeypatch: pytest.MonkeyPatch, part: str, value: object
+    ) -> None:
+        monkeypatch.delenv("DATABASE_URL")
+        with pytest.raises(ValidationError, match="set DATABASE_URL, or POSTGRES_HOST"):
+            build(appstore_dast_scan=True, **{part: value})
+
+    def test_a_blank_database_url_outside_the_scan_is_missing(
+        self, build: Build, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("DATABASE_URL", "   ")
+        with pytest.raises(ValidationError, match="set DATABASE_URL, or POSTGRES_HOST"):
+            build()
+
+    def test_a_blank_secret_key_is_refused(self, build: Build) -> None:
+        with pytest.raises(ValidationError, match="APP_SECRET_KEY must not be blank"):
+            build(app_secret_key=SecretStr(" " * 40))
+
+    def test_the_dast_scan_with_a_database_uses_it(self, build: Build) -> None:
+        settings = build(appstore_dast_scan=True)
+        assert settings.has_database() is True
+        assert settings.sqlalchemy_url().host == "db.invalid"
 
     def test_the_postgres_parts_need_a_password(self, build: Build) -> None:
         with pytest.raises(ValidationError, match="POSTGRES_PASSWORD is required"):
@@ -466,6 +516,9 @@ class TestEveryPasswordCharacterReachesTheEngineExactly:
         monkeypatch.setattr(sqlalchemy.ext.asyncio, "async_engine_from_config", recorder)
         on_starting = runpy.run_module("app.gunicorn_conf")["on_starting"]
         monkeypatch.setitem(on_starting.__globals__, "configure_logging", lambda: None)
+        # The wait for the database connects on its own engine; this test follows the URL to
+        # the migrations' engine, so the wait answers at once.
+        monkeypatch.setitem(on_starting.__globals__, "wait_for_database", lambda _url: None)
         on_starting(object())
 
     @pytest.mark.parametrize(

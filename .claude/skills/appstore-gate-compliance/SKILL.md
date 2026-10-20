@@ -321,6 +321,23 @@ back, so did the findings. The code had to be fixed rather than hidden:
 
 A prior-cycle failure (Failure 7) was stale platform configuration surviving an archetype pivot; a separate class is app-record residue or a double-hyphen slug, which fails with ZERO stages run rather than at a stage. All are detailed in the reference file.
 
+**Failure 18, DAST Scan: the container is started with none of your settings, and a fail-closed
+start serves nothing.** Holly V0.7 (October 2026) passed every other stage but Code Quality, then
+failed DAST with `no_report`: "the scanner got no answer from http://dast-target:8080 within 300
+seconds". The scan runs the image with `APPSTORE_DAST_SCAN=true` and **none of the app's
+environment variables or secrets**, against an empty scan database, in one memory-limited job
+with a browser, and it blocks on High and Critical findings (the platform's scan log and console).
+An app that rightly refuses to start without its signing key or database therefore never listens.
+The log's own advice: make settings optional at start, or generate a throwaway value when
+`APPSTORE_DAST_SCAN=true`; listen on 0.0.0.0:8080; retry the database for about a minute rather
+than once; expect no data. Lesson: **fail-closed start-up needs a scan path, gated on the flag
+alone**, that fills in throwaway values, turns outbound work off, and serves the probes and the UI,
+answering a request that needs a missing backing service with a plain 503; log one line naming
+what it filled in, never a value. How the scan's database reaches the container is not stated
+(`TBC, re-verify`): handle both a database and none. Rung: run the built image with nothing but
+`APPSTORE_DAST_SCAN=true` and require a 200 on 8080 well inside 300 seconds. Retrying the same
+image fails the same way, the log says.
+
 ## 2.1 The coverage gate is two checks, and the second ignores your configuration
 
 A second project spent SEVEN successive uploads failing Code Quality on line coverage, 66% to 76% against the 80% floor, while its local `src/` coverage sat at 99% and its pipeline simulation passed at 99.2%. Each theory was disproven by the next upload. The mechanism, once the lcov was finally read:
@@ -524,6 +541,7 @@ Apply at scaffold time for any app targeting the App Store container template. F
 ● In a shared-global-scope bundle, a naming convention for module helpers (unique per-module prefixes) from the start.
 ● A release version bump edits the lockfile by path, never by search-and-replace (see Decision rules).
 ● A pipeline-simulation script exists and runs before every upload (section 4).
+● **The image starts as the DAST scan starts it:** with `APPSTORE_DAST_SCAN=true` and nothing else, it serves `/`, the health paths and the UI on 0.0.0.0:8080 within seconds, filling in throwaway values for what it would otherwise refuse without, under that flag alone, and a smoke rung proves it on the built image (Failure 18).
 ● **An upload baseline is recorded in the repository** from the first handover: one file, one commit id, the version and the platform's outcome, updated in the commit after a package is handed over. A pre-upload rung reads it, prints which changed files the archive actually ships (those are the gate's new code), and REFUSES rather than guessing when the record is missing. Nothing on the platform writes this boundary back to you (section 2.3).
 ● **Every local gate proxy can show what it reads.** A scan that preprocesses its input ships a mode that prints the preprocessed view, and its clean result names what it cannot see and claims "necessary conditions met", never a pass. Rule families live in ONE list, so a whole-tree view and a changed-lines view cannot drift.
 ● **No `pre`/`post` npm lifecycle hook.** A non-zero `pretest` means the platform runs no tests and reports "Tests failed" with no output; checks belong in the loop, where a failure carries a message. Guard it with a committed case (section 2.3).
@@ -595,6 +613,7 @@ Phrased as habits to ask for and to review against (`working-with-ai`):
 ● A release bump changes exactly two lockfile lines; operator-initiated failures surface visibly.
 ● The health endpoint proves storage with a real write, races a timeout shorter than the platform's probe, and returns the resolved dir and errno in its 503 body; boot logs its storage verdict once; the operator env tab is empty for a code-defaults app; a non-root container using the volume add-on has `securityContext.fsGroup` set.
 ● A pipeline-simulation script reproducing the platform's checkout, environment, and coverage artefact runs before every upload.
+● The built image serves HTTP 200 on 0.0.0.0:8080 when run with `APPSTORE_DAST_SCAN=true` and no other variable, and any relaxation of start-up checks is gated on that flag alone and logged.
 ● The upload baseline (the commit the gate's changed-code window opens at) is recorded in the repository and read by a pre-upload rung that refuses, rather than guesses, when it is absent; every whole-tree number a local check reports is labelled as not the gate's number.
 ● Every local gate proxy declares what it cannot see next to its clean result, claims only "necessary conditions met", and can print the preprocessed view its rules actually read; its rule families are derived from one list.
 ● `package.json` declares no `pre`/`post` lifecycle hook, guarded by a committed case, so no check can convert itself into a silent test-stage failure.

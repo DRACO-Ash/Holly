@@ -8,9 +8,10 @@ import os
 from typing import Any
 
 from app.admin_bootstrap import run_admin_bootstrap
-from app.config import resolve_port
-from app.core.logging import configure_logging
-from app.migrate import run_migrations
+from app.config import get_settings, resolve_port
+from app.core.logging import configure_logging, log_event
+from app.dast_scan import prepare_scan_environment
+from app.migrate import run_migrations, wait_for_database
 
 # The App Store contract binds every interface.
 bind = f"0.0.0.0:{resolve_port(os.environ)}"
@@ -25,12 +26,20 @@ control_socket_disable = True
 
 
 def on_starting(server: Any) -> None:
-    """Apply pending database migrations in the master, before the worker starts, then create
-    the first admin from the environment if no account exists, logging in the same JSON form as
-    the application."""
+    """In the master, before the worker starts: fill in what the App Store's DAST scan leaves
+    out (only under its flag), wait for the database, apply pending migrations, then create the
+    first admin from the environment if no account exists, logging in the same JSON form as the
+    application. With no database at all, which the settings allow only under the scan flag,
+    there is nothing to migrate or bootstrap."""
     configure_logging()
-    run_migrations()
-    run_admin_bootstrap(os.environ)
+    prepare_scan_environment(os.environ)
+    settings = get_settings()
+    if settings.has_database():
+        wait_for_database(settings.sqlalchemy_url())
+        run_migrations()
+        run_admin_bootstrap(os.environ)
+    else:
+        log_event("migrations", status="skipped", reason="no database in this DAST scan")
     # The worker forks from the master next. Its os.environ lacks the admin password, and so
     # does gunicorn's copy of the starting environment (cfg.env_orig), which the worker inherits
     # and a re-exec would start from. /proc/<pid>/environ still shows the block each process

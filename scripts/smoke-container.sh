@@ -15,6 +15,8 @@
 #      cannot sign in, or reaches the log with its password or its hash; half a pair or an
 #      unusable email, before any account, that does not stop the start; or a start with the
 #      password removed, once the admin exists, that does
+#   6. a start as the App Store's DAST scan makes it (APPSTORE_DAST_SCAN=true, nothing else)
+#      that does not serve the probes and the dashboard on 8080
 # Requires Docker and curl. Behind a TLS-intercepting proxy, point DOCKERFILE at a copy whose
 # pip and npm steps trust the proxy's certificate authority, and pass the build flags it needs:
 #   DOCKERFILE=/path/to/copy DOCKER_BUILD_FLAGS='--network host --secret id=...' sh scripts/smoke-container.sh
@@ -261,6 +263,45 @@ done
 sleep 2
 [ "$(docker inspect -f '{{.State.Running}}' "$cid")" = true ] || { docker logs "$cid"; fail "a start with the password removed stopped"; }
 echo "the first admin is created from the environment once, signs in, a later pair changes nothing, and a start with the password removed runs"
+
+# 3d. The App Store's DAST scan runs the image with APPSTORE_DAST_SCAN=true and none of Holly's
+#     settings, then gives up if port 8080 has not answered within 300 seconds. Run it the same
+#     way: no settings, no database, no store, and not on the database's network. It must serve the probes and the
+#     dashboard, refuse a request that needs the database with 503, and say why in its log.
+cid="$(docker run -d -p "127.0.0.1::8080" -e APPSTORE_DAST_SCAN=true "$TAG")"
+CIDS="$CIDS $cid"
+base="http://127.0.0.1:$(docker port "$cid" 8080/tcp | head -n 1 | sed 's/.*://')"
+tries=0
+until curl -fsS -o /dev/null "$base/healthz" 2>/dev/null; do
+  tries=$((tries + 1))
+  [ "$tries" -lt 120 ] || { docker logs "$cid"; fail "the DAST scan's start did not answer on 8080 within 120 seconds"; }
+  sleep 1
+done
+for path in / /healthz /readyz /livez /ping; do
+  code="$(curl -s -o /dev/null -w '%{http_code}' "$base$path")"
+  [ "$code" = 200 ] || fail "GET $path answered $code under the DAST scan"
+done
+curl -fsS "$base/" | grep -q '<title>Holly</title>' || fail "the dashboard is not served under the DAST scan"
+code="$(curl -s -o /dev/null -w '%{http_code}' "$base/api/v1/health")"
+[ "$code" = 503 ] || fail "a request that needs the database answered $code, not 503, under the DAST scan"
+docker logs "$cid" 2>&1 | grep -q '"event": "dast_scan", .*"status": "active", .*"generated_secret_key": true' \
+  || fail "the DAST scan's start did not log what it filled in"
+docker logs "$cid" 2>&1 | grep -q '"event": "migrations", .*"status": "skipped"' \
+  || fail "the DAST scan's start did not log the migrations skipped"
+if docker logs "$cid" 2>&1 | grep -E '\[ERROR\]|"level": "ERROR"|Traceback'; then
+  fail "an error in the DAST scan's boot log"
+fi
+# With a database, the scan's start waits for it and migrates as any start does.
+cid="$(docker run -d --network "$NET" -e APPSTORE_DAST_SCAN=true \
+  -e "DATABASE_URL=postgresql://holly:$DB_SECRET@db:5432/holly" "$TAG")"
+CIDS="$CIDS $cid"
+tries=0
+until docker logs "$cid" 2>&1 | grep -q '"event": "migrations", .*"status": "applied"'; do
+  tries=$((tries + 1))
+  [ "$tries" -lt 60 ] || { docker logs "$cid"; fail "the DAST scan's start with a database did not migrate"; }
+  sleep 1
+done
+echo "the DAST scan's start serves 8080 with no settings at all, and migrates when it is given a database"
 
 # 4. Each of these must stop the container at boot, never run in a degraded state.
 for bad in 0 "8080 --check-config"; do
