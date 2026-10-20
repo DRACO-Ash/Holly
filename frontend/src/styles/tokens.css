@@ -758,6 +758,13 @@ button:disabled {
 
 /* Messages ------------------------------------------------------- */
 
+/* A sentence that reports what just happened: an <output>, the status role's own element, which
+   is inline by default; it takes the block layout and margins of the paragraph it replaced. */
+.status-line {
+  display: block;
+  margin: 0 0 var(--space-3);
+}
+
 .ingest-result {
   padding: var(--space-3);
   background: color-mix(in srgb, var(--color-success) 8%, transparent);

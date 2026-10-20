@@ -252,7 +252,7 @@ export default function Users() {
           {error}
         </div>
       )}
-      {notice && <p role="status">{notice}</p>}
+      {notice && <output className="status-line">{notice}</output>}
 
       <section className="card">
         <h2>Accounts</h2>

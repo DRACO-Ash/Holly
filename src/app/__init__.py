@@ -5,4 +5,4 @@ deploy-recipes Python template expects, so every coverage command the baseline d
 measures it.
 """
 
-__version__ = "0.10.0"
+__version__ = "0.11.0"

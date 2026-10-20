@@ -98,7 +98,9 @@ export default function ChangePassword() {
           {error}
         </div>
       )}
-      {changed && <p role="status">Password changed. Every other session has ended.</p>}
+      {changed && (
+        <output className="status-line">Password changed. Every other session has ended.</output>
+      )}
     </div>
   );
 }
