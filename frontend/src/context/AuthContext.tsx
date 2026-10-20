@@ -8,7 +8,12 @@ import {
   useState,
 } from "react";
 import { ACCESS_TOKEN_KEY, REFRESH_TOKEN_KEY } from "../api/client";
-import { getCurrentUser, login as loginApi, logout as logoutApi } from "../api/auth";
+import {
+  changePassword as changePasswordApi,
+  getCurrentUser,
+  login as loginApi,
+  logout as logoutApi,
+} from "../api/auth";
 import type { User } from "../types";
 
 interface AuthContextValue {
@@ -16,6 +21,7 @@ interface AuthContextValue {
   user: User | null;
   login: (username: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -51,6 +57,25 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
     setAccessToken(tokens.access_token);
   }, []);
 
+  // A change answers with a new pair, every earlier token ending. The user is read again before
+  // the page moves on, so a password change no longer due is never shown as due.
+  const changePassword = useCallback(async (currentPassword: string, newPassword: string) => {
+    const tokens = await changePasswordApi({
+      current_password: currentPassword,
+      new_password: newPassword,
+    });
+    localStorage.setItem(ACCESS_TOKEN_KEY, tokens.access_token);
+    localStorage.setItem(REFRESH_TOKEN_KEY, tokens.refresh_token);
+    try {
+      setUser(await getCurrentUser());
+    } catch {
+      // The change stands, and the old password no longer works, so this is not a failure to
+      // report. The user is forgotten rather than shown as still due, and read again below.
+      setUser(null);
+    }
+    setAccessToken(tokens.access_token);
+  }, []);
+
   const logout = useCallback(async () => {
     const refreshToken = localStorage.getItem(REFRESH_TOKEN_KEY);
     if (refreshToken) {
@@ -70,8 +95,8 @@ export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
 
   // Memoised, so a consumer renders again only when the session it reads has changed.
   const value = useMemo(
-    () => ({ isAuthenticated: !!accessToken, user, login, logout }),
-    [accessToken, user, login, logout],
+    () => ({ isAuthenticated: !!accessToken, user, login, logout, changePassword }),
+    [accessToken, user, login, logout, changePassword],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

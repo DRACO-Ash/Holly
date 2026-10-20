@@ -4,8 +4,8 @@
 
 **Data classification:** Unclassified (per ADR-006)
 **Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned the edition this one replaces)
-**Version:** 0.3
-**Last updated:** 2026-10-14
+**Version:** 0.4
+**Last updated:** 2026-10-20
 
 > **BLUF**
 >
@@ -314,7 +314,7 @@ Countdown timers analysts set for upcoming events, with a pre-alert and an optio
 
 ### `app_user`
 
-People who can sign in. Only `python -m app.cli.create_admin` creates rows, and only with the `admin` role; no route creates or changes users.
+People who can sign in. The first admin comes from the `ADMIN_*` variables at start, or `python -m app.cli.create_admin`; every other account is created and changed by an admin on the Users page (ADR-014). No row is ever deleted.
 
 | Column | Type | Nullable | Notes |
 |--------|------|----------|-------|
@@ -324,6 +324,8 @@ People who can sign in. Only `python -m app.cli.create_admin` creates rows, and 
 | `password_hash` | varchar(255) | no | bcrypt hash, from the `bcrypt` library. |
 | `role` | varchar(20) | no | `analyst`, `operator` or `admin`. The application's default is `analyst`; the column has no database default. |
 | `is_active` | boolean | no | Database default `true`. An inactive user cannot sign in, refresh, or use an access token already issued. |
+| `must_change_password` | boolean | no | Database default `false`. Set when an admin creates the account or resets its password; until the user chooses their own, every route but `/auth/me` and `/auth/password` answers 403. Migration 0018. |
+| `token_version` | integer | no | Database default `0`. Every token carries it; a password change, a reset or a deactivation raises it, refusing every token issued before. Migration 0018. |
 | `created_at` | timestamptz | no | Row creation time. |
 | `updated_at` | timestamptz | no | Row update time. |
 
@@ -374,7 +376,7 @@ The hash chain, the advisory-lock concurrency control, the action types and the 
 All schema changes are Alembic migrations, packaged with the application:
 
 ● [src/app/migrations/env.py](../../src/app/migrations/env.py): async-aware. It imports every model, reads the database URL from the settings, and runs each migration session under a PostgreSQL advisory lock (`0x484F4C4C`), so two containers starting together cannot migrate at once.
-● [src/app/migrations/versions/](../../src/app/migrations/versions/): one file per migration, `0001_create_elset` to `0017_audit_append_only`, in one linear history.
+● [src/app/migrations/versions/](../../src/app/migrations/versions/): one file per migration, `0001_create_elset` to `0018_user_password_state`, in one linear history.
 ● [src/app/migrations/columns.py](../../src/app/migrations/columns.py): column groups the migrations share. Frozen, because migrations that have already run import it; a new shape gets a new function.
 ● [alembic.ini](../../alembic.ini) at the repository root serves the developer's `alembic` command line: `script_location = %(here)s/src/app/migrations` and `prepend_sys_path = %(here)s/src`. The container does not use it.
 
@@ -388,7 +390,7 @@ All schema changes are Alembic migrations, packaged with the application:
 .venv/bin/alembic downgrade -1        # step back one revision
 ```
 
-Downgrades drop tables and their data, and downgrading `0017` removes the append-only trigger. Use them on a development database only.
+Downgrades drop tables and their data, and downgrading `0017` removes the append-only trigger. Use them on a development database only, with one exception: the rollback from V0.10 to V0.9, which takes `0018` back to `0017`, dropping `must_change_password` and `token_version` and keeping every account (ADR-014, and the operator manual's rollback paragraph for the command, since the image ships no `alembic.ini`).
 
 **Adding a migration.** Write it by hand or start from `.venv/bin/alembic revision --autogenerate -m "short message"` (which needs a database) and review the result. Name the file after its revision id, `NNNN_short_name.py` with `revision = "NNNN_short_name"`, and set `down_revision` to the current head. [tests/test_migrations.py](../../tests/test_migrations.py) fails unless the history stays linear with one head, the newest file's name is the head, and upgrading to head builds every table the models describe.
 

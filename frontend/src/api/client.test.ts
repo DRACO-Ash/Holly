@@ -269,6 +269,36 @@ describe("the API client", () => {
     await expect(apiClient.get("/elsets")).rejects.toThrow("status code 502");
     expect(assign).not.toHaveBeenCalled();
   });
+
+  // A change due answers 403 and a wrong current password 400 (ADR-014): neither is a session
+  // that has ended, so neither refreshes nor signs out. A refresh would send the wrong password
+  // a second time, counting it twice against the limit.
+  it.each([
+    [403, "/notifications", "Change your password before continuing"],
+    [400, "/auth/password", "The current password is not correct."],
+  ])("never refreshes on a %i, and keeps both tokens", async (status, path, detail) => {
+    localStorage.setItem(ACCESS_TOKEN_KEY, "acc");
+    localStorage.setItem(REFRESH_TOKEN_KEY, "ref");
+    const refresh = vi.fn();
+    axios.defaults.adapter = adapter((config) => {
+      refresh(config);
+      return { status: 200, data: { access_token: "new-acc", refresh_token: "new-ref" } };
+    });
+    let calls = 0;
+    apiClient.defaults.adapter = adapter(() => {
+      calls += 1;
+      return { status, data: { detail } };
+    });
+
+    const failure = apiClient.post(path, {});
+    await expect(failure).rejects.toThrow(`status code ${status}`);
+    await expect(failure).rejects.toMatchObject({ response: { data: { detail } } });
+    expect(calls).toBe(1);
+    expect(refresh).not.toHaveBeenCalled();
+    expect(localStorage.getItem(ACCESS_TOKEN_KEY)).toBe("acc");
+    expect(localStorage.getItem(REFRESH_TOKEN_KEY)).toBe("ref");
+    expect(assign).not.toHaveBeenCalled();
+  });
 });
 
 describe("downloadFile", () => {

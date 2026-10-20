@@ -4,7 +4,7 @@
 
 **Data classification:** Unclassified (per ADR-006)
 **Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned ADR-001 to ADR-011)
-**Version:** 0.5
+**Version:** 0.6
 **Last updated:** 2026-10-20
 
 > **HOW TO READ THIS LOG**
@@ -98,7 +98,7 @@
 ## JWT Authentication with Stateless Refresh
 
 **Date:** 2026-05-28
-**Status:** Superseded by ADR-011. Its operational note is replaced by ADR-012. Its token header is replaced by ADR-013.
+**Status:** Superseded by ADR-011. Its operational note is replaced by ADR-012. Its token header is replaced by ADR-013, and the users it says administrators would create are created on the Users page (ADR-014).
 **Decision:** Authentication is HS256 JWT bearer tokens issued by `/api/v1/auth/login` and refreshed at `/api/v1/auth/refresh`. Access tokens last 30 minutes; refresh tokens last 7 days. Refresh is stateless: any validly signed refresh token within its expiry window is accepted. Logout is client-side only (delete both tokens from `localStorage`). `get_current_user` enforces a valid access token on protected routes. Supersedes ADR-009.
 **Rationale:** Stateless refresh keeps the Phase 1 schema simple (no refresh-token table, no blocklist). The 30-minute access window bounds the blast radius of a stolen token. Bcrypt via `passlib` hashes passwords with per-user salt. Tokens travel in `Authorization: Bearer ...` headers rather than cookies, which removes the standard CSRF vector. The frontend axios client transparently refreshes once on 401 before redirecting to the login page.
 **Risks accepted:** A stolen refresh token is valid until expiry (up to 7 days). Mitigations: HTTPS-only transport, refresh tokens never sent to non-auth endpoints, single-retry interceptor that breaks token-loss loops. Real revocation (refresh-token blocklist or a JTI table) is on the Phase 1 backlog for the slice that introduces incident response.
@@ -141,12 +141,28 @@
 **Consequences:**
 
 ● Holly never reads `Authorization`: a token the gateway puts there changes nothing, and a Holly token there signs nobody in.
-● CORS no longer allows credentials mode for a listed origin: Holly reads no cookie, and the platform's own session cookie on Holly's host would only ride along.
+● CORS no longer allows credentials mode for a listed origin: Holly reads no cookie, and the `_appstore_app_session` cookie seen on requests to Holly's host (the platform's, by inference from its name) would only ride along.
 ● The CSRF position of ADR-010 holds: the token is a header only the page's own script sets, never a cookie, and a page on another origin cannot send it without a CORS preflight, which Holly refuses while `APP_ALLOWED_ORIGINS` is empty.
 ● Scripts send `X-Holly-Token: <token>` (operator manual, section 06). Whether the gateway lets a request through without the caller's App Store sign-in is `TBC, re-verify`.
 ● That the gateway passes `X-Holly-Token` through unchanged is inference until V0.9 runs on the App Store. The container smoke rung proves Holly's side, signing in and then calling `/api/v1/auth/me` with the token in each header; only a gateway in front of the container can reproduce the refusal, and none is in the repository.
 ● Leaving `Authorization` gives up the care intermediaries give it. A shared cache does not store the answer to a request carrying it unless told it may (RFC 9111, section 3.5), and log tools commonly redact it; neither holds for `X-Holly-Token`. Holly's `Cache-Control: no-store` on every response is now the only shared-cache protection for a signed-in answer, and whether the gateway logs the header is `TBC, re-verify` (SECURITY.md).
 ● Holly's 401 still challenges `Bearer`, and sign-in still answers `token_type: "bearer"`, though the token no longer travels in `Authorization`. The bare challenge is how an operator tells Holly's 401 from the gateway's (operator manual, section 10), and the token type names what the token is, not where it goes.
 ● The secret-scan hook gains rules for a JSON Web Token and for a token in `X-Holly-Token`, which its `Bearer` rule caught only in `Authorization`.
+
+**ADR-014**
+
+## Admins Manage Accounts; a Token Version Ends Sessions
+
+**Date:** 2026-10-20 (Holly V0.10)
+**Decision:** An admin manages accounts on a Users page backed by admin-only routes under `/api/v1/users`: list, create with a role and a temporary password, reset a password to a temporary one, and change a role or an account's status. Accounts are never deleted. Every user changes their own password at `POST /api/v1/auth/password`, giving the current one. A password an admin sets is temporary: the account's `must_change_password` is set, and `get_current_user` refuses it with a 403 on every route but `/auth/me` and `/auth/password` until the user chooses their own. Every token carries its user's `token_version`, checked on every request and refresh; a password change, a reset, a deactivation and `create_admin` on an existing account raise it. Migration 0018 adds both columns. Amends ADR-010's operational note and ADR-012's consequence on creating accounts.
+**Rationale:** Holly had no way to add an account but the first admin: the app owner asked for one on 20 October 2026, choosing a temporary password the user must change at first sign-in, and a password change for every user, over a generated one-time password or an admin-set password with no forced change. Without a token version, a reset would not end a stolen session: the stolen refresh token, valid for 7 days, would work again as soon as the user had chosen a new password, since the forced change would be cleared. The version ends every earlier session at once instead, with one integer compared on each request, where a per-token block-list would grow with every session. The 403 keeps the dashboard's session, which a 401 would end through the refresh-and-sign-out path, and the gate is the server's: the dashboard's redirect to the password page is a convenience. An admin cannot change their own account on the page, and the last active admin cannot be demoted or deactivated, counted with the account under one row lock so two admins changing each other at once cannot leave none.
+**Consequences:**
+
+● Any admin can create another admin, so every admin is trusted with every account, and the admin knows a temporary password until the user changes it (SECURITY.md).
+● A token issued before V0.10 carries no version and reads as 0, so V0.10 signs nobody out; the first change to an account ends that account's older tokens.
+● Every change to a password, a role or a status reads the account again under a row lock before it decides, and writes what it decided on that read (`services/accounts.py`). Without it, a password change running at the same moment as a reset undid the reset: both gates reproduced it on PostgreSQL, 8 times in 8 (fact), the change's password, version and cleared flag landing after the reset's, so a stolen session survived it. The lock is `FOR NO KEY UPDATE`, so a row that names the user, such as a shift note, never waits on it, and the rows are locked in one statement in id order, so two changes cannot deadlock. The container smoke rung races the two three times on PostgreSQL.
+● A new username is lowercase `a` to `z`, `0` to `9` and `. _ @ -`, so no new name can pass for another on the Users page or in the audit view (a Cyrillic letter for a Latin one, a combining accent). The first admin's, from `ADMIN_USERNAME` or `create_admin`, is not held to it; nor is any account made before V0.10. An email already in use in any case is refused.
+● A rollback to V0.9 needs the database at migration 0017 first: V0.9 cannot start on a database at 0018 it does not know (ADR-012). The image ships no `alembic.ini`, so `alembic downgrade` fails there. In the V0.10 container, immediately before V0.9 is deployed, run `python -c "from alembic import command; from app.migrate import alembic_config; command.downgrade(alembic_config(), '0017_audit_append_only')"`. V0.10's engineering review rehearsed it on PostgreSQL 16 (fact): the schema went to 0017 and both columns went; V0.9 then started, and an account created in V0.10 with a temporary password signed in and read notifications. Meanwhile V0.10 answers 500 to requests that read an account, and a restart of V0.10 applies 0018 again. Under V0.9 a temporary password grants full access with no change asked. Whether the App Store offers a shell in the container is `TBC, re-verify`; without one, restore the database instead.
+● `tests/test_app.py` pins the routes reachable while a password change is due, beside the routes open without sign-in.
 
 Bluestaq Limited | Holly documentation | 2026

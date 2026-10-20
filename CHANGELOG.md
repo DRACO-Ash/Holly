@@ -4,10 +4,28 @@
 
 **Data classification:** Unclassified (per ADR-006)
 **Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned the history below)
-**Version:** 0.10
+**Version:** 0.11
 **Last updated:** 2026-10-20
 
 All notable changes to Holly are recorded here, newest first. Holly V0.2 is the Daily Operations Dashboard fused into the Holly App Store project and renamed; the sections after it are the Daily Operations Dashboard's own record, kept as written. Holly's releases are numbered V<major>.<minor>, and each has a row in `docs/AUDIT-LOG.md` with the checks that ran.
+
+## Holly V0.10 (2026-10-20)
+
+### Added
+
+● **The Users page, for admins.** An admin creates accounts (a username of a to z, 0 to 9 and `. _ @ -`, an optional email, a role and a temporary password), resets a password to a temporary one, changes a role, and deactivates or activates an account. Each change is written to the audit log. An admin cannot change their own account there, and Holly always keeps one active admin. Until now, only the first admin could be created.
+
+● **Password, for everyone.** Every user can change their own password, giving the current one and a new one of 12 to 1,024 characters, not spaces alone.
+
+● **A temporary password must be changed.** A user whose password an admin set sees only the password page, at their first sign-in or after a reset, until they choose their own; Holly refuses everything else meanwhile.
+
+### Changed
+
+● **A password change, a reset or a deactivation ends the user's sessions.** Every token now carries its user's token version, and each of these raises it, so a token issued before stops working at once, on any device, even when a password change is running at the same moment. Your own change keeps you signed in where you made it. Tokens issued by V0.9 keep working until the first such change.
+
+● **The operator manual records that the `/data` volume is writable by Holly's user,** as the platform team confirmed and V0.8 and V0.9 showed.
+
+● **A refused request's message no longer gives the length of the value it refused,** so a password that is too short or too long is not described by its length.
 
 ## Holly V0.9 (2026-10-20)
 
@@ -20,6 +38,8 @@ All notable changes to Holly are recorded here, newest first. Holly V0.2 is the 
 ### Changed
 
 ● **Holly's address is `https://holly.appstore.bluestaq.com`,** as the App Store serves it; the documents said `holly.apps.bluestaq.com`.
+
+● **An origin listed in `APP_ALLOWED_ORIGINS` no longer gets credentials mode.** Holly reads no cookie, so a client on such an origin sends its token in `X-Holly-Token` without credentials; one that asked for credentials is now refused at its preflight.
 
 ## Holly V0.8 (2026-10-19)
 

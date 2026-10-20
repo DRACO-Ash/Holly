@@ -38,3 +38,20 @@ export function extractErrorMessage(err: unknown, fallback: string): string {
   if (err instanceof Error) return err.message;
   return fallback;
 }
+
+// The first problem a 422 names, as "Field: message", or null for any other failure. The server
+// answers a request it will not read with a list of problems (app/factory.py), which
+// extractErrorMessage leaves alone.
+export function validationMessage(err: unknown): string | null {
+  const response = responseOf(err);
+  const detail = response?.status === 422 ? response.data?.detail : undefined;
+  const first: unknown = Array.isArray(detail) ? detail[0] : undefined;
+  if (!first || typeof first !== "object") return null;
+  const { loc, msg } = first as { loc?: unknown; msg?: unknown };
+  if (typeof msg !== "string") return null;
+  const message = msg.replace(/^Value error, /, "");
+  const place = Array.isArray(loc) && loc.length > 1 ? String(loc[loc.length - 1]) : "";
+  if (!place) return message;
+  const field = place.split("_").join(" ");
+  return `${field.charAt(0).toUpperCase()}${field.slice(1)}: ${message}`;
+}

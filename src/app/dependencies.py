@@ -1,4 +1,10 @@
-"""Request dependencies: the database session and the signed-in user."""
+"""Request dependencies: the database session and the signed-in user.
+
+get_signed_in_user checks the token: Holly's own, an access token, for an active user, issued
+under that user's current token version (ADR-014). get_current_user adds one rule, and every
+route but /auth/me and /auth/password depends on it: a user whose password an admin set must
+choose their own first, and until then is refused with a 403, which the dashboard answers by
+showing the password page rather than signing out."""
 
 from collections.abc import Callable
 from typing import Annotated
@@ -8,7 +14,7 @@ from fastapi import Depends, Header, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import decode_token
+from app.core.security import decode_token, token_version
 from app.db.session import get_db
 from app.models.user import User, UserRole
 
@@ -34,25 +40,43 @@ def _credentials_error() -> HTTPException:
     )
 
 
-def _access_subject(token: str | None) -> UUID:
+# The refusal while a password change is due.
+CHANGE_DUE = "Change your password before continuing"
+
+
+def _access_claims(token: str | None) -> tuple[UUID, int]:
+    """The user id and token version an access token carries, or a 401."""
     # The HTTP server trims the header's surrounding spaces; decode_token refuses anything else
     # that is not one of Holly's tokens.
     payload = decode_token(token) if token else None
     if payload is None or payload.get("type") != "access":
         raise _credentials_error()
+    version = token_version(payload)
+    if version is None:
+        raise _credentials_error()
     try:
-        return UUID(str(payload.get("sub")))
+        return UUID(str(payload.get("sub"))), version
     except ValueError as exc:
         raise _credentials_error() from exc
 
 
-async def get_current_user(
+async def get_signed_in_user(
     db: DbSession, token: Annotated[str | None, Header(alias=TOKEN_HEADER)] = None
 ) -> User:
-    user_id = _access_subject(token)
+    user_id, version = _access_claims(token)
     user = (await db.execute(select(User).where(User.id == user_id))).scalar_one_or_none()
-    if user is None or not user.is_active:
+    if user is None or not user.is_active or user.token_version != version:
         raise _credentials_error()
+    return user
+
+
+SignedInUser = Annotated[User, Depends(get_signed_in_user)]
+
+
+# A plain function: it awaits nothing (SonarQube python:S7503).
+def get_current_user(user: SignedInUser) -> User:
+    if user.must_change_password:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=CHANGE_DUE)
     return user
 
 

@@ -62,6 +62,8 @@ def make_user(
     password: str | None = None,
     role: UserRole = UserRole.ANALYST,
     is_active: bool = True,
+    must_change_password: bool = False,
+    token_version: int = 0,
 ) -> User:
     """A user row as the database would return it. The password hash is computed only when a
     test signs in with a password, because bcrypt is deliberately slow."""
@@ -72,6 +74,8 @@ def make_user(
         password_hash=hash_password(password) if password is not None else "unused",
         role=role.value,
         is_active=is_active,
+        must_change_password=must_change_password,
+        token_version=token_version,
         created_at=NOW,
         updated_at=NOW,
     )

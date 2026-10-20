@@ -18,8 +18,8 @@
 // (2) is "rules matched"; anything else that stops a file being judged is "could not scan".
 // Either refuses the package.
 // Cannot see: a secret in a shape the hook has no rule for (for example an unquoted GitHub
-// token or a JWT), a secret encoded inside text (base64, a data: URI), or a secret encoded
-// inside an allowlisted binary.
+// token, or a JWT split or wrapped across lines), a secret encoded inside text (base64, a data:
+// URI), or a secret encoded inside an allowlisted binary.
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, readFileSync, readdirSync } from 'node:fs';

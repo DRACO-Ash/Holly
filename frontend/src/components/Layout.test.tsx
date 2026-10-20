@@ -67,6 +67,7 @@ describe("the dashboard's frame", () => {
       "Comms",
       "Procedures",
       "Shift log",
+      "Password",
     ]);
   });
 
@@ -74,6 +75,29 @@ describe("the dashboard's frame", () => {
     signedInAs(aUser({ role: "operator" }));
     await shell();
     await waitFor(() => expect(links()).toContain("Audit log"));
+    expect(links()).not.toContain("Users");
+  });
+
+  it("adds the users page for an admin alone", async () => {
+    signedInAs(aUser({ role: "admin" }));
+    await shell();
+    await waitFor(() => expect(links()).toContain("Users"));
+    expect(links()).toContain("Audit log");
+  });
+
+  it("offers the password page alone while a password an admin set is still to change", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      signedInAs(aUser({ role: "admin", must_change_password: true }));
+      await shell();
+      await waitFor(() => expect(links()).toEqual(["Password"]));
+      // Nothing polls the timers meanwhile, past a whole poll interval: Holly would refuse it.
+      vi.mocked(listEventTimers).mockClear();
+      await act(() => vi.advanceTimersByTimeAsync(11_000));
+      expect(listEventTimers).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("holds the audit log back until it knows who signed in", async () => {

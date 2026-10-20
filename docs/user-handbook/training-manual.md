@@ -4,7 +4,7 @@
 
 **Data classification:** Unclassified (per ADR-006)
 **Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned the edition this one replaces)
-**Version:** 0.5
+**Version:** 0.6
 **Last updated:** 2026-10-20
 **Audience:** Watch analysts new to Holly, plus the trainers delivering induction. Sections labelled **Trainer note** are for delivery, not for the trainee handout.
 
@@ -50,9 +50,13 @@ Holly is your watch-stand surface. It pulls Tactical Reports and Notices to Spac
 2. Enter your username and password and select **Sign in**.
 3. You arrive on the **Dashboard** page.
 
-There is no self sign-up. If you do not have an account, ask the on-call operator.
+There is no self sign-up. If you do not have an account, ask an admin: they create it on the **Users** page with a temporary password.
 
-You stay signed in while you use Holly: your 30-minute access renews itself in the background, and each renewal lasts 7 days, unless your operator has changed those defaults. You sign in again after 7 days without using Holly, after you sign out, or if the operator signs everyone out. **Sign out**, in the header, clears your session from the browser and revokes it on the server, so it cannot be renewed. After 10 failed sign-ins for one username within 15 minutes, or 30 sign-in attempts from one address within a minute, Holly refuses further attempts for a while and says how many seconds to wait. If other sign-ins are being checked at that moment, Holly may answer `Sign-in is busy. Try again in a moment.`; sign in again shortly.
+**Your first sign-in.** When an admin has set your password, at your first sign-in or after a reset, Holly shows only **Change password**. Enter the temporary password as the current one, then a password of your own, at least 12 characters, twice. You then arrive on the **Dashboard**. Until you do, every other page is refused.
+
+**Changing your password.** Open **Password** in the navigation at any time. A change signs you out everywhere else, on every device, and keeps you signed in where you made it. A wrong current password counts against the same limit as a failed sign-in.
+
+You stay signed in while you use Holly: your 30-minute access renews itself in the background, and each renewal lasts 7 days, unless your operator has changed those defaults. You sign in again after 7 days without using Holly, after you sign out, after you change your password on another device, if an admin resets your password or deactivates your account, or if the operator signs everyone out. **Sign out**, in the header, clears your session from the browser and revokes it on the server, so it cannot be renewed. After 10 failed sign-ins for one username within 15 minutes, or 30 sign-in attempts from one address within a minute, Holly refuses further attempts for a while and says how many seconds to wait. If other sign-ins are being checked at that moment, Holly may answer `Sign-in is busy. Try again in a moment.`; sign in again shortly.
 
 > **TRAINER NOTE**
 >

@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock
 
 import pytest
+from sqlalchemy.dialects import postgresql
 
 from app.cli import create_admin
 from app.core.security import verify_password
@@ -68,17 +69,26 @@ class TestUpsertAdmin:
         audit: AsyncMock,
     ) -> None:
         old = a_password(6)
-        existing = make_user(password=old, role=UserRole.ANALYST, is_active=False)
+        existing = make_user(
+            password=old, role=UserRole.ANALYST, is_active=False, must_change_password=True
+        )
         session = database(existing)
         action = await create_admin.upsert_admin("alice", a_password())
         assert action == "updated"
         assert session.added == []
         assert existing.role == UserRole.ADMIN.value
         assert existing.is_active is True
+        # A reset ends every session the account held, and asks for no further change.
+        assert existing.token_version == 1
+        assert existing.must_change_password is False
         assert verify_password(a_password(), existing.password_hash)
         assert not verify_password(old, existing.password_hash)
         assert audit.await_args_list[-1].kwargs["entity_id"] == str(existing.id)
         assert audit.await_args_list[-1].kwargs["detail"]["action"] == "updated"
+        # Read under a lock, so a password change running at the same moment cannot undo this.
+        statement = session.execute.await_args_list[0].args[0]
+        dialect = postgresql.dialect()  # type: ignore[no-untyped-call]
+        assert str(statement.compile(dialect=dialect)).endswith("FOR NO KEY UPDATE")
 
 
 class TestMain:

@@ -4,7 +4,7 @@
 
 **Data classification:** Unclassified (per ADR-006)
 **Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned the edition this one replaces)
-**Version:** 0.6
+**Version:** 0.7
 **Last updated:** 2026-10-20
 **Audience:** Operators and on-call engineers responsible for keeping Holly healthy on the Bluestaq App Store.
 
@@ -76,7 +76,13 @@ Leave `STORAGE_MOUNT_PATH` to the FILE_STORAGE add-on, which injects it; do not 
 
 **Starting, stopping and restarting** the app are platform operations: `TBC, re-verify` how. Rate-limit counters and the daily assistant token count start again from zero at every restart. **Withdrawing** the app is removing it from the App Store (the app owner, 19 October 2026); whether removal also deletes the add-ons' database and files is `TBC, re-verify`, so take what must be kept first.
 
-**Rollback** is a resubmission of the previous package; the platform has no separate rollback (platform reference above). Migrations only move forward at start, so a package older than the database's newest migration stops at boot with Alembic's `Can't locate revision identified by '<revision>'`. Rolling back across a migration therefore needs the database restored to match the older package, or a fixed package that carries the newer migration.
+**Rollback** is a resubmission of the previous package; the platform has no separate rollback (platform reference above). Migrations only move forward at start, so a package older than the database's newest migration stops at boot with Alembic's `Can't locate revision identified by '<revision>'`. Rolling back across a migration therefore needs the database restored to match the older package, or a fixed package that carries the newer migration. One migration can instead be undone in place: from V0.10 to V0.9, migration 0018. In the V0.10 container, immediately before V0.9 is deployed, run:
+
+```sh
+python -c "from alembic import command; from app.migrate import alembic_config; command.downgrade(alembic_config(), '0017_audit_append_only')"
+```
+
+The image ships no `alembic.ini`, so `alembic downgrade` fails there. The command drops `must_change_password` and `token_version` and keeps every account; V0.10's engineering review rehearsed it on PostgreSQL 16 (ADR-014). Until V0.9 replaces it, V0.10 answers 500 to requests that read an account, and a restart of V0.10 applies 0018 again. Under V0.9 a temporary password grants full access with no change asked, so reset no password between the downgrade and the upload. Whether the platform offers a shell in the container is `TBC, re-verify`; without one, restore the database instead.
 
 ### Deployment parameters
 
@@ -95,7 +101,7 @@ The app record as the App Store console showed it on 19 October 2026 (fact, from
 | FILE_STORAGE add-on | An S3-backed persistent volume at `/data`; injects `STORAGE_MOUNT_PATH=/data` |
 | Category, display name, visibility | `TBC, re-verify` |
 
-Holly reads `DATABASE_URL` and ignores the `PG*` variables; its own `POSTGRES_*` fallback is for local runs. `sslmode=disable` means the connection to the database is not encrypted inside the platform (SECURITY.md). Whether the `/data` volume is writable by Holly's numeric user, 10001, is `TBC, re-verify`: if it is not, Holly stops at start with the errno in the log (section 10), and the fix is a platform request for that user's group on the volume.
+Holly reads `DATABASE_URL` and ignores the `PG*` variables; its own `POSTGRES_*` fallback is for local runs. `sslmode=disable` means the connection to the database is not encrypted inside the platform (SECURITY.md). The platform team confirmed that the `/data` volume is writable by Holly's numeric user, 10001 (relayed by the app owner, 19 October 2026), and V0.8 and V0.9 have started on the App Store, which Holly does only with a writable store. Should that change, Holly stops at start with the errno in the log (section 10), and the fix is a platform request for that user's group on the volume.
 
 **SECTION 04**
 
@@ -193,15 +199,28 @@ Set `ADMIN_USERNAME` and `ADMIN_PASSWORD` (at least 12 characters, a secret) as 
 python -m app.cli.create_admin --username <name>
 ```
 
-Run it in the running container, or on any machine with Holly's database settings. It takes the password from `ADMIN_PASSWORD` in that shell's environment, or prompts for it without echo; it never accepts one as a flag, and refuses one shorter than 12 characters. It prints `Admin user '<name>' created.` or `updated.` and writes an `auth.user.admin_upsert` audit row. For an existing username it resets the password and makes the account an active admin, whatever its role was. Whether the App Store offers a shell in the running container, and whether the add-on database is reachable from outside the platform, are both `TBC, re-verify`.
+Run it in the running container, or on any machine with Holly's database settings. It takes the password from `ADMIN_PASSWORD` in that shell's environment, or prompts for it without echo; it never accepts one as a flag, and refuses one shorter than 12 characters. It prints `Admin user '<name>' created.` or `updated.` and writes an `auth.user.admin_upsert` audit row. For an existing username it resets the password, makes the account an active admin, whatever its role was, and ends every session the account holds. Once one admin can sign in, the **Users** page does the rest without a shell. Whether the App Store offers a shell in the running container, and whether the add-on database is reachable from outside the platform, are both `TBC, re-verify`.
 
-### Analyst and operator accounts
+### Add, reset and deactivate accounts
 
-No route or command creates an `analyst` or `operator` account, changes a role, or deactivates a user: `create_admin` creates admins only. Until one exists, these need a direct change to the `app_user` table, and the procedure for that is `TBC, re-verify`. Setting `is_active` to false stops a user at once: every request checks it, so the user's tokens stop working too.
+Sign in as an admin and open **Users** in the navigation (ADR-014). Every change is written to the audit log, with the admin who made it and their address.
+
+● **Create a user:** enter a username (1 to 50 of `a` to `z`, `0` to `9` and `. _ @ -`, stored in lower case, so no two names can look alike), an email if wanted (one already in use, in any case, is refused), a role (`analyst`, `operator` or `admin`) and a temporary password of at least 12 characters, then select **Create**. Give the user the temporary password by a channel other than the one carrying their username. At their first sign-in Holly shows only **Change password**, and every other request answers 403 `Change your password before continuing`, until they choose their own.
+● **Reset a password:** select **Reset password** on the account's row and enter a new temporary password. Every session the account holds ends at once, any sign-in lockout on the username is lifted, and the user chooses their own password at their next sign-in.
+● **Change a role:** choose it in the account's **Role** column. The new role applies to the user's next request.
+● **Deactivate or activate:** select **Deactivate** on the account's row. Every request checks the account, so its sessions stop at once, and none of them comes back if it is activated again.
+
+An admin cannot reset, demote or deactivate their own account on this page, and Holly refuses to demote or deactivate the last active admin, answering `Holly needs at least one active admin.` Each change reads the account again under a row lock before it is made, so a reset made while the user is changing their password wins. Accounts are never deleted, since the audit chain names them.
+
+What an admin can do, anyone holding an admin's session can do too. They can reset another admin's password and sign in as them, their later actions then audited under that admin's name; create an admin whose password they know, which outlives their own session and the victim's next password change; and demote every other admin, after which only `create_admin` (which needs a shell, `TBC, re-verify`) restores one, since the `ADMIN_*` variables apply only while Holly holds no account. The audit actions are `auth.user.create`, `auth.user.password_reset` and `auth.user.update`, whose detail holds what changed, from and to; a temporary password is never recorded.
+
+### Change your own password
+
+Every user can open **Password** in the navigation, enter their current password and a new one of 12 to 1,024 characters, not spaces alone, twice. A wrong current password answers `The current password is not correct.` and counts against the same per-username limit as a failed sign-in (10 in any 15 minutes). A change ends every other session the user holds, on any device, and keeps the one it was made in. A change still running when an admin resets the password or deactivates the account is refused with a 401, and the dashboard signs out. The audit action is `auth.user.password_change`, with `success` and, when it fails, the `reason`: `wrong_password`, `rate_limited`, `same_password`, `stale_token` (the session ended while the change ran) or `inactive_user`.
 
 ### Sign everyone out
 
-Rotate `APP_SECRET_KEY` (at least 32 characters) and apply the settings. Every access and refresh token stops verifying, and every user signs in again. A user's own **Sign out** revokes only their refresh token; their access token stays valid until it expires, up to 30 minutes by default.
+To end one user's sessions, reset their password or deactivate them (above). To end everyone's, rotate `APP_SECRET_KEY` (at least 32 characters) and apply the settings. Every access and refresh token stops verifying, and every user signs in again. A user's own **Sign out** revokes only their refresh token; their access token stays valid until it expires, up to 30 minutes by default.
 
 **SECTION 09**
 
@@ -232,6 +251,10 @@ Read the start of its log (section 04). The causes Holly names itself:
 
 Holly cannot reach its database. Check the POSTGRESQL add-on's state and the database settings Holly receives.
 
+### Symptom: every request but the password page answers 403 `Change your password before continuing`
+
+An admin created the account or reset its password, and the user has not yet chosen their own. Holly shows the user only **Change password** until they do (section 08). The answer is a 403, not a 401, so the dashboard keeps the session rather than signing out.
+
 ### Symptom: every signed-in request answers 401
 
 First tell whose 401 it is. Holly's own has the body `{"detail":"Could not validate credentials"}`, a bare `WWW-Authenticate: Bearer` and an `X-Request-ID`. A 401 with an empty body and a `WWW-Authenticate` naming `invalid_token` and `Signed JWT rejected` came from the App Store's gateway, which refused Holly's token in `Authorization` as one it could not verify with the platform's keys (by inference, before Holly saw the request, and for any bearer token there that the platform did not sign). The dashboard sends its token in `X-Holly-Token` from V0.9; a script, or a dashboard older than V0.9, sending it in `Authorization` meets that refusal. In the browser it shows as the dashboard appearing after sign-in, then returning to the sign-in page.
@@ -254,7 +277,7 @@ The first four answer 429 with `Retry-After`, with one exception: a new shift-lo
 
 ### Symptom: sign-in answers HTTP 503 `Sign-in is busy. Try again in a moment.`
 
-At most 4 password checks run at once, each on a worker thread, so a burst of sign-ins cannot stall the one worker. A sign-in beyond them is refused at once, with `Retry-After: 1`, logged as `Sign-in refused: 4 password checks already running`, not audited and not counted against the username. It clears as the running checks finish.
+On the **Password** page the same refusal reads `Password checks are busy. Try again in a moment.` At most 4 password checks run at once, each on a worker thread, so a burst of sign-ins cannot stall the one worker. A sign-in beyond them is refused at once, with `Retry-After: 1`, logged as `Sign-in refused: 4 password checks already running`, not audited and not counted against the username. It clears as the running checks finish.
 
 ### Symptom: HTTP 413 `Request body too large`
 
@@ -334,7 +357,9 @@ The rows stay and still list, but a download answers 404 `The file for this proc
 
 ### Suspected stolen token
 
-Holly has no route that revokes another user's tokens. Deactivating the user (section 08) stops that user at once. Rotating `APP_SECRET_KEY` stops every token for every user.
+On the **Users** page, an admin's **Reset password** or **Deactivate** ends every session the user holds at once (section 08); the user's own password change ends every session but the one it was made in. Rotating `APP_SECRET_KEY` stops every token for every user.
+
+If the token was an admin's, also read the audit log from the time of the theft for `auth.user.create`, `auth.user.password_reset` and `auth.user.update` rows, and undo each one the admin did not make: deactivate an account they did not create, and reset any password and restore any role or status changed on their behalf. An account the thief created, or whose password they reset, gives them a way back in that outlives the stolen token.
 
 **SECTION 12**
 

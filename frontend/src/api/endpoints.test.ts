@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getEvaluation, getFeed, runEvaluation } from "./assistant";
 import { listAuditLog } from "./audit";
-import { getCurrentUser, login, logout, refresh } from "./auth";
+import { changePassword, getCurrentUser, login, logout, refresh } from "./auth";
 import { apiClient, downloadFile } from "./client";
 import {
   acknowledgePreAlert,
@@ -36,6 +36,7 @@ import {
   repolishShiftNote,
   updateShiftNote,
 } from "./shift";
+import { createUser, listUsers, resetPassword, updateUser } from "./users";
 
 vi.mock("./client", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./client")>()),
@@ -124,6 +125,35 @@ describe("the sign-in endpoints", () => {
     expect(get).toHaveBeenLastCalledWith("/auth/me");
     await expect(logout("r-1")).resolves.toBeUndefined();
     expect(post).toHaveBeenLastCalledWith("/auth/logout", { refresh_token: "r-1" });
+  });
+});
+
+describe("the password and users endpoints", () => {
+  it("changes the signed-in user's own password", async () => {
+    const post = answer("post");
+    const fresh = "pw-fresh";
+    await expect(changePassword({ current_password: typed, new_password: fresh })).resolves.toBe(
+      body,
+    );
+    expect(post).toHaveBeenLastCalledWith("/auth/password", {
+      current_password: typed,
+      new_password: fresh,
+    });
+  });
+
+  it("lists, creates, resets and updates users", async () => {
+    const get = answer("get");
+    const post = answer("post");
+    const patch = answer("patch");
+    await expect(listUsers()).resolves.toBe(body);
+    expect(get).toHaveBeenLastCalledWith("/users");
+    const created = { username: "test.new", email: null, role: "analyst" as const };
+    await expect(createUser({ ...created, temporary_password: typed })).resolves.toBe(body);
+    expect(post).toHaveBeenLastCalledWith("/users", { ...created, temporary_password: typed });
+    await expect(resetPassword("u/1", typed)).resolves.toBe(body);
+    expect(post).toHaveBeenLastCalledWith("/users/u%2F1/password", { temporary_password: typed });
+    await expect(updateUser("u-1", { is_active: false })).resolves.toBe(body);
+    expect(patch).toHaveBeenLastCalledWith("/users/u-1", { is_active: false });
   });
 });
 

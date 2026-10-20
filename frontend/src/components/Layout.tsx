@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { EventTimersProvider } from "../context/EventTimersContext";
@@ -21,7 +21,15 @@ const NAV_ITEMS: ReadonlyArray<NavItem> = [
   { to: "/procedures", label: "Procedures" },
   { to: "/shift-log", label: "Shift log" },
   { to: "/audit", label: "Audit log", requiredRoles: ["operator", "admin"] },
+  { to: "/users", label: "Users", requiredRoles: ["admin"] },
+  { to: "/password", label: "Password" },
 ];
+
+// The timers' provider, left out while a password an admin set is still to change: Holly would
+// refuse its polls, and nothing reachable then shows timers.
+function Timers({ off, children }: Readonly<{ off: boolean; children: ReactNode }>) {
+  return off ? <>{children}</> : <EventTimersProvider>{children}</EventTimersProvider>;
+}
 
 export default function Layout() {
   const { logout, user } = useAuth();
@@ -33,14 +41,17 @@ export default function Layout() {
     saveDisplayPrefs(next);
   }
 
+  // Until a password an admin set is changed, the password page is the only place to go.
+  const changeDue = user?.must_change_password ?? false;
   const visibleItems = NAV_ITEMS.filter((item) => {
+    if (changeDue) return item.to === "/password";
     if (!item.requiredRoles) return true;
     if (!user) return false;
     return item.requiredRoles.includes(user.role);
   });
 
   return (
-    <EventTimersProvider>
+    <Timers off={changeDue}>
       <div
         className="app-shell"
         data-scanlines={display.scanlines ? "on" : "off"}
@@ -66,7 +77,7 @@ export default function Layout() {
             </button>
           </div>
         </header>
-        <TimerBanner />
+        {!changeDue && <TimerBanner />}
         <div className="app-body">
           <nav className="app-nav">
             {visibleItems.map((item) => (
@@ -93,6 +104,6 @@ export default function Layout() {
           </main>
         </div>
       </div>
-    </EventTimersProvider>
+    </Timers>
   );
 }

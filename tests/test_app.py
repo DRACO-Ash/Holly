@@ -25,7 +25,7 @@ from app import __version__, factory
 from app.config import get_settings
 from app.core.body_limit import LARGE_BODY_ROUTES
 from app.core.rate_limit import GLOBAL_LIMIT
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user, get_signed_in_user
 from app.factory import create_app
 
 PROBE_PATHS = ["/healthz", "/health", "/readyz", "/livez", "/ping"]
@@ -283,6 +283,7 @@ def test_route_inventory_is_exactly_the_reviewed_set() -> None:
         "/api/v1/auth/refresh": ["POST"],
         "/api/v1/auth/logout": ["POST"],
         "/api/v1/auth/me": ["GET"],
+        "/api/v1/auth/password": ["POST"],
         "/api/v1/elsets": ["GET"],
         "/api/v1/elsets/{elset_id}": ["GET"],
         "/api/v1/elsets/ingest": ["POST"],
@@ -310,17 +311,25 @@ def test_route_inventory_is_exactly_the_reviewed_set() -> None:
         "/api/v1/assistant/evaluation/{notification_id}": ["GET"],
         "/api/v1/assistant/evaluate/{notification_id}": ["POST"],
         "/api/v1/audit": ["GET"],
+        "/api/v1/users": ["GET", "POST"],
+        "/api/v1/users/{user_id}/password": ["POST"],
+        "/api/v1/users/{user_id}": ["PATCH"],
     }
 
 
-def _requires_sign_in(dependant: Dependant) -> bool:
+def _depends_on(dependant: Dependant, call: Any) -> bool:
     pending = [dependant]
     while pending:
         current = pending.pop()
-        if current.call is get_current_user:
+        if current.call is call:
             return True
         pending.extend(current.dependencies)
     return False
+
+
+def _requires_sign_in(dependant: Dependant) -> bool:
+    # Every signed-in route reaches the token check, get_current_user through it.
+    return _depends_on(dependant, get_signed_in_user)
 
 
 def test_only_the_reviewed_routes_are_open_without_sign_in() -> None:
@@ -344,6 +353,17 @@ def test_only_the_reviewed_routes_are_open_without_sign_in() -> None:
         "/api/v1/auth/refresh",
         "/api/v1/auth/logout",
     }
+
+
+def test_only_the_reviewed_routes_answer_while_a_password_change_is_due() -> None:
+    """Trip-wire: a signed-in route outside this list must refuse a user whose password an admin
+    set until they choose their own (ADR-014)."""
+    ungated = set()
+    for context in iter_route_contexts(create_app(static_dir=Path("/nonexistent")).routes):
+        dependant: Any = context.dependant
+        if _requires_sign_in(dependant) and not _depends_on(dependant, get_current_user):
+            ungated.add(context.path)
+    assert ungated == {"/api/v1/auth/me", "/api/v1/auth/password"}
 
 
 def test_status_reports_presence_and_length_never_the_value(

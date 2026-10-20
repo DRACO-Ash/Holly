@@ -30,6 +30,7 @@ from app.api.v1.routes import (
     notifications,
     procedures,
     shift_log,
+    users,
 )
 from app.config import DatabaseNotConfiguredError, get_settings
 from app.core.body_limit import BodySizeLimitMiddleware
@@ -154,6 +155,14 @@ async def _coarse_rate_limit(
     return await call_next(request)
 
 
+def _without_length(error: dict[str, Any]) -> str:
+    """An error's message without the submitted value's length, with which pydantic ends a
+    length message ("..., not 11"): a refused password's length is not to be sent back."""
+    message = str(error["msg"])
+    actual = (error.get("ctx") or {}).get("actual_length")
+    return message.removesuffix(f", not {actual}") if actual is not None else message
+
+
 def _mount_dashboard(app: FastAPI, static_dir: Path) -> None:
     """Serve the built dashboard, or the JSON service descriptor when it was not built.
 
@@ -209,10 +218,11 @@ def create_app(static_dir: Path = STATIC_DIR) -> FastAPI:
     @app.exception_handler(RequestValidationError)
     def _invalid_request(_request: Request, exc: RequestValidationError) -> JSONResponse:
         # Each error's type, place and message, never the submitted value, which may be a
-        # password, nor its context: a value that will not encode as UTF-8 could not be sent
-        # back at all, and the response would fail as a 500 with the value in its traceback.
+        # password, nor its length, nor its context: a value that will not encode as UTF-8 could
+        # not be sent back at all, and the response would fail as a 500 with the value in its
+        # traceback.
         detail = [
-            {"type": error["type"], "loc": list(error["loc"]), "msg": error["msg"]}
+            {"type": error["type"], "loc": list(error["loc"]), "msg": _without_length(error)}
             for error in exc.errors()
         ]
         return JSONResponse({"detail": detail}, status_code=422)
@@ -248,6 +258,7 @@ def create_app(static_dir: Path = STATIC_DIR) -> FastAPI:
         event_timers,
         assistant,
         audit,
+        users,
     ):
         app.include_router(module.router, prefix="/api/v1")
     _mount_dashboard(app, static_dir)

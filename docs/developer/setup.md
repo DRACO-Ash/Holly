@@ -4,8 +4,8 @@
 
 **Data classification:** Unclassified (per ADR-006)
 **Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned the edition this one replaces)
-**Version:** 0.5
-**Last updated:** 2026-10-18
+**Version:** 0.6
+**Last updated:** 2026-10-20
 
 > **BLUF**
 >
@@ -65,7 +65,7 @@ Every setting Holly reads. Names are environment variable names. Secret values a
 | `APPSTORE_DAST_SCAN` | Set to `true` by the App Store's DAST scan alone, which starts the container with none of Holly's other settings. Holly then generates a throwaway signing key and a temporary procedure store if none is set, turns the background pulls off, and may run with no database, each request that needs one answering 503. Never set it by hand. | `false` | No |
 | `APP_ENV` | `production` or `development`. `development` allows `http://` UDL and Mattermost URLs and `UDL_VERIFY_SSL=false`. | `production` | No |
 | `APP_SECRET_KEY` | Signs and verifies sign-in tokens. At least 32 characters. Changing it signs every user out. Secret. | none | Yes |
-| `APP_ALLOWED_ORIGINS` | Browser origins allowed to call the API from another origin, as a JSON list such as `["https://ops.example"]`. `*` is refused. The dashboard is served from Holly's own origin and needs none. | `[]` | No |
+| `APP_ALLOWED_ORIGINS` | Browser origins allowed to call the API from another origin, as a JSON list such as `["https://ops.example"]`. `*` is refused. No origin gets credentials mode, so a client there sends its token in `X-Holly-Token` without cookies (ADR-013). The dashboard is served from Holly's own origin and needs none. | `[]` | No |
 
 ### Database
 
@@ -214,9 +214,9 @@ There is no public sign-up. On the App Store, set `ADMIN_USERNAME` and `ADMIN_PA
 PYTHONPATH=src .venv/bin/python -m app.cli.create_admin --username <name>
 ```
 
-It prompts `Admin password (hidden):` unless `ADMIN_PASSWORD` is set, refuses a password shorter than 12 characters with exit status 2, and prints `Admin user '<name>' created.` Running it again for the same username resets the password, the `admin` role and the active flag, and prints `updated`. Each run writes an `auth.user.admin_upsert` audit row. The command takes no password flag, so a password never lands in shell history or the process list.
+It prompts `Admin password (hidden):` unless `ADMIN_PASSWORD` is set, refuses a password shorter than 12 characters with exit status 2, and prints `Admin user '<name>' created.` Running it again for the same username resets the password, the `admin` role and the active flag, ends every session the account holds, and prints `updated`. Each run writes an `auth.user.admin_upsert` audit row. The command takes no password flag, so a password never lands in shell history or the process list.
 
-No route or command creates an `analyst` or `operator` account; see the [operator manual](../runbook/operator-manual.md).
+Every other account, `analyst`, `operator` or another `admin`, is created on the **Users** page by an admin, who also resets passwords and deactivates accounts there; see the [operator manual](../runbook/operator-manual.md), section 08.
 
 **SECTION 08**
 

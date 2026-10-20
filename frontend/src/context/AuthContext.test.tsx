@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getCurrentUser, login, logout } from "../api/auth";
+import { changePassword, getCurrentUser, login, logout } from "../api/auth";
 import { ACCESS_TOKEN_KEY, REFRESH_TOKEN_KEY } from "../api/client";
 import { aUser } from "../test/fixtures";
 import type { User } from "../types";
@@ -13,6 +13,7 @@ vi.mock("../api/auth");
 // so SonarQube's hard-coded credential rule (S2068), whose hotspots the app owner cannot close,
 // has nothing to flag.
 const typed = "pw";
+const fresh = "pw-fresh";
 
 function Probe() {
   const auth = useAuth();
@@ -27,6 +28,12 @@ function Probe() {
       <button type="button" onClick={() => void auth.logout()}>
         Sign out
       </button>
+      <button type="button" onClick={() => void auth.changePassword(typed, fresh)}>
+        Change password
+      </button>
+      <output data-testid="due">
+        {auth.user?.must_change_password ? "change due" : "no change due"}
+      </output>
     </div>
   );
 }
@@ -105,6 +112,28 @@ describe("the sign-in state", () => {
     expect(login).toHaveBeenCalledWith({ username: "test.analyst", password: typed });
     expect(localStorage.getItem(ACCESS_TOKEN_KEY)).toBe("a-2");
     expect(localStorage.getItem(REFRESH_TOKEN_KEY)).toBe("r-2");
+  });
+
+  it("changes the password, keeping the new pair, and learns the change is no longer due", async () => {
+    localStorage.setItem(ACCESS_TOKEN_KEY, "a-1");
+    localStorage.setItem(REFRESH_TOKEN_KEY, "r-1");
+    vi.mocked(getCurrentUser).mockResolvedValueOnce(aUser({ must_change_password: true }));
+    vi.mocked(changePassword).mockResolvedValue({
+      access_token: "a-3",
+      refresh_token: "r-3",
+      token_type: "bearer",
+    });
+    render(
+      <AuthProvider>
+        <Probe />
+      </AuthProvider>,
+    );
+    await waitFor(() => expect(screen.getByTestId("due").textContent).toBe("change due"));
+    fireEvent.click(screen.getByRole("button", { name: "Change password" }));
+    await waitFor(() => expect(screen.getByTestId("due").textContent).toBe("no change due"));
+    expect(changePassword).toHaveBeenCalledWith({ current_password: typed, new_password: fresh });
+    expect(localStorage.getItem(ACCESS_TOKEN_KEY)).toBe("a-3");
+    expect(localStorage.getItem(REFRESH_TOKEN_KEY)).toBe("r-3");
   });
 
   it("signs out on the server, then forgets both tokens", async () => {

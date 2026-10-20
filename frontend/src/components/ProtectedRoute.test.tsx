@@ -71,4 +71,18 @@ describe("the protected route", () => {
     );
     expect(await screen.findByText("The audit log")).toBeTruthy();
   });
+
+  it("keeps a user whose password an admin set on the password page until they change it", async () => {
+    localStorage.setItem(ACCESS_TOKEN_KEY, "a-1");
+    vi.mocked(getCurrentUser).mockResolvedValue(aUser({ must_change_password: true }));
+    at(
+      "/audit",
+      <Route element={<ProtectedRoute />}>
+        <Route path="/audit" element={<p>The audit log</p>} />
+        <Route path="/password" element={<p>The password page</p>} />
+      </Route>,
+    );
+    expect(await screen.findByText("The password page")).toBeTruthy();
+    expect(screen.queryByText("The audit log")).toBeNull();
+  });
 });

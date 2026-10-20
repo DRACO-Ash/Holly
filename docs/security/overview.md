@@ -4,7 +4,7 @@
 
 **Data classification:** Unclassified (per ADR-006)
 **Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned the edition this one replaces)
-**Version:** 0.5
+**Version:** 0.6
 **Last updated:** 2026-10-20
 
 > **BLUF**
@@ -38,9 +38,11 @@ When a new data source is added, ADR-006 must be re-evaluated. Holly refuses no 
 ● **Refresh-token rotation (ADR-011).** Every successful refresh issues a new access token and a new refresh token, and the old refresh token's JTI joins the `revoked_jti` block-list. A reused refresh token is refused and audited with reason `revoked_token`.
 ● **Server-side sign-out.** `POST /api/v1/auth/logout` takes the refresh token in its body, revokes its JTI and audits the action.
 ● **Access tokens are not block-listed.** After sign-out, an access token stays valid until it expires, up to 30 minutes by default. Every request does check that the user still exists and is active.
+● **A token version ends a user's sessions (ADR-014).** Every token carries the user's `token_version`, checked on every request and every refresh. A password change, an admin's reset or deactivation, and `create_admin` on an existing account raise it, so every token issued before stops at once; a change keeps only the session it was made in, with a new pair. Each reads the account again under a row lock before it writes, and a password change refuses if its session ended while it ran, so a reset always beats a change running at the same moment (`services/accounts.py`). A token from before V0.10 carries no version and reads as 0.
+● **A temporary password must be changed.** A password an admin sets on the **Users** page is temporary: until the user chooses their own at `POST /api/v1/auth/password`, every route but `/auth/me` and `/auth/password` answers 403, server-side. The change checks the current password against the same per-username limit as sign-in and needs a new one of 12 to 1,024 characters, not spaces alone; the dashboard checks the same rule first, counting as the server does (`tests/test_password_rule.py`).
 ● **Passwords** are bcrypt hashes from the `bcrypt` library; only the first 72 bytes of a password count.
 ● **Guessing is limited.** Every sign-in attempt counts against its client address before any password is checked: after 30 in a minute, further attempts from that address answer 429 `Too many sign-in attempts from this address. Try again in <n> seconds.` with `Retry-After`, unaudited. Each sign-in whose password is checked counts against its username before the check starts, so guesses sent together cannot pass the limit: after 10 within 15 minutes, further attempts for that username answer 429 with `Retry-After` and are audited with reason `rate_limited`. A success clears the count, and an attempt refused because sign-in is busy does not count. An unknown username still costs a real bcrypt check against a dummy hash, so response time does not reveal which usernames exist ([src/app/api/v1/routes/auth.py](../../src/app/api/v1/routes/auth.py)).
-● **Sign-in cannot stall the worker.** bcrypt runs on worker threads, at most 4 checks at once. A sign-in beyond them answers 503 `Sign-in is busy. Try again in a moment.` with `Retry-After: 1` at once, rather than queueing.
+● **Sign-in cannot stall the worker.** bcrypt runs on worker threads, at most 4 checks at once. A sign-in beyond them answers 503 `Sign-in is busy. Try again in a moment.` with `Retry-After: 1` at once, rather than queueing; a password change, `Password checks are busy. Try again in a moment.`
 ● **An unknown username is not recorded.** A failed sign-in's audit row carries the username only when it names an account: an unknown one may be a password typed into the wrong box, and the audit chain is append-only.
 ● **Bounded input.** Usernames are at most 50 characters, passwords 1,024 and tokens 4,096; anything longer is refused before any work.
 ● **In the browser**, both tokens are kept in `localStorage` under `holly.auth.access` and `holly.auth.refresh`. Any script running in Holly's origin could read them; the dashboard's Content Security Policy (CSP), which allows scripts from Holly's own origin only and no inline script, is the mitigation.
@@ -53,7 +55,7 @@ There is no public sign-up. The first admin is created with:
 python -m app.cli.create_admin --username <name>
 ```
 
-The password comes from `ADMIN_PASSWORD` or a hidden prompt, never a command-line flag, and must be at least 12 characters. Each run writes an `auth.user.admin_upsert` audit row. No route or command creates an analyst or operator account; see the [operator manual](../runbook/operator-manual.md).
+The password comes from `ADMIN_PASSWORD` or a hidden prompt, never a command-line flag, and must be at least 12 characters. Each run writes an `auth.user.admin_upsert` audit row. On the App Store the first admin comes from the `ADMIN_*` variables instead (operator manual, section 08). Every later account is created by an admin on the **Users** page.
 
 **SECTION 04**
 
@@ -64,10 +66,11 @@ The `User` model holds one of three roles (`analyst`, `operator`, `admin`), and 
 Currently gated:
 
 ● `GET /api/v1/audit` requires `operator` or `admin`. Analysts receive HTTP 403.
+● `/api/v1/users` and its routes require `admin`: listing accounts, creating one, resetting a password, and changing a role or status. An admin cannot reset, demote or deactivate their own account there, and the last active admin cannot be demoted or deactivated (ADR-014).
 
 Every other signed-in route is open to any role. In particular, any signed-in user can delete any procedure, edit or delete any shift-log entry, and dismiss or delete any event timer; nothing checks ownership.
 
-The dashboard hides the **Audit log** link from analysts and sends a visitor without a token to the sign-in page. Both are conveniences: the server's checks are the control. [tests/test_app.py](../../tests/test_app.py) pins the routes open without sign-in: the probes, `/`, `/status`, `/api/v1/health`, `/api/v1/health/detailed`, and the login, refresh and logout routes. Any other route that does not demand a valid access token fails that test.
+The dashboard hides the **Audit log** link from analysts and the **Users** link from everyone but admins, and sends a visitor without a token to the sign-in page. Both are conveniences: the server's checks are the control. [tests/test_app.py](../../tests/test_app.py) pins the routes open without sign-in: the probes, `/`, `/status`, `/api/v1/health`, `/api/v1/health/detailed`, and the login, refresh and logout routes. Any other route that does not demand a valid access token fails that test.
 
 **SECTION 05**
 
@@ -191,7 +194,7 @@ There is no formal incident response runbook. Operational response is owned by t
 
 > **KEY DECISION**
 >
-> A compromised refresh token is revoked when its holder signs out or when it is next used, through the `revoked_jti` block-list (ADR-011). Holly has no route that revokes another user's tokens. To stop one user at once, deactivate the account in the database; to stop everyone, rotate `APP_SECRET_KEY`.
+> A compromised refresh token is revoked when its holder signs out or when it is next used, through the `revoked_jti` block-list (ADR-011). To stop one user at once, an admin resets their password or deactivates them on the **Users** page, which raises their token version (ADR-014); to stop everyone, rotate `APP_SECRET_KEY`. If the token was an admin's, undo the account changes made with it (operator manual, section 11).
 
 **SECTION 14**
 

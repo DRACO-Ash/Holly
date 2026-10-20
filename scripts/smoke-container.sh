@@ -224,6 +224,7 @@ if docker logs "$cid" 2>&1 | grep -q '\$2[aby]\$'; then fail "a bcrypt hash reac
 [ "$(users 'SELECT count(*) FROM app_user')" = 0 ] || fail "a refused start wrote an account"
 cid="$(run_holly "" "$WRITABLE" -p "127.0.0.1::8080" -e ADMIN_USERNAME=Smoke-Admin -e "ADMIN_PASSWORD=$ADMIN_SECRET")"
 CIDS="$CIDS $cid"
+serving="$cid"
 base="http://127.0.0.1:$(docker port "$cid" 8080/tcp | head -n 1 | sed 's/.*://')"
 tries=0
 until curl -fsS -o /dev/null "$base/healthz" 2>/dev/null; do
@@ -260,6 +261,109 @@ until docker logs "$cid" 2>&1 | grep -q '"event": "admin_bootstrap", .*"status":
   sleep 1
 done
 [ "$(users 'SELECT count(*) FROM app_user')" = 1 ] || fail "a later start with another pair added an account"
+# The Users page on PostgreSQL, through the admin's container (ADR-014). The admin creates an
+# analyst with a temporary password; the analyst signs in and is refused a data route until they
+# choose their own; the change ends the session it was made in; a reset ends the new one. Then the
+# race: the analyst changes their password over and over while the admin resets it, and the reset
+# must win, three times over; before the row lock, a change in flight wrote its password and token
+# version over the reset's. Deactivating ends the session that remains. Demoting a second admin
+# takes the row lock the last-admin rule counts under. The passwords are random for this run only.
+api_call() {  # $1: method, $2: token, $3: path, $4: body or empty. Prints the body, then the code.
+  if [ -n "$4" ]; then
+    curl -s -X "$1" -w '\n%{http_code}' -H "X-Holly-Token: $2" -H 'Content-Type: application/json' \
+      -d "$4" "$base$3"
+  else
+    curl -s -X "$1" -w '\n%{http_code}' -H "X-Holly-Token: $2" "$base$3"
+  fi
+}
+answered() { printf '%s\n' "$1" | tail -n 1; }
+token_in() { printf '%s\n' "$1" | head -n 1 | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p'; }
+sign_in() {  # $1: username, $2: password. Prints the access token, or nothing.
+  token_in "$(curl -s -w '\n%{http_code}' -H 'Content-Type: application/json' \
+    -d "{\"username\": \"$1\", \"password\": \"$2\"}" "$base/api/v1/auth/login")"
+}
+TEMP_SECRET=$(random_hex 8)
+OWN_SECRET=$(random_hex 8)
+RESET_SECRET=$(random_hex 8)
+RACE_A=$(random_hex 8)
+RACE_B=$(random_hex 8)
+out="$(api_call POST "$access" /api/v1/users "{\"username\": \"smoke-analyst\", \"temporary_password\": \"$TEMP_SECRET\"}")"
+[ "$(answered "$out")" = 201 ] || fail "the admin could not create an account ($(answered "$out"))"
+out="$(curl -s -w '\n%{http_code}' -H 'Content-Type: application/json' \
+  -d "{\"username\": \"smoke-analyst\", \"password\": \"$TEMP_SECRET\"}" "$base/api/v1/auth/login")"
+temporary="$(token_in "$out")"
+[ -n "$temporary" ] || fail "the new account could not sign in with its temporary password"
+out="$(api_call GET "$temporary" /api/v1/notifications "")"
+[ "$out" = '{"detail":"Change your password before continuing"}
+403' ] || fail "an account with a temporary password reached a data route, or was refused for another reason"
+out="$(api_call POST "$temporary" /api/v1/auth/password "{\"current_password\": \"$TEMP_SECRET\", \"new_password\": \"$OWN_SECRET\"}")"
+own="$(token_in "$out")"
+[ -n "$own" ] || fail "the new account could not choose its own password ($(answered "$out"))"
+[ "$(answered "$(api_call GET "$temporary" /api/v1/auth/me "")")" = 401 ] \
+  || fail "the token the password was changed with still works"
+[ "$(answered "$(api_call GET "$own" /api/v1/notifications "")")" = 200 ] \
+  || fail "the session the change began cannot read notifications"
+[ "$(users "SELECT must_change_password::text || ' ' || token_version FROM app_user WHERE username = 'smoke-analyst'")" = "false 1" ] \
+  || fail "the change did not clear the flag and raise the token version once"
+analyst_id="$(users "SELECT id FROM app_user WHERE username = 'smoke-analyst'")"
+reset_analyst() {
+  api_call POST "$access" "/api/v1/users/$analyst_id/password" "{\"temporary_password\": \"$RESET_SECRET\"}"
+}
+[ "$(answered "$(reset_analyst)")" = 200 ] || fail "the admin could not reset the account's password"
+[ "$(answered "$(api_call GET "$own" /api/v1/auth/me "")")" = 401 ] || fail "a reset left the account's session working"
+for trial in 1 2 3; do
+  token="$(sign_in smoke-analyst "$RESET_SECRET")"
+  out="$(api_call POST "$token" /api/v1/auth/password "{\"current_password\": \"$RESET_SECRET\", \"new_password\": \"$RACE_A\"}")"
+  [ "$(answered "$out")" = 200 ] || fail "race $trial: the account could not choose its own password"
+  race="$(mktemp -d)"
+  printf '%s\n%s\n' "$(token_in "$out")" "$RACE_A" > "$race/state"
+  (
+    while [ ! -e "$race/stop" ]; do
+      held="$(sed -n 1p "$race/state")"
+      known="$(sed -n 2p "$race/state")"
+      if [ "$known" = "$RACE_A" ]; then next="$RACE_B"; else next="$RACE_A"; fi
+      out="$(api_call POST "$held" /api/v1/auth/password "{\"current_password\": \"$known\", \"new_password\": \"$next\"}")"
+      [ "$(answered "$out")" = 200 ] || break
+      printf '%s\n%s\n' "$(token_in "$out")" "$next" > "$race/state"
+      echo changed >> "$race/changes"
+    done
+  ) &
+  racer=$!
+  sleep 1
+  [ "$(answered "$(reset_analyst)")" = 200 ] || fail "race $trial: the reset was refused"
+  sleep 2
+  touch "$race/stop"
+  wait "$racer" || true
+  [ -s "$race/changes" ] || fail "race $trial: no change ran before the reset, so the race was not run"
+  [ "$(answered "$(api_call GET "$(sed -n 1p "$race/state")" /api/v1/auth/me "")")" = 401 ] \
+    || fail "race $trial: a password change running during a reset kept its session"
+  [ "$(users "SELECT must_change_password::text FROM app_user WHERE username = 'smoke-analyst'")" = true ] \
+    || fail "race $trial: a password change running during a reset cleared the change it asked for"
+  [ -n "$(sign_in smoke-analyst "$RESET_SECRET")" ] \
+    || fail "race $trial: the admin's temporary password no longer signs in"
+  rm -rf "$race"
+done
+remaining="$(sign_in smoke-analyst "$RESET_SECRET")"
+[ "$(answered "$(api_call PATCH "$access" "/api/v1/users/$analyst_id" '{"is_active": false}')")" = 200 ] \
+  || fail "the admin could not deactivate the account"
+[ "$(answered "$(api_call GET "$remaining" /api/v1/auth/me "")")" = 401 ] || fail "a deactivated account's session still works"
+out="$(api_call POST "$access" /api/v1/users "{\"username\": \"smoke-admin-2\", \"role\": \"admin\", \"temporary_password\": \"$TEMP_SECRET\"}")"
+[ "$(answered "$out")" = 201 ] || fail "the admin could not create a second admin"
+second_id="$(users "SELECT id FROM app_user WHERE username = 'smoke-admin-2'")"
+[ "$(answered "$(api_call PATCH "$access" "/api/v1/users/$second_id" '{"role": "analyst"}')")" = 200 ] \
+  || fail "the admin could not demote a second admin"
+[ "$(answered "$(api_call PATCH "$access" "/api/v1/users/$(users "SELECT id FROM app_user WHERE username = 'smoke-admin'")" '{"role": "analyst"}')")" = 409 ] \
+  || fail "the admin could demote their own account"
+[ "$(users "SELECT count(*) FROM audit.audit_log WHERE action_type IN ('auth.user.create', 'auth.user.update')")" = 4 ] \
+  || fail "the accounts created and changed are not all in the audit log"
+[ "$(users "SELECT count(*) FROM audit.audit_log WHERE action_type = 'auth.user.password_reset'")" = 4 ] \
+  || fail "the resets are not all in the audit log"
+[ "$(users "SELECT count(*) > 4 FROM audit.audit_log WHERE action_type = 'auth.user.password_change' AND (detail::jsonb)->>'success' = 'true'")" = t ] \
+  || fail "the password changes are not in the audit log"
+if docker logs "$serving" 2>&1 | grep -qF -e "$TEMP_SECRET" -e "$OWN_SECRET" -e "$RESET_SECRET" -e "$RACE_A" -e "$RACE_B"; then
+  fail "a password reached the log"
+fi
+echo "the Users page creates an account whose temporary password must be changed; the change, a reset and a deactivation end the sessions before them; a reset beats a password change running at the same moment, three times out of three; and an admin cannot demote themselves"
 # Once the admin exists, the operator removes ADMIN_PASSWORD: a start with the username and an
 # unusable email still set starts normally, and its log names what is left to remove.
 cid="$(run_holly "" "$WRITABLE" -e ADMIN_USERNAME=smoke-admin -e "ADMIN_EMAIL=$(printf '%0300d' 0)")"

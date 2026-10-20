@@ -3,6 +3,7 @@ import { AuthProvider } from "./context/AuthContext";
 import ProtectedRoute from "./components/ProtectedRoute";
 import Layout from "./components/Layout";
 import AuditLog from "./pages/AuditLog";
+import ChangePassword from "./pages/ChangePassword";
 import Dashboard from "./pages/Dashboard";
 import Login from "./pages/Login";
 import Maneuvers from "./pages/Maneuvers";
@@ -11,6 +12,7 @@ import Notifications from "./pages/Notifications";
 import NotificationDetail from "./pages/NotificationDetail";
 import Procedures from "./pages/Procedures";
 import ShiftLog from "./pages/ShiftLog";
+import Users from "./pages/Users";
 
 export default function App() {
   return (
@@ -33,6 +35,8 @@ export default function App() {
             <Route path="/procedures" element={<Procedures />} />
             <Route path="/shift-log" element={<ShiftLog />} />
             <Route path="/audit" element={<AuditLog />} />
+            <Route path="/users" element={<Users />} />
+            <Route path="/password" element={<ChangePassword />} />
           </Route>
         </Routes>
       </BrowserRouter>

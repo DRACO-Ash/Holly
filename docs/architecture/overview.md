@@ -4,7 +4,7 @@
 
 **Data classification:** Unclassified (per ADR-006)
 **Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned the edition this one replaces)
-**Version:** 0.5
+**Version:** 0.6
 **Last updated:** 2026-10-20
 
 > **BLUF**
@@ -70,9 +70,9 @@ Cross-cutting concerns sit in [src/app/core/](../../src/app/core/) (structured l
 
 The dashboard's source is [frontend/](../../frontend/). The Dockerfile's `dashboard` stage builds it with Node 22 from the committed lockfile and copies only the static output into `src/app/static`, so no Node tooling reaches the image. The same process serves it at `/`. API routes are matched first and only a browser's page navigation falls back to `index.html`, so a bookmarked page loads while an unknown API path still answers 404. In a source checkout with no built dashboard, `/` answers `{"service": "holly", "status": "ok"}` instead.
 
-Sign-in state flows through the `AuthContext` provider. `ProtectedRoute` sends a visitor without an access token to `/login`; that redirect is a convenience, and the server's token check on every API route is the control. The axios client at [frontend/src/api/client.ts](../../frontend/src/api/client.ts) adds the access token to every call in its own `X-Holly-Token` header (ADR-013), refreshes once on a 401 (concurrent calls share one refresh), `/auth/me` included, stores the rotated refresh token, and returns the analyst to `/login` when the refresh fails. Tokens live in the browser's `localStorage` under `holly.auth.access` and `holly.auth.refresh`. Downloads and exports are fetched with the token and handed to the browser to save ([frontend/src/utils/download.ts](../../frontend/src/utils/download.ts)), because a plain link cannot carry it.
+Sign-in state flows through the `AuthContext` provider. `ProtectedRoute` sends a visitor without an access token to `/login`, and a user whose password an admin set to `/password` until they choose their own; both redirects are conveniences, and the server's checks on every API route are the control. The axios client at [frontend/src/api/client.ts](../../frontend/src/api/client.ts) adds the access token to every call in its own `X-Holly-Token` header (ADR-013), refreshes once on a 401 (concurrent calls share one refresh), `/auth/me` included, stores the rotated refresh token, and returns the analyst to `/login` when the refresh fails. Tokens live in the browser's `localStorage` under `holly.auth.access` and `holly.auth.refresh`. Downloads and exports are fetched with the token and handed to the browser to save ([frontend/src/utils/download.ts](../../frontend/src/utils/download.ts)), because a plain link cannot carry it.
 
-The pages are Dashboard, Notifications (with a detail page per notice), Maneuvers, Comms, Procedures, Shift log (with the event timers) and Audit log, which only operators and admins see. The [analyst training manual](../user-handbook/training-manual.md) walks through each one.
+The pages are Dashboard, Notifications (with a detail page per notice), Maneuvers, Comms, Procedures, Shift log (with the event timers), Audit log, which only operators and admins see, Users, which only admins see (ADR-014), and Password, where every user changes their own. The [analyst training manual](../user-handbook/training-manual.md) walks through each one.
 
 ### Database (PostgreSQL)
 
@@ -143,11 +143,11 @@ The Daily Operations Dashboard's Docker Compose stack (`backend`, `frontend`, `d
 
 ● **Internet boundary:** the platform ingress terminates TLS (details `TBC, re-verify`). Holly sets its own security headers and Content Security Policy (CSP) on every response but a CORS preflight, which CORS answers before them.
 ● **Public paths:** the probes, `/status`, `/api/v1/health`, `/api/v1/health/detailed`, the sign-in, refresh and sign-out routes, and the dashboard's static files. Every other route under `/api/v1` requires a valid access token ([tests/test_app.py](../../tests/test_app.py)).
-● **Authorisation:** `GET /api/v1/audit` requires the `operator` or `admin` role; every other signed-in route is open to any role.
+● **Authorisation:** `GET /api/v1/audit` requires the `operator` or `admin` role and `/api/v1/users` the `admin` role; every other signed-in route is open to any role. A user whose password an admin set may reach only `/auth/me` and `/auth/password` until they change it.
 ● **Holly to database:** through the add-on's connection settings. Network isolation of the database is the platform's: `TBC, re-verify`.
 ● **Holly to UDL, Mattermost and Anthropic:** outbound HTTPS with credentials from environment variables. Outside development, Holly refuses to start with a non-https UDL or Mattermost URL or with TLS verification for UDL turned off. A notification reaches Anthropic only when its classification marking is cleared (`ASSISTANT_CLEARED_MARKINGS`).
 ● **Audit schema:** append-only by trigger, and tamper-evident by hash chain.
-● **Tokens:** access tokens last 30 minutes and refresh tokens 7 days by default; refresh tokens rotate (ADR-011).
+● **Tokens:** access tokens last 30 minutes and refresh tokens 7 days by default; refresh tokens rotate (ADR-011); each token carries its user's token version, which a password change, a reset or a deactivation raises (ADR-014).
 
 A fuller treatment is in [docs/security/overview.md](../security/overview.md).
 

@@ -6,7 +6,8 @@ Inside the container (or any environment with the database settings):
 
 The password comes from the ADMIN_PASSWORD environment variable, or is prompted for. It is
 never accepted as a command-line argument, which would leave it in the shell history and the
-process list. Running it again for an existing username resets the password and the admin role.
+process list. Running it again for an existing username resets the password and the admin role,
+and ends every session the account holds (ADR-014).
 """
 
 import argparse
@@ -56,7 +57,11 @@ def unstorable_field(username: str, password: str, email: str | None) -> str | N
 async def upsert_admin(username: str, password: str, email: str | None = None) -> str:
     async with get_session_factory()() as session:
         username = username.strip().lower()
-        result = await session.execute(select(User).where(User.username == username))
+        # Locked, as the Users page's changes are (services/accounts.py), so a password change
+        # running at the same moment cannot undo this one.
+        result = await session.execute(
+            select(User).where(User.username == username).with_for_update(key_share=True)
+        )
         user = result.scalar_one_or_none()
         action = "updated"
         if user is None:
@@ -66,6 +71,9 @@ async def upsert_admin(username: str, password: str, email: str | None = None) -
         user.password_hash = hash_password(password)
         user.role = UserRole.ADMIN.value
         user.is_active = True
+        user.must_change_password = False
+        if action == "updated":
+            user.token_version += 1
         if email is not None:
             user.email = email
         await session.flush()

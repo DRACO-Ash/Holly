@@ -2,9 +2,12 @@
 
 Tokens are signed with APP_SECRET_KEY using the configured HMAC algorithm (HS256 by default),
 and decoding accepts only that one algorithm, so an unsigned or differently signed token never
-verifies. PyJWT replaces the dashboard's python-jose; the claims are unchanged.
+verifies. PyJWT replaces the dashboard's python-jose. Since V0.10 each token also carries `ver`,
+the user's token version when it was issued (ADR-014); a token without it, issued before, reads
+as version 0.
 """
 
+import hmac
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
@@ -37,27 +40,46 @@ def verify_password(plain: str, hashed: str) -> bool:
         return False
 
 
-def _create_token(subject: str, token_type: TokenType, lifetime: timedelta) -> str:
+def same_password(first: str, second: str) -> bool:
+    """Whether bcrypt would read the two as one password, compared in constant time."""
+    return hmac.compare_digest(_to_bcrypt_bytes(first), _to_bcrypt_bytes(second))
+
+
+def _create_token(subject: str, token_type: TokenType, lifetime: timedelta, version: int) -> str:
     settings = get_settings()
     payload = {
         "sub": subject,
         "exp": datetime.now(UTC) + lifetime,
         "type": token_type,
         "jti": str(uuid.uuid4()),
+        "ver": version,
     }
     return jwt.encode(
         payload, settings.app_secret_key.get_secret_value(), algorithm=settings.jwt_algorithm
     )
 
 
-def create_access_token(subject: str, expires_delta: timedelta | None = None) -> str:
+def create_access_token(
+    subject: str, expires_delta: timedelta | None = None, *, version: int = 0
+) -> str:
     lifetime = expires_delta or timedelta(minutes=get_settings().jwt_access_token_expire_minutes)
-    return _create_token(subject, "access", lifetime)
+    return _create_token(subject, "access", lifetime, version)
 
 
-def create_refresh_token(subject: str, expires_delta: timedelta | None = None) -> str:
+def create_refresh_token(
+    subject: str, expires_delta: timedelta | None = None, *, version: int = 0
+) -> str:
     lifetime = expires_delta or timedelta(days=get_settings().jwt_refresh_token_expire_days)
-    return _create_token(subject, "refresh", lifetime)
+    return _create_token(subject, "refresh", lifetime, version)
+
+
+def token_version(claims: dict[str, Any]) -> int | None:
+    """The token version a decoded token carries: 0 when it has none, None when it is not a
+    whole number, which no user's version can equal."""
+    version = claims.get("ver", 0)
+    if isinstance(version, bool) or not isinstance(version, int):
+        return None
+    return version
 
 
 def decode_token(token: str) -> dict[str, Any] | None:
