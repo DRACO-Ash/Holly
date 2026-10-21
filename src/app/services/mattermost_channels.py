@@ -141,6 +141,15 @@ def _hidden(char: str) -> bool:
     return unicodedata.category(char) in _DROPPED or ord(char) in _INVISIBLE
 
 
+def _mark(char: str) -> str:
+    """One character as _marked reads it: a space, the hidden mark, or itself."""
+    if _parts(char):
+        return " "
+    if _hidden(char):
+        return _HIDDEN_MARK
+    return char
+
+
 def _marked(value: object) -> list[str]:
     """A name as Mattermost sent it, ready to be read for the word CLOSED as a reader may see
     it. Compatibility forms are folded first (fullwidth and styled letters become plain ones, by
@@ -155,9 +164,7 @@ def _marked(value: object) -> list[str]:
     if not isinstance(value, str):
         return []
     folded = unicodedata.normalize("NFKC", value)
-    marked = "".join(
-        " " if _parts(char) else _HIDDEN_MARK if _hidden(char) else char for char in folded
-    )
+    marked = "".join(_mark(char) for char in folded)
     return [marked, marked[::-1]] if _REVERSING.intersection(folded) else [marked]
 
 
