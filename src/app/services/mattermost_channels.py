@@ -114,8 +114,11 @@ _INVISIBLE = frozenset(
     | set(range(0xFE00, 0xFE10))
     | set(range(0xE0100, 0xE01F0))
 )
-# Format, combining and control characters: none is a letter a reader sees in the word.
-_DROPPED = frozenset({"Cf", "Mn", "Me", "Cc"})
+# Format, combining, control and unassigned characters: none is a letter a reader sees in the
+# word. Unassigned covers the default-ignorable code points Unicode reserves, which a browser
+# draws as nothing, and any format or combining character newer than Python's Unicode data.
+# Dropping a character can only join letters into the word, so it fails towards closed.
+_DROPPED = frozenset({"Cf", "Mn", "Me", "Cc", "Cn"})
 
 
 def _word_text(value: object) -> str:
@@ -123,7 +126,8 @@ def _word_text(value: object) -> str:
     forms folded (fullwidth and styled letters become plain ones, by NFKC), and every invisible,
     combining or control character taken out, so none can split or hide the word; a space, a tab
     or a line break still parts two words. A combining accent folds into its letter, which is
-    then another letter. A letter from
+    then another letter; one with no letter of its own, such as a diaeresis over the C, is dropped,
+    so it closes. A letter from
     another script that only looks Latin, such as the Cyrillic Es, is not folded (SECURITY.md). A
     name that is not text, which Mattermost never sends, reads as empty."""
     if not isinstance(value, str):
