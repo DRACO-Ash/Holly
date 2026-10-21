@@ -20,7 +20,7 @@ A fix for V0.12's failed upload: the App Store's Code Quality stage found 8 new 
 
 ### Changed
 
-● The dashboard's lint now enforces S2004, S4138, S6557 and S7723, so these smells fail the verification loop before an upload.
+● The dashboard's lint now enforces S2004, S4138, S6557 and S7723's missing-`new` side, so these smells fail the verification loop before an upload.
 
 ## Holly V0.12 (2026-10-21)
 
