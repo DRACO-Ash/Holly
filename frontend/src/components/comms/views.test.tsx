@@ -535,7 +535,7 @@ describe("ChannelConversation", () => {
     expect(
       calls()
         .slice(asked)
-        .filter((query) => query.channel_id === "ops"),
+        .filter((query) => query?.channel_id === "ops"),
     ).toEqual([]);
     expect(screen.getByText("Idle's own")).toBeTruthy();
   });
