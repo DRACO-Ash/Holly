@@ -192,12 +192,37 @@ class TestAChannelRecord:
             "Op Falcon CLO\u200bSED",
             "Op Falcon \u202eCLOSED",
             "Op Falcon " + "x" * 300 + " CLOSED",
+            "Op Falcon CLO\u034fSED",
+            "Op Falcon CLO\ufe0fSED",
+            "Op Falcon CLO\U000e0100SED",
+            "Op Falcon CLO\u3164SED",
+            "Op Falcon CLO\x00SED",
+            "Op Falcon \uff23\uff2c\uff2f\uff33\uff25\uff24",
+            "Op Falcon \U0001d402\U0001d40b\U0001d40e\U0001d412\U0001d404\U0001d403",
         ],
     )
     def test_closed_in_a_display_name_holly_cannot_show_still_closes_it(self, display: str) -> None:
         kept = found_channel({**channel("chan-1", "op-falcon"), "display_name": display}, "t", None)
         assert kept is not None
         assert kept.closed is True
+
+    @pytest.mark.parametrize(
+        "display",
+        [
+            "Disclosed reports",
+            "\u0106LOSED",
+            "CLO\u0301SED",
+            "CLOSEDOWN",
+            "Op \u0421LOSED",
+            ["CLOSED"],
+        ],
+    )
+    def test_another_word_letter_or_value_leaves_it_open(self, display: object) -> None:
+        # An accented letter is another letter, and a Cyrillic look-alike is accepted as a gap
+        # (SECURITY.md); a display name that is not text is never Mattermost's.
+        kept = found_channel({**channel("chan-1", "op-falcon"), "display_name": display}, "t", None)
+        assert kept is not None
+        assert kept.closed is False
 
     def test_a_name_without_the_word_stays_open_whatever_it_holds(self) -> None:
         kept = found_channel(
@@ -211,7 +236,7 @@ class TestAChannelRecord:
         assert kept is not None
         assert kept.closed is False
 
-    @pytest.mark.parametrize("deleted", [1.5e12, 1, float("inf")])
+    @pytest.mark.parametrize("deleted", [1.5e12, 1, float("inf"), float("nan")])
     def test_any_number_above_nothing_in_delete_at_archives_it(self, deleted: float) -> None:
         kept = found_channel({**channel("chan-1", "op"), "delete_at": deleted}, "t", None)
         assert kept is not None

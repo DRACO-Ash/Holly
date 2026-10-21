@@ -105,12 +105,36 @@ def clean_name(value: object, limit: int = _NAME_LENGTH) -> str | None:
     return text
 
 
+# Characters a reader cannot see that Unicode files outside the categories dropped below: the
+# combining grapheme joiner, the Hangul and Khmer fillers, the Mongolian and other variation
+# selectors.
+_INVISIBLE = frozenset(
+    {0x034F, 0x115F, 0x1160, 0x17B4, 0x17B5, 0x3164, 0xFFA0}
+    | set(range(0x180B, 0x1810))
+    | set(range(0xFE00, 0xFE10))
+    | set(range(0xE0100, 0xE01F0))
+)
+# Format, combining and control characters: none is a letter a reader sees in the word.
+_DROPPED = frozenset({"Cf", "Mn", "Me", "Cc"})
+
+
 def _word_text(value: object) -> str:
-    # The text as Mattermost sent it, its format characters (a zero-width space or joiner, a
-    # direction mark) taken out, so none can hide the word or split it.
+    """A name as Mattermost sent it, read for the word CLOSED as a reader sees it: compatibility
+    forms folded (fullwidth and styled letters become plain ones, by NFKC), and every invisible,
+    combining or control character taken out, so none can split or hide the word; a space, a tab
+    or a line break still parts two words. A combining accent folds into its letter, which is
+    then another letter. A letter from
+    another script that only looks Latin, such as the Cyrillic Es, is not folded (SECURITY.md). A
+    name that is not text, which Mattermost never sends, reads as empty."""
     if not isinstance(value, str):
         return ""
-    return "".join(char for char in value if unicodedata.category(char) != "Cf")
+    folded = unicodedata.normalize("NFKC", value)
+    return "".join(
+        " " if char.isspace() else char
+        for char in folded
+        if char.isspace()
+        or (unicodedata.category(char) not in _DROPPED and ord(char) not in _INVISIBLE)
+    )
 
 
 def is_closed(name: object, display_name: object, archived: bool) -> bool:
@@ -132,10 +156,12 @@ def found_channel(record: object, team_id: str, team_name: str | None) -> FoundC
     if kind not in PULLED_TYPES:
         return None
     delete_at = record.get("delete_at")
-    # Any number above 0 marks it archived, a float too: a value that cannot be read as one
-    # fails towards closed only when it is a number, never towards open.
+    # Any number but 0 or below marks it archived, a float and NaN too: a number Holly cannot
+    # read as a time fails towards closed, never towards open.
     archived = (
-        isinstance(delete_at, int | float) and not isinstance(delete_at, bool) and delete_at > 0
+        isinstance(delete_at, int | float)
+        and not isinstance(delete_at, bool)
+        and not delete_at <= 0
     )
     return FoundChannel(
         mm_channel_id=channel_id,
