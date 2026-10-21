@@ -43,7 +43,7 @@ All notable changes to Holly are recorded here, newest first. Holly V0.2 is the 
 
 ### Security
 
-● **Three dependency advisories published since V0.11 are closed:** vite 7.3.6 to 7.3.7 (GHSA-698v-4r3x-3vcv, GHSA-r825-w8mm-5pxw, GHSA-587h-7wmj-h5pm, all in its development server's launch-editor), follow-redirects 1.16.0 to 1.16.1 under axios (GHSA-q3jh-wrc6-jgq8, GHSA-8r9p-f939-6h3c) and certifi 2026.7.22 to 2026.10.19 in the development lock only (PYSEC-2026-4320). Inference: none reaches the running image, since vite and certifi are build or test tools and the dashboard's axios uses the browser's request, not follow-redirects.
+● **Three dependency advisories published since V0.11 are closed:** vite 7.3.6 to 7.3.7 (GHSA-698v-4r3x-3vcv, GHSA-r825-w8mm-5pxw, GHSA-587h-7wmj-h5pm, all in its development server's launch-editor), follow-redirects 1.16.0 to 1.16.1 under axios (GHSA-q3jh-wrc6-jgq8, GHSA-8r9p-f939-6h3c) and certifi 2026.7.22 to 2026.10.19 in the development lock only (PYSEC-2026-4320); and, during the gates, vitest and @vitest/coverage-v8 4.1.11 to 4.1.12 (GHSA-qxg6-89mg-rqv8, GHSA-xp26-3454-mjgp, in the test runner's mocker), with chai 6.3.0 and tinyrainbow 3.2.0 under them. Inference: none reaches the running image, since vite and certifi are build or test tools and the dashboard's axios uses the browser's request, not follow-redirects.
 
 ## Holly V0.11 (2026-10-20)
 
