@@ -40,9 +40,15 @@ from app.services.mattermost_client import PLAIN_ID, MattermostClient, Mattermos
 
 logger = logging.getLogger(__name__)
 
+# Where a character a reader cannot see stood, in a name read for the word (_marked).
+_HIDDEN_MARK = "\x00"
 # The word CLOSED, in any case, with no letter either side: "CLOSED - Op Falcon" and
-# "op-falcon-closed" are closed; "Disclosed reports" is not.
-CLOSED_WORD = re.compile(r"(?<![a-z])closed(?![a-z])", re.IGNORECASE)
+# "op-falcon-closed" are closed; "Disclosed reports" is not. In a marked name a hidden
+# character may sit between its letters, and beside it counts as a boundary, each on its own,
+# so none can split the word or join a letter onto it.
+CLOSED_WORD = re.compile(
+    "(?<![a-z])" + f"{_HIDDEN_MARK}*".join("closed") + "(?![a-z])", re.IGNORECASE
+)
 # Mattermost's types for a public and a private channel; "D" and "G" are direct and group messages.
 PULLED_TYPES = frozenset({"O", "P"})
 # Column limits (models/mattermost_channel.py): longer names are cut, never refused.
@@ -135,42 +141,33 @@ def _hidden(char: str) -> bool:
     return unicodedata.category(char) in _DROPPED or ord(char) in _INVISIBLE
 
 
-def _readings(value: object) -> list[str]:
-    """A name as Mattermost sent it, read for the word CLOSED as a reader may see it.
-    Compatibility forms are folded first (fullwidth and styled letters become plain ones, by
+def _marked(value: object) -> list[str]:
+    """A name as Mattermost sent it, ready to be read for the word CLOSED as a reader may see
+    it. Compatibility forms are folded first (fullwidth and styled letters become plain ones, by
     NFKC); a combining accent folds into its letter where Unicode has one, which is then another
-    letter. Each character Holly drops (format, combining, enclosing, control and unassigned) is
-    read both ways, as nothing and as a space: as nothing, it cannot split the word; as a space,
-    it cannot join a letter onto it. A name that holds a right-to-left override or isolate is
-    read reversed as well. A letter from another script that only looks Latin, such as the
-    Cyrillic Es, is not folded (SECURITY.md). A name that is not text, which Mattermost never
-    sends, has no reading."""
+    letter. Each character Holly cannot show as a letter (format, combining, enclosing, control
+    and unassigned) becomes a mark, which CLOSED_WORD reads on its own as nothing inside the
+    word and as a boundary beside it, so no mix of them can split the word or join a letter onto
+    it. Unicode's separators and the tab, line feed and carriage return part words. A name that
+    holds a right-to-left override or isolate is read reversed as well. A letter from another
+    script that only looks Latin, such as the Cyrillic Es, is not folded (SECURITY.md). A name
+    that is not text, which Mattermost never sends, has no reading."""
     if not isinstance(value, str):
         return []
     folded = unicodedata.normalize("NFKC", value)
-    joined: list[str] = []
-    spaced: list[str] = []
-    for char in folded:
-        if _parts(char):
-            joined.append(" ")
-            spaced.append(" ")
-        elif _hidden(char):
-            spaced.append(" ")
-        else:
-            joined.append(char)
-            spaced.append(char)
-    readings = ["".join(joined), "".join(spaced)]
-    if _REVERSING.intersection(folded):
-        readings += [reading[::-1] for reading in readings]
-    return readings
+    marked = "".join(
+        " " if _parts(char) else _HIDDEN_MARK if _hidden(char) else char for char in folded
+    )
+    return [marked, marked[::-1]] if _REVERSING.intersection(folded) else [marked]
 
 
 def is_closed(name: object, display_name: object, archived: bool) -> bool:
-    """Closed when archived, or when any reading of either name holds the word CLOSED. The
-    names are read as Mattermost sent them, before Holly cleans them to show: a name too odd to
-    show, which Holly drops, still closes the channel. An odd name fails towards closed."""
+    """Closed when archived, or when either name holds the word CLOSED, read as _marked
+    explains. The names are read as Mattermost sent them, before Holly cleans them to show: a
+    name too odd to show, which Holly drops, still closes the channel. An odd name fails towards
+    closed."""
     return archived or any(
-        CLOSED_WORD.search(reading) for text in (name, display_name) for reading in _readings(text)
+        CLOSED_WORD.search(reading) for text in (name, display_name) for reading in _marked(text)
     )
 
 
