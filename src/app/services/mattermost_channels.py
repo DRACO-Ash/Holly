@@ -118,35 +118,60 @@ _INVISIBLE = frozenset(
 # Format, combining, control and unassigned characters: none is a letter a reader sees in the
 # word. Unassigned covers the default-ignorable code points Unicode reserves, which a browser
 # draws as nothing, and any format or combining character newer than Python's Unicode data.
-# Dropping a character can only join letters into the word, so it fails towards closed.
 _DROPPED = frozenset({"Cf", "Mn", "Me", "Cc", "Cn"})
+# What parts two words: Unicode's separators, and the tab, line feed and carriage return. Any
+# other control character is dropped, not read as a space.
+_SEPARATORS = frozenset({"Zs", "Zl", "Zp"})
+_BREAKS = frozenset({"\t", "\n", "\r"})
+# The override and the isolate that draw what follows right to left.
+_REVERSING = frozenset({"\u202e", "\u2067"})
 
 
-def _word_text(value: object) -> str:
-    """A name as Mattermost sent it, read for the word CLOSED as a reader sees it: compatibility
-    forms folded (fullwidth and styled letters become plain ones, by NFKC), and every format,
-    combining, enclosing, control and unassigned character taken out, so none can split or hide
-    the word; a space, a tab or a line break still parts two words. A combining accent folds into
-    its letter where Unicode has one, which is then another letter, and is otherwise dropped, so
-    a diaeresis over the C closes. A letter from another script that only looks Latin, such as
-    the Cyrillic Es, is not folded (SECURITY.md). A name that is not text, which Mattermost never
-    sends, reads as empty."""
+def _parts(char: str) -> bool:
+    return char in _BREAKS or unicodedata.category(char) in _SEPARATORS
+
+
+def _hidden(char: str) -> bool:
+    return unicodedata.category(char) in _DROPPED or ord(char) in _INVISIBLE
+
+
+def _readings(value: object) -> list[str]:
+    """A name as Mattermost sent it, read for the word CLOSED as a reader may see it.
+    Compatibility forms are folded first (fullwidth and styled letters become plain ones, by
+    NFKC); a combining accent folds into its letter where Unicode has one, which is then another
+    letter. Each character Holly drops (format, combining, enclosing, control and unassigned) is
+    read both ways, as nothing and as a space: as nothing, it cannot split the word; as a space,
+    it cannot join a letter onto it. A name that holds a right-to-left override or isolate is
+    read reversed as well. A letter from another script that only looks Latin, such as the
+    Cyrillic Es, is not folded (SECURITY.md). A name that is not text, which Mattermost never
+    sends, has no reading."""
     if not isinstance(value, str):
-        return ""
+        return []
     folded = unicodedata.normalize("NFKC", value)
-    return "".join(
-        " " if char.isspace() else char
-        for char in folded
-        if char.isspace()
-        or (unicodedata.category(char) not in _DROPPED and ord(char) not in _INVISIBLE)
-    )
+    joined: list[str] = []
+    spaced: list[str] = []
+    for char in folded:
+        if _parts(char):
+            joined.append(" ")
+            spaced.append(" ")
+        elif _hidden(char):
+            spaced.append(" ")
+        else:
+            joined.append(char)
+            spaced.append(char)
+    readings = ["".join(joined), "".join(spaced)]
+    if _REVERSING.intersection(folded):
+        readings += [reading[::-1] for reading in readings]
+    return readings
 
 
 def is_closed(name: object, display_name: object, archived: bool) -> bool:
-    """Closed when archived, or when either name holds the word CLOSED. The names are read as
-    Mattermost sent them, before Holly cleans them to show: a name too odd to show, which Holly
-    drops, still closes the channel."""
-    return archived or any(CLOSED_WORD.search(_word_text(text)) for text in (name, display_name))
+    """Closed when archived, or when any reading of either name holds the word CLOSED. The
+    names are read as Mattermost sent them, before Holly cleans them to show: a name too odd to
+    show, which Holly drops, still closes the channel. An odd name fails towards closed."""
+    return archived or any(
+        CLOSED_WORD.search(reading) for text in (name, display_name) for reading in _readings(text)
+    )
 
 
 def found_channel(record: object, team_id: str, team_name: str | None) -> FoundChannel | None:
