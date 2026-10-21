@@ -187,6 +187,22 @@ describe("the assistant panel", () => {
     expect(screen.queryByRole("heading", { name: "Open questions" })).toBeNull();
   });
 
+  it("shows a notice kept from the assistant as a calm note, not an error, with no re-run", async () => {
+    vi.mocked(getEvaluation).mockResolvedValue(
+      anEvaluation({ withheld: true, error: "Not sent to the assistant: not cleared." }),
+    );
+    await panelFor();
+    expect(
+      screen.getByText(/^Not sent to the assistant\. This notice's classification marking/),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/ASSISTANT_CLEARED_MARKINGS\. Checked 2026-01-02 05:06:07\./),
+    ).toBeTruthy();
+    expect(screen.queryByText(/could not produce/)).toBeNull();
+    expect(document.querySelector(".form-error")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Re-evaluate" })).toBeNull();
+  });
+
   it("re-evaluates on request, saying so meanwhile, and shows why it failed", async () => {
     vi.mocked(getEvaluation).mockResolvedValue(anEvaluation());
     await panelFor();

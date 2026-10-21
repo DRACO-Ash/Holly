@@ -2,9 +2,10 @@ from datetime import datetime
 from typing import Annotated, Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 
 from app.schemas.notification import NotificationRead
+from app.services.disclosure import NOT_CLEARED
 
 # The assistant's reply is untrusted input (llm-integration). These models are the boundary
 # validator: an unknown urgency, a missing field or an oversized value fails validation, and
@@ -70,6 +71,13 @@ class AssistantEvaluationRead(BaseModel):
     model: str
     error: str | None = None
     evaluated_at: datetime
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def withheld(self) -> bool:
+        """Kept from the assistant by the disclosure control: a decision, not a failure, which
+        the panel shows as a note rather than an error."""
+        return self.error == NOT_CLEARED
 
 
 class AssistantFeedItem(BaseModel):

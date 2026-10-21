@@ -98,6 +98,22 @@ export default function AssistantPanel({ notificationId }: Readonly<AssistantPan
     );
   }
 
+  if (evaluation.withheld) {
+    return (
+      <section className="card assistant-panel">
+        <h2>Assistant</h2>
+        <p className="muted-paragraph">
+          Not sent to the assistant. This notice&apos;s classification marking is not one cleared
+          for it, so its content stayed in Holly; everything else on this page is as normal.
+        </p>
+        <p className="muted">
+          Which markings the assistant may see is the data owner&apos;s decision, set in
+          ASSISTANT_CLEARED_MARKINGS. Checked {formatDateTime(evaluation.evaluated_at)}.
+        </p>
+      </section>
+    );
+  }
+
   const { structured } = evaluation;
   const actions: NextAction[] = structured.next_actions ?? [];
   const procedures = structured.applicable_procedures ?? [];

@@ -29,6 +29,8 @@ export interface AssistantEvaluation {
   procedures_used: string[];
   model: string;
   error: string | null;
+  // Kept from the assistant because the notice's marking is not cleared for it: not a failure.
+  withheld: boolean;
   evaluated_at: string;
 }
 

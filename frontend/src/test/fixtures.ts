@@ -72,6 +72,7 @@ export function anEvaluation(overrides: Partial<AssistantEvaluation> = {}): Assi
     procedures_used: [],
     model: "test-model",
     error: null,
+    withheld: false,
     evaluated_at: "2026-01-02T05:06:07Z",
     ...overrides,
   };

@@ -26,6 +26,7 @@ from app.models.maneuver import Maneuver
 from app.models.mattermost_message import MattermostMessage
 from app.models.notification import Notification
 from app.models.procedure import Procedure
+from app.schemas.assistant import AssistantEvaluationRead
 from app.services import assistant, claude
 from app.services.assistant import (
     EvaluationOutcome,
@@ -861,6 +862,23 @@ class TestTheMarkingGate:
             [],
         )
         assert outcome.persistent_failure is False
+        # The dashboard reads it as withheld, a decision, not a failed evaluation.
+        row.id, row.evaluated_at = uuid.uuid4(), NOW
+        assert AssistantEvaluationRead.model_validate(row).withheld is True
+
+    def test_a_failed_evaluation_is_not_withheld(self) -> None:
+        read = AssistantEvaluationRead(
+            id=uuid.uuid4(),
+            notification_id=uuid.uuid4(),
+            summary="",
+            structured={},
+            procedures_used=[],
+            model="test-model",
+            error="unparseable output",
+            evaluated_at=NOW,
+        )
+        assert read.withheld is False
+        assert read.model_dump()["withheld"] is False
 
     async def test_a_marking_the_data_owner_has_cleared_is_sent(
         self, monkeypatch: pytest.MonkeyPatch, settings_env: SettingsEnv
