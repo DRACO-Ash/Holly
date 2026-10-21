@@ -97,9 +97,17 @@ GLOBAL_LIMIT = RateLimiter(limit=600, window_seconds=60)
 LOGIN_LIMIT = RateLimiter(limit=10, window_seconds=15 * 60)
 LOGIN_ADDRESS_LIMIT = RateLimiter(limit=30, window_seconds=60)
 ASSISTANT_LIMIT = RateLimiter(limit=30, window_seconds=10 * 60)
+# Comms' "Find channels now", per user: each run calls Mattermost once per team and channel.
+MATTERMOST_SWEEP_LIMIT = RateLimiter(limit=6, window_seconds=60)
 
 
 def reset_all() -> None:
     """Forget every counter (used by tests)."""
-    for limiter in (GLOBAL_LIMIT, LOGIN_LIMIT, LOGIN_ADDRESS_LIMIT, ASSISTANT_LIMIT):
+    for limiter in (
+        GLOBAL_LIMIT,
+        LOGIN_LIMIT,
+        LOGIN_ADDRESS_LIMIT,
+        ASSISTANT_LIMIT,
+        MATTERMOST_SWEEP_LIMIT,
+    ):
         limiter.reset()

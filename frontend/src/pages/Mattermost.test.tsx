@@ -1,201 +1,366 @@
 // @vitest-environment jsdom
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { listMattermostMessages } from "../api/mattermost";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { getCurrentUser } from "../api/auth";
+import { ACCESS_TOKEN_KEY } from "../api/client";
+import {
+  listChannels,
+  listMattermostMessages,
+  reviewAllChannels,
+  sweepNow,
+  updateChannel,
+} from "../api/mattermost";
+import { AuthProvider, useAuth } from "../context/AuthContext";
+import { aChannel, aChatMessage, aSweep, aUser } from "../test/fixtures";
 import { renderAt } from "../test/render";
-import type { MattermostMessage, MattermostMessagePage } from "../types";
-import MattermostPage from "./Mattermost";
+import type { MattermostChannel, MattermostChannels } from "../types";
+import MattermostPage, { CHANNELS_POLL_MS } from "./Mattermost";
 
+vi.mock("../api/auth");
 vi.mock("../api/mattermost");
 
-function aMessage(overrides: Partial<MattermostMessage> = {}): MattermostMessage {
-  return {
-    id: "mm-1",
-    mm_post_id: "post-test-1",
-    channel_id: "channel-test-1",
-    channel_name: "test-channel",
-    user_id: "user-test-1",
-    user_display_name: "Synthetic poster",
-    posted_at: "2026-01-02T03:04:05Z",
-    message: "Synthetic message",
-    post_type: null,
-    created_at: "2026-01-02T03:05:00Z",
-    updated_at: "2026-01-02T03:05:00Z",
-    ...overrides,
-  };
+const ops = aChannel({ mm_channel_id: "ops", display_name: "Ops", new_since: 3 });
+const fresh = aChannel({
+  mm_channel_id: "fresh",
+  display_name: "Fresh",
+  is_new: true,
+  first_seen_at: "2026-01-02T00:00:00Z",
+});
+const shut = aChannel({
+  mm_channel_id: "shut",
+  display_name: "Shut",
+  status: "closed",
+  pulled: false,
+  first_seen_at: "2026-01-03T00:00:00Z",
+});
+
+function channelsOf(channels: MattermostChannel[], sweep = aSweep()): MattermostChannels {
+  return { channels, sweep };
 }
 
-function pageOf(items: MattermostMessage[], total = items.length): MattermostMessagePage {
-  return { items, total, limit: 100, offset: 0 };
+const quietSweep = {
+  ok: true,
+  problem: null,
+  found: 3,
+  new: 0,
+  closed: 0,
+  reopened: 0,
+  lost: 0,
+  channels_polled: 2,
+  channels_failed: 0,
+  inserted: 5,
+};
+
+function shown() {
+  localStorage.setItem(ACCESS_TOKEN_KEY, "a-1");
+  renderAt(
+    <AuthProvider>
+      <MattermostPage />
+    </AuthProvider>,
+    "/mattermost",
+  );
 }
 
-function lastQuery() {
-  return vi.mocked(listMattermostMessages).mock.lastCall?.[0];
+function latest<T>(items: readonly T[]): T | undefined {
+  return items[items.length - 1];
 }
 
-// A promise the test settles itself, to hold the page while it waits.
-function deferred<T>() {
-  let resolve: (value: T) => void = () => undefined;
-  const promise = new Promise<T>((settle) => {
-    resolve = settle;
-  });
-  return { promise, resolve };
+function messageQueries() {
+  return vi.mocked(listMattermostMessages).mock.calls.map(([query]) => query);
 }
 
-function pager(): string | null {
-  return screen.getByText(/ total · page /).textContent;
+function nameButton(name: string) {
+  const board = screen.getByRole("complementary", { name: "Channels" });
+  return within(board).getByRole("button", { name });
 }
 
-function button(name: string): HTMLButtonElement {
-  return screen.getByRole("button", { name }) as HTMLButtonElement;
-}
-
-function filterBy(value: string) {
-  fireEvent.change(screen.getByLabelText("Channel ID (filter)"), { target: { value } });
-  fireEvent.click(button("Apply"));
-}
-
-async function shown() {
-  renderAt(<MattermostPage />, "/comms");
-  await waitFor(() => expect(screen.queryByText("Loading...")).toBeNull());
+async function ready() {
+  await screen.findByRole("complementary", { name: "Channels" });
+  // The user is known, and the channels were asked for since the last visit.
+  await waitFor(() => expect(localStorage.getItem("holly.comms.seen.user-7")).not.toBeNull());
 }
 
 beforeEach(() => {
+  localStorage.clear();
+  vi.mocked(getCurrentUser)
+    .mockReset()
+    .mockResolvedValue(aUser({ id: "user-7" }));
+  vi.mocked(listChannels)
+    .mockReset()
+    .mockResolvedValue(channelsOf([ops, fresh, shut]));
   vi.mocked(listMattermostMessages)
     .mockReset()
-    .mockResolvedValue(pageOf([aMessage()]));
+    .mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0 });
+  vi.mocked(updateChannel).mockReset();
+  vi.mocked(reviewAllChannels).mockReset().mockResolvedValue(1);
+  vi.mocked(sweepNow).mockReset().mockResolvedValue(quietSweep);
 });
 
-describe("the comms page", () => {
-  it("asks for the first 100 messages from every channel, and shows each one in UTC", async () => {
-    vi.mocked(listMattermostMessages).mockResolvedValue(
-      pageOf([
-        aMessage(),
-        aMessage({
-          id: "mm-2",
-          mm_post_id: "post-test-2",
-          channel_name: "test-channel-two",
-          user_display_name: "Second synthetic poster",
-          posted_at: "2026-01-03T05:06:07+01:00",
-          message: "Second synthetic message",
-        }),
-      ]),
-    );
-    await shown();
-    expect(listMattermostMessages).toHaveBeenCalledTimes(1);
-    expect(lastQuery()).toEqual({ channel_id: undefined, limit: 100, offset: 0 });
-    const [first, other] = screen.getAllByRole("listitem");
-    expect(within(first).getByText("#test-channel")).toBeTruthy();
-    expect(within(first).getByText("@Synthetic poster")).toBeTruthy();
-    expect(within(first).getByText("2026-01-02 03:04:05")).toBeTruthy();
-    expect(within(first).getByText("Synthetic message")).toBeTruthy();
-    expect(within(other).getByText("#test-channel-two")).toBeTruthy();
-    expect(within(other).getByText("@Second synthetic poster")).toBeTruthy();
-    expect(within(other).getByText("2026-01-03 04:06:07")).toBeTruthy();
-    expect(within(other).getByText("Second synthetic message")).toBeTruthy();
-    expect(pager()).toBe("2 total · page 1 of 1");
-    expect(button("Previous").disabled).toBe(true);
-    expect(button("Next").disabled).toBe(true);
-    expect(screen.queryByText(/No messages yet/)).toBeNull();
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
+
+describe("the Comms console", () => {
+  it("shows the switchboard beside the feed of every followed channel, under their lanes", async () => {
+    shown();
+    await ready();
+    expect(screen.getByRole("region", { name: "Feed" })).toBeTruthy();
+    expect(screen.getByText(/Channels swept/)).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Last 24 hours" })).toBeTruthy();
+    await waitFor(() => expect(messageQueries()[0]?.channel_id).toEqual(["ops", "fresh"]));
   });
 
-  it("names the channel and the author by ID when they have no display name", async () => {
-    vi.mocked(listMattermostMessages).mockResolvedValue(
-      pageOf([aMessage({ channel_name: null, user_display_name: null })]),
-    );
-    await shown();
-    const item = screen.getByRole("listitem");
-    expect(within(item).getByText("#channel-test-1")).toBeTruthy();
-    expect(within(item).getByText("@user-test-1")).toBeTruthy();
-  });
-
-  it("says what to set up when there are no messages, but not while they load", async () => {
-    const answer = deferred<MattermostMessagePage>();
-    vi.mocked(listMattermostMessages).mockReturnValueOnce(answer.promise);
-    renderAt(<MattermostPage />, "/comms");
-    expect(screen.getByText("Loading...")).toBeTruthy();
-    expect(screen.queryByText(/No messages yet/)).toBeNull();
-    answer.resolve(pageOf([]));
-    const empty = await screen.findByText(/No messages yet/);
-    expect(empty.textContent).toBe(
-      "No messages yet. Set MATTERMOST_CHANNEL_IDS in Holly's environment settings and make " +
-        "sure the bot account is a member of those channels.",
-    );
-    expect(screen.queryByText("Loading...")).toBeNull();
-    expect(screen.queryAllByRole("listitem")).toHaveLength(0);
-    expect(pager()).toBe("0 total · page 1 of 1");
-    expect(button("Previous").disabled).toBe(true);
-    expect(button("Next").disabled).toBe(true);
-  });
-
-  it("shows the server's reason when messages cannot load, or a general one, until they do", async () => {
-    vi.mocked(listMattermostMessages).mockRejectedValueOnce({
-      response: { data: { detail: "No access" } },
+  it("asks how much is new since this user's last visit, and records this one", async () => {
+    localStorage.setItem("holly.comms.seen.user-7", "2026-01-02T02:00:00.000Z");
+    vi.mocked(listMattermostMessages).mockResolvedValue({
+      items: [aChatMessage({ channel_id: "ops", posted_at: "2026-01-02T03:00:00Z" })],
+      total: 1,
+      limit: 50,
+      offset: 0,
     });
-    await shown();
-    expect(screen.getByText("No access")).toBeTruthy();
-    vi.mocked(listMattermostMessages).mockRejectedValueOnce({});
-    fireEvent.click(button("Refresh"));
-    expect(await screen.findByText("Failed to load Mattermost messages.")).toBeTruthy();
-    expect(screen.queryByText("No access")).toBeNull();
-    fireEvent.click(button("Refresh"));
-    expect(await screen.findByText("Synthetic message")).toBeTruthy();
-    expect(screen.queryByText("Failed to load Mattermost messages.")).toBeNull();
+    shown();
+    await waitFor(() =>
+      expect(latest(vi.mocked(listChannels).mock.calls)?.[0]).toBe("2026-01-02T02:00:00.000Z"),
+    );
+    expect(await screen.findByText("New since your last visit")).toBeTruthy();
+    expect(within(nameButton("Ops").closest("li") as HTMLElement).getByText("3 new")).toBeTruthy();
+    await waitFor(() =>
+      expect(localStorage.getItem("holly.comms.seen.user-7")).not.toBe("2026-01-02T02:00:00.000Z"),
+    );
   });
 
-  it("filters by channel ID, trimmed, from the first page, and clears the filter", async () => {
-    vi.mocked(listMattermostMessages).mockResolvedValue(pageOf([aMessage()], 250));
-    await shown();
-    fireEvent.click(button("Next"));
-    await waitFor(() => expect(lastQuery()?.offset).toBe(100));
-    expect(pager()).toBe("250 total · page 2 of 3");
-    filterBy("  channel-test-2  ");
-    await waitFor(() =>
-      expect(lastQuery()).toEqual({ channel_id: "channel-test-2", limit: 100, offset: 0 }),
+  it("asks for the channels once when the user is already known", async () => {
+    // As after a move within the dashboard: the page mounts once the user is known.
+    function WhenKnown() {
+      const { user } = useAuth();
+      return user ? <MattermostPage /> : null;
+    }
+    localStorage.setItem("holly.comms.seen.user-7", "2026-01-02T02:00:00.000Z");
+    localStorage.setItem(ACCESS_TOKEN_KEY, "a-1");
+    renderAt(
+      <AuthProvider>
+        <WhenKnown />
+      </AuthProvider>,
+      "/mattermost",
     );
-    expect(pager()).toBe("250 total · page 1 of 3");
-    filterBy("   ");
-    await waitFor(() =>
-      expect(lastQuery()).toEqual({ channel_id: undefined, limit: 100, offset: 0 }),
-    );
-    filterBy("channel-test-3");
-    await waitFor(() => expect(lastQuery()?.channel_id).toBe("channel-test-3"));
-    fireEvent.click(button("Clear"));
-    await waitFor(() =>
-      expect(lastQuery()).toEqual({ channel_id: undefined, limit: 100, offset: 0 }),
-    );
-    expect((screen.getByLabelText("Channel ID (filter)") as HTMLInputElement).value).toBe("");
-    expect(listMattermostMessages).toHaveBeenCalledTimes(6);
+    await screen.findByRole("complementary", { name: "Channels" });
+    expect(vi.mocked(listChannels).mock.calls).toEqual([["2026-01-02T02:00:00.000Z"]]);
   });
 
-  it("asks again for the same page and channel on Refresh", async () => {
-    vi.mocked(listMattermostMessages).mockResolvedValue(pageOf([aMessage()], 250));
-    await shown();
-    filterBy("channel-test-1");
-    await waitFor(() => expect(lastQuery()?.channel_id).toBe("channel-test-1"));
-    fireEvent.click(button("Next"));
-    await waitFor(() => expect(lastQuery()?.offset).toBe(100));
-    fireEvent.click(button("Refresh"));
-    await waitFor(() => expect(listMattermostMessages).toHaveBeenCalledTimes(4));
-    expect(lastQuery()).toEqual({ channel_id: "channel-test-1", limit: 100, offset: 100 });
+  it("says it is loading, then why the channels could not be read", async () => {
+    vi.mocked(listChannels).mockRejectedValue({});
+    shown();
+    expect(screen.getByText("Loading channels...")).toBeTruthy();
+    expect((await screen.findByRole("alert")).textContent).toBe("Failed to load the channels.");
   });
 
-  it("pages through the messages 100 at a time, and stops at the last page", async () => {
-    vi.mocked(listMattermostMessages).mockResolvedValue(pageOf([aMessage()], 300));
-    await shown();
-    expect(pager()).toBe("300 total · page 1 of 3");
-    expect(button("Previous").disabled).toBe(true);
-    fireEvent.click(button("Next"));
-    await waitFor(() => expect(lastQuery()?.offset).toBe(100));
-    expect(pager()).toBe("300 total · page 2 of 3");
-    expect(button("Previous").disabled).toBe(false);
-    fireEvent.click(button("Next"));
-    await waitFor(() => expect(lastQuery()?.offset).toBe(200));
-    expect(pager()).toBe("300 total · page 3 of 3");
-    expect(button("Next").disabled).toBe(true);
-    fireEvent.click(button("Previous"));
-    await waitFor(() => expect(lastQuery()?.offset).toBe(100));
-    expect(pager()).toBe("300 total · page 2 of 3");
-    expect(listMattermostMessages).toHaveBeenCalledTimes(4);
+  it("switches to one channel as a conversation, the first open one, and remembers it", async () => {
+    shown();
+    await ready();
+    const layout = screen.getByRole("group", { name: "Layout" });
+    fireEvent.click(within(layout).getByRole("button", { name: "Channels" }));
+    expect(await screen.findByRole("heading", { name: "#Ops" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Conversation" })).toBeTruthy();
+    expect(localStorage.getItem("holly.comms.view")).toBe("channels");
+    expect(nameButton("Ops").getAttribute("aria-current")).toBe("true");
+    // The conversation's own switch follows for everyone too.
+    vi.mocked(updateChannel).mockResolvedValueOnce({ ...ops, following: false });
+    const stage = screen.getByRole("region", { name: "Conversation" });
+    fireEvent.click(within(stage).getByRole("switch", { name: "Follow Ops" }));
+    expect(updateChannel).toHaveBeenCalledWith("ops", { following: false });
+    expect(await screen.findByText(/No longer following #Ops, for everyone/)).toBeTruthy();
+    fireEvent.click(nameButton("Shut"));
+    expect(await screen.findByRole("heading", { name: "#Shut" })).toBeTruthy();
+    expect(nameButton("Shut").getAttribute("aria-current")).toBe("true");
+    fireEvent.click(within(layout).getByRole("button", { name: "Feed" }));
+    expect(localStorage.getItem("holly.comms.view")).toBe("feed");
+    // The conversation's channel is not a filter on the feed.
+    expect(nameButton("Shut").getAttribute("aria-pressed")).toBe("false");
+    expect(nameButton("Shut").getAttribute("aria-current")).toBeNull();
+  });
+
+  it("opens in the layout this browser last chose, and says when there is no channel", async () => {
+    localStorage.setItem("holly.comms.view", "channels");
+    vi.mocked(listChannels).mockResolvedValue(channelsOf([]));
+    shown();
+    expect(await screen.findByText(/No channel yet/)).toBeTruthy();
+  });
+
+  it("narrows the feed to the channels picked on the switchboard, and back again", async () => {
+    shown();
+    await ready();
+    fireEvent.click(nameButton("Ops"));
+    await waitFor(() => expect(latest(messageQueries())?.channel_id).toEqual(["ops"]));
+    expect(nameButton("Ops").getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "Stop showing #Ops" })).toBeTruthy();
+    fireEvent.click(nameButton("Fresh"));
+    await waitFor(() => expect(latest(messageQueries())?.channel_id).toEqual(["ops", "fresh"]));
+    fireEvent.click(nameButton("Ops"));
+    await waitFor(() => expect(latest(messageQueries())?.channel_id).toEqual(["fresh"]));
+    expect(nameButton("Ops").getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(nameButton("Fresh"));
+    // None picked: the followed channels again.
+    await waitFor(() => expect(screen.queryByText("Showing only")).toBeNull());
+    fireEvent.click(nameButton("Shut"));
+    fireEvent.click(screen.getByRole("button", { name: "All channels" }));
+    await waitFor(() => expect(latest(messageQueries())?.channel_id).toBeUndefined());
+    expect(nameButton("Shut").getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("brings the stage into view after a pick on a narrow screen, at once if asked for less motion", async () => {
+    const scrolls: unknown[] = [];
+    window.HTMLElement.prototype.scrollIntoView = function (options?: unknown) {
+      scrolls.push(options);
+    };
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn((query: string) => ({ matches: query !== "(min-width: 9999px)" })),
+    );
+    shown();
+    await ready();
+    fireEvent.click(nameButton("Ops"));
+    expect(scrolls).toEqual([{ behavior: "auto", block: "start" }]);
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn((query: string) => ({ matches: !query.includes("reduce") })),
+    );
+    fireEvent.click(nameButton("Fresh"));
+    expect(scrolls[1]).toEqual({ behavior: "smooth", block: "start" });
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn(() => ({ matches: false })),
+    );
+    fireEvent.click(nameButton("Shut"));
+    expect(scrolls).toHaveLength(2);
+  });
+
+  it("follows and unfollows a channel for everyone, says so, and can undo it", async () => {
+    vi.mocked(updateChannel).mockResolvedValueOnce({ ...ops, following: false, new_since: null });
+    shown();
+    await ready();
+    fireEvent.click(screen.getByRole("switch", { name: "Follow Ops" }));
+    expect(updateChannel).toHaveBeenCalledWith("ops", { following: false });
+    expect(
+      await screen.findByText(
+        "No longer following #Ops, for everyone. Holly keeps what it pulled.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByRole("switch", { name: "Follow Ops" }).getAttribute("aria-checked")).toBe(
+      "false",
+    );
+    // The change answered with the channel alone: its count since the last visit stays.
+    expect(within(nameButton("Ops").closest("li") as HTMLElement).getByText("3 new")).toBeTruthy();
+    vi.mocked(updateChannel).mockResolvedValueOnce({ ...ops, following: true });
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    expect(updateChannel).toHaveBeenLastCalledWith("ops", { following: true });
+    expect(
+      await screen.findByText(
+        "Following #Ops for everyone. Holly pulls its messages from the next cycle.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("says why a follow change was refused, and offers no undo", async () => {
+    vi.mocked(updateChannel).mockRejectedValue({
+      response: {
+        status: 409,
+        data: { detail: "This channel is closed: Holly pulls nothing more from it." },
+      },
+    });
+    shown();
+    await ready();
+    fireEvent.click(screen.getByRole("switch", { name: "Follow Ops" }));
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "This channel is closed: Holly pulls nothing more from it.",
+    );
+    expect(screen.queryByRole("button", { name: "Undo" })).toBeNull();
+  });
+
+  it("names the new channels it found and followed, until someone marks them reviewed", async () => {
+    shown();
+    await ready();
+    expect(
+      screen.getByText(/A new channel was found and followed: #Fresh\. Switch off/),
+    ).toBeTruthy();
+    vi.mocked(listChannels).mockResolvedValue(channelsOf([ops, { ...fresh, is_new: false }, shut]));
+    fireEvent.click(screen.getByRole("button", { name: "Mark reviewed" }));
+    expect(await screen.findByText("Marked 1 channel reviewed.")).toBeTruthy();
+    expect(screen.queryByText(/found and followed/)).toBeNull();
+    // The banner went: the keyboard is left on the news, not at the top of the page.
+    expect(document.activeElement?.textContent).toBe("Marked 1 channel reviewed.");
+  });
+
+  it("counts several new channels, waits while marking, and says when marking failed", async () => {
+    vi.mocked(listChannels).mockResolvedValue(channelsOf([fresh, { ...ops, is_new: true }]));
+    let settle: (value: number) => void = () => undefined;
+    vi.mocked(reviewAllChannels).mockReturnValueOnce(
+      new Promise((resolve) => {
+        settle = resolve;
+      }),
+    );
+    shown();
+    await ready();
+    expect(screen.getByText(/2 new channels were found and followed/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Mark reviewed" }));
+    const busy = await screen.findByRole("button", { name: "Marking..." });
+    expect(busy.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.click(busy);
+    expect(reviewAllChannels).toHaveBeenCalledTimes(1);
+    await act(async () => settle(2));
+    vi.mocked(reviewAllChannels).mockRejectedValueOnce({});
+    fireEvent.click(await screen.findByRole("button", { name: "Mark reviewed" }));
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "The channels could not be marked reviewed.",
+    );
+  });
+
+  it("sweeps on demand and says what it found", async () => {
+    shown();
+    await ready();
+    const before = vi.mocked(listChannels).mock.calls.length;
+    fireEvent.click(screen.getByRole("button", { name: "Find channels now" }));
+    expect(
+      await screen.findByText("Found 3 channels. Pulled 5 new messages from 2 channels."),
+    ).toBeTruthy();
+    expect(sweepNow).toHaveBeenCalled();
+    expect(vi.mocked(listChannels).mock.calls.length).toBe(before + 1);
+  });
+
+  it("shows a failed sweep once, in the strip and the warning under it", async () => {
+    shown();
+    await ready();
+    vi.mocked(sweepNow).mockResolvedValueOnce({ ...quietSweep, ok: false, problem: "Down." });
+    vi.mocked(listChannels).mockResolvedValue(
+      channelsOf([ops], aSweep({ ok: false, problem: "Down." })),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Find channels now" }));
+    const alerts = await screen.findAllByRole("alert");
+    expect(alerts.map((a) => a.textContent)).toEqual([
+      "The last channel sweep failed: Down. Holly keeps pulling the channels it already knows.",
+    ]);
+    expect(screen.getByText(/The last channel sweep, .*, failed\./)).toBeTruthy();
+    expect(screen.queryByText(/^Found /)).toBeNull();
+  });
+
+  it("says why a sweep could not run", async () => {
+    vi.mocked(sweepNow).mockRejectedValueOnce({
+      response: { status: 429, data: { detail: "Too many requests." } },
+    });
+    shown();
+    await ready();
+    fireEvent.click(screen.getByRole("button", { name: "Find channels now" }));
+    expect((await screen.findByRole("alert")).textContent).toBe("Too many requests.");
+  });
+
+  it("reads the channels again every minute", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    shown();
+    await ready();
+    const before = vi.mocked(listChannels).mock.calls.length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CHANNELS_POLL_MS);
+    });
+    expect(vi.mocked(listChannels).mock.calls.length).toBe(before + 1);
   });
 });

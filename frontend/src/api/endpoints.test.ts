@@ -11,7 +11,13 @@ import {
   listEventTimers,
 } from "./event_timers";
 import { getManeuver, listManeuvers } from "./maneuvers";
-import { listMattermostMessages } from "./mattermost";
+import {
+  listChannels,
+  listMattermostMessages,
+  reviewAllChannels,
+  sweepNow,
+  updateChannel,
+} from "./mattermost";
 import {
   getNotification,
   listNotifications,
@@ -194,14 +200,46 @@ describe("the maneuver and Mattermost endpoints", () => {
     expect(get).toHaveBeenLastCalledWith("/maneuvers/m-1");
   });
 
-  it("lists Mattermost messages", async () => {
+  it("lists Mattermost messages, several channels as repeated parameters", async () => {
     const get = answer("get");
-    await expect(listMattermostMessages({ channel_id: "c-1" })).resolves.toBe(body);
+    await expect(listMattermostMessages({ channel_id: ["c-1", "c-2"] })).resolves.toBe(body);
     expect(get).toHaveBeenLastCalledWith("/mattermost/messages", {
-      params: { channel_id: "c-1" },
+      params: { channel_id: ["c-1", "c-2"] },
+      paramsSerializer: { indexes: null },
     });
     await listMattermostMessages();
-    expect(get).toHaveBeenLastCalledWith("/mattermost/messages", { params: {} });
+    expect(get).toHaveBeenLastCalledWith("/mattermost/messages", {
+      params: {},
+      paramsSerializer: { indexes: null },
+    });
+  });
+
+  it("sends repeated channel parameters as the server reads them", () => {
+    const url = apiClient.getUri({
+      url: "/mattermost/messages",
+      params: { channel_id: ["c-1", "c-2"] },
+      paramsSerializer: { indexes: null },
+    });
+    expect(url).toContain("channel_id=c-1&channel_id=c-2");
+  });
+
+  it("lists, changes and sweeps the bot's channels", async () => {
+    const get = answer("get");
+    const patch = answer("patch");
+    await expect(listChannels()).resolves.toBe(body);
+    expect(get).toHaveBeenLastCalledWith("/mattermost/channels", undefined);
+    await listChannels("2026-01-02T02:00:00.000Z");
+    expect(get).toHaveBeenLastCalledWith("/mattermost/channels", {
+      params: { since: "2026-01-02T02:00:00.000Z" },
+    });
+    await expect(updateChannel("c/1", { following: false })).resolves.toBe(body);
+    expect(patch).toHaveBeenLastCalledWith("/mattermost/channels/c%2F1", { following: false });
+    vi.spyOn(apiClient, "post").mockResolvedValueOnce({ data: { reviewed: 2 } });
+    await expect(reviewAllChannels()).resolves.toBe(2);
+    expect(apiClient.post).toHaveBeenLastCalledWith("/mattermost/channels/reviewed");
+    const post = answer("post");
+    await expect(sweepNow()).resolves.toBe(body);
+    expect(post).toHaveBeenLastCalledWith("/mattermost/sweep");
   });
 });
 

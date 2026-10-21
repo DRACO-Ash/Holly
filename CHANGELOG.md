@@ -5,9 +5,31 @@
 **Data classification:** Unclassified (per ADR-006)
 **Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned the history below)
 **Version:** 0.12
-**Last updated:** 2026-10-20
+**Last updated:** 2026-10-21
 
 All notable changes to Holly are recorded here, newest first. Holly V0.2 is the Daily Operations Dashboard fused into the Holly App Store project and renamed; the sections after it are the Daily Operations Dashboard's own record, kept as written. Holly's releases are numbered V<major>.<minor>, and each has a row in `docs/AUDIT-LOG.md` with the checks that ran.
+
+## Holly V0.12 (2026-10-21)
+
+### Added
+
+● **Holly finds its Mattermost channels itself.** Every minute it looks for every public and private channel the bot account is a member of, across its teams, and pulls new messages from the ones followed. A channel the bot joins is followed at once and named as new on the Comms page until someone marks it reviewed, so a new channel is never missed. Direct and group messages are never pulled.
+
+● **Closed channels.** A channel archived in Mattermost, or with the word CLOSED in its name, in any case, yields nothing more than Holly has already pulled; taking the word out opens it again. A channel the bot leaves is shown as **Bot removed** and is not pulled.
+
+● **The Comms console.** A channel list with a follow switch, a 24-hour activity chart on one shared scale, the count of messages new since your last visit and tags for each channel, the closed ones folded away with why they closed; a channel Holly does not pull says so rather than looking quiet. A **Feed** layout opens with the last 24 hours of every followed channel, a lane each, with a line at your last visit; below it every followed channel in one stream with search, a colour for each channel, a marker for what is new since your last visit, channels picked from the lanes or the list as removable chips, and newer messages offered rather than moving the list. A **Channels** layout shows one channel as a conversation that opens at your last visit and takes new messages as they arrive. **Find channels now** looks at once. Any signed-in user can change the follow list, for everyone, with an **Undo**, and each change is written to the audit log.
+
+### Changed
+
+● **`MATTERMOST_CHANNEL_IDS` is now a seed.** The channels it names arrive already reviewed on the first sweep, and until a sweep has succeeded they are still the channels pulled. To have Holly read a channel, add the bot to it in Mattermost.
+
+● **A rollback to V0.9 now asks for a new `APP_SECRET_KEY`** with the V0.9 upload, and again on any return to V0.10 or later: V0.9 checks no token version, so every session V0.10 ended would work again until it expired.
+
+● **The documents catch up with V0.10:** the audit log's list of actions names the account actions, and the training manual's navigation names **Users** and **Password**.
+
+### Security
+
+● **Three dependency advisories published since V0.11 are closed:** vite 7.3.6 to 7.3.7 (GHSA-698v-4r3x-3vcv, GHSA-r825-w8mm-5pxw, GHSA-587h-7wmj-h5pm, all in its development server's launch-editor), follow-redirects 1.16.0 to 1.16.1 under axios (GHSA-q3jh-wrc6-jgq8, GHSA-8r9p-f939-6h3c) and certifi 2026.7.22 to 2026.10.19 in the development lock only (PYSEC-2026-4320). Inference: none reaches the running image, since vite and certifi are build or test tools and the dashboard's axios uses the browser's request, not follow-redirects.
 
 ## Holly V0.11 (2026-10-20)
 

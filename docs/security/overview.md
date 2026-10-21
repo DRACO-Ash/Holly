@@ -4,7 +4,7 @@
 
 **Data classification:** Unclassified (per ADR-006)
 **Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned the edition this one replaces)
-**Version:** 0.6
+**Version:** 0.7
 **Last updated:** 2026-10-20
 
 > **BLUF**
@@ -86,7 +86,7 @@ The action types, what each records, and what is not recorded are in [docs/audit
 
 ● **TLS** terminates at the App Store platform; its configuration is the platform's responsibility and `TBC, re-verify`. Holly serves plain HTTP inside the platform, on `0.0.0.0` and `PORT` or 8080. There is no nginx and no in-app TLS (ADR-012).
 ● Holly sets no Strict-Transport-Security (HSTS) header; whether the platform adds one is `TBC, re-verify`.
-● **Outbound:** outside development, Holly refuses to start with a UDL or Mattermost URL that is not https, or with `UDL_VERIFY_SSL=false`. The Mattermost client verifies certificates; the Anthropic client uses its library's default endpoint.
+● **Outbound:** outside development, Holly refuses to start with a UDL or Mattermost URL that is not https, or with `UDL_VERIFY_SSL=false`. The Mattermost client verifies certificates; the Anthropic client uses its library's default endpoint. Every Mattermost cycle asks for the bot's own teams and channels and pulls the followed open ones (ADR-015): the bot's membership decides what Holly can read, and SECURITY.md records that position.
 ● **Database:** reached through the POSTGRESQL add-on's connection settings. Network isolation of the database is the platform's: `TBC, re-verify`. The Daily Operations Dashboard's internal Docker network is retired.
 ● What Holly relies on the platform ingress for (host routing, malformed framing, slow clients) is listed in [SECURITY.md](../../SECURITY.md).
 
@@ -118,9 +118,10 @@ All limits live in the one worker process and reset when the container restarts 
 | Sign-in attempts | Every sign-in attempt, per client address, counted before any password check | 30 in any 60 seconds |
 | Sign-in | Checked sign-ins, per username, each counted before its check; a success clears the count | 10 in any 15 minutes |
 | Assistant | Each request that calls the assistant, per user: evaluations, **Pull from UDL**, new shift-log entries, re-polish and the end-of-shift narrative | 30 in any 10 minutes |
+| Channel sweep | **Find channels now** (`POST /api/v1/mattermost/sweep`), per user | 6 in any 60 seconds |
 | Daily tokens | Every assistant call, across all users and the background cycle, per UTC day | `LLM_DAILY_TOKEN_CAP`, 2,000,000 by default |
 
-The first four answer 429 with `Retry-After`, except that a new shift-log entry made after the assistant allowance is spent is saved unpolished rather than refused. Sign-in also runs at most 4 password checks at once and answers 503 beyond them (section 03). The probes and the dashboard's static files are never limited. Each limiter remembers at most 10,000 keys, dropping the stalest first, so a flood of distinct keys cannot grow memory without bound. A locked username is dropped like any other key, and only a checked attempt takes a place: checking 10,000 other usernames, about 13 minutes with all four checks busy, frees it for 10 more guesses (SECURITY.md). Each assistant call holds its whole output allowance and one token for every 3 characters of its prompt against the daily token cap before it is sent, with nothing awaited between the check and the hold, so calls made together cannot overrun the cap; the hold is settled to the call's real use afterwards, or given back when no reply arrives. A call the rest of the day's cap cannot cover fails closed; the count starts again each UTC day.
+The first five answer 429 with `Retry-After`, except that a new shift-log entry made after the assistant allowance is spent is saved unpolished rather than refused. Sign-in also runs at most 4 password checks at once and answers 503 beyond them (section 03). The probes and the dashboard's static files are never limited. Each limiter remembers at most 10,000 keys, dropping the stalest first, so a flood of distinct keys cannot grow memory without bound. A locked username is dropped like any other key, and only a checked attempt takes a place: checking 10,000 other usernames, about 13 minutes with all four checks busy, frees it for 10 more guesses (SECURITY.md). Each assistant call holds its whole output allowance and one token for every 3 characters of its prompt against the daily token cap before it is sent, with nothing awaited between the check and the hold, so calls made together cannot overrun the cap; the hold is settled to the call's real use afterwards, or given back when no reply arrives. A call the rest of the day's cap cannot cover fails closed; the count starts again each UTC day.
 
 **The client address** is the one the server sees. Behind the platform ingress that is the ingress's own address unless gunicorn is set to trust the ingress's forwarded headers through `FORWARDED_ALLOW_IPS`; by default gunicorn trusts only `127.0.0.1` and `::1` ([src/app/core/net.py](../../src/app/core/net.py)). Until that is confirmed (`TBC, re-verify`), assume every caller shares one coarse allowance and one allowance of sign-in attempts, and the audit log records the ingress's address. Anyone who can reach Holly could then spend the shared sign-in allowance, with no credentials, by one attempt every 2 seconds, and keep every analyst from signing in while they kept it up.
 

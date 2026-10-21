@@ -1,7 +1,8 @@
 from datetime import datetime
+from typing import Literal, Self
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, StrictBool, model_validator
 
 
 class MattermostMessageRead(BaseModel):
@@ -25,3 +26,74 @@ class MattermostMessagePage(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+# Hours of activity each channel shows, oldest first, the current hour last.
+ACTIVITY_HOURS = 24
+
+
+class ChannelRead(BaseModel):
+    """A channel as the Comms page shows it: what the latest sweep found, and what Holly holds."""
+
+    mm_channel_id: str
+    name: str
+    display_name: str | None
+    team_name: str | None
+    channel_type: str
+    status: Literal["open", "closed"]
+    archived: bool
+    accessible: bool
+    following: bool
+    is_new: bool
+    pulled: bool
+    first_seen_at: datetime
+    last_seen_at: datetime
+    closed_at: datetime | None
+    message_count: int
+    last_message_at: datetime | None
+    activity: list[int]
+    # Messages Holly holds posted after the `since` the page asked about (the user's last
+    # visit), or None when it asked about none.
+    new_since: int | None = None
+
+
+class SweepRead(BaseModel):
+    last_at: datetime | None
+    ok: bool | None
+    problem: str | None
+    bot: str | None
+    interval_seconds: int
+
+
+class ChannelsResponse(BaseModel):
+    channels: list[ChannelRead]
+    sweep: SweepRead
+
+
+class ChannelUpdate(BaseModel):
+    following: StrictBool | None = None
+    reviewed: Literal[True] | None = None
+
+    @model_validator(mode="after")
+    def _something_to_change(self) -> Self:
+        if self.following is None and self.reviewed is None:
+            msg = "name following or reviewed"
+            raise ValueError(msg)
+        return self
+
+
+class ReviewedResponse(BaseModel):
+    reviewed: int
+
+
+class SweepResponse(BaseModel):
+    ok: bool | None
+    problem: str | None
+    found: int
+    new: int
+    closed: int
+    reopened: int
+    lost: int
+    channels_polled: int
+    channels_failed: int
+    inserted: int

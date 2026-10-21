@@ -4,7 +4,7 @@
 
 **Data classification:** Unclassified (per ADR-006)
 **Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned the edition this one replaces)
-**Version:** 0.7
+**Version:** 0.8
 **Last updated:** 2026-10-20
 **Audience:** Operators and on-call engineers responsible for keeping Holly healthy on the Bluestaq App Store.
 
@@ -70,19 +70,37 @@ sh scripts/smoke-container.sh     # build the image from the upload, run it with
 ● The database settings: the POSTGRESQL add-on injects `DATABASE_URL`, which Holly reads; nothing to set by hand (Deployment parameters, below).
 ● `ADMIN_USERNAME` and `ADMIN_PASSWORD` for the first start only (section 08).
 ● `UDL_USERNAME` and `UDL_PASSWORD` for UDL data, and `ANTHROPIC_API_KEY` for the assistant.
-● `MATTERMOST_URL`, `MATTERMOST_BOT_TOKEN` and `MATTERMOST_CHANNEL_IDS` if the Comms page is used.
+● `MATTERMOST_URL` and `MATTERMOST_BOT_TOKEN` if the Comms page is used. Since V0.12 Holly finds the bot's channels itself, so `MATTERMOST_CHANNEL_IDS` is only a seed (section 06).
 
 Leave `STORAGE_MOUNT_PATH` to the FILE_STORAGE add-on, which injects it; do not set it by hand. Leave `APP_ENV` at its default, `production`. Leave `ASSISTANT_CLEARED_MARKINGS` at its default, `["U"]`, unless the data owner clears a further UDL classification marking for the assistant; who that is, and whether the `JCO` source's own marking may be cleared, is `TBC, re-verify`.
 
 **Starting, stopping and restarting** the app are platform operations: `TBC, re-verify` how. Rate-limit counters and the daily assistant token count start again from zero at every restart. **Withdrawing** the app is removing it from the App Store (the app owner, 19 October 2026); whether removal also deletes the add-ons' database and files is `TBC, re-verify`, so take what must be kept first.
 
-**Rollback** is a resubmission of the previous package; the platform has no separate rollback (platform reference above). Migrations only move forward at start, so a package older than the database's newest migration stops at boot with Alembic's `Can't locate revision identified by '<revision>'`. Rolling back across a migration therefore needs the database restored to match the older package, or a fixed package that carries the newer migration. One migration can instead be undone in place: from V0.10 to V0.9, migration 0018. In the V0.10 container, immediately before V0.9 is deployed, run:
+**Rollback** is a resubmission of the previous package; the platform has no separate rollback (platform reference above). Migrations only move forward at start, so a package older than the database's newest migration stops at boot with Alembic's `Can't locate revision identified by '<revision>'`. Rolling back across a migration therefore needs the database restored to match the older package, or a fixed package that carries the newer migration. From V0.10 to V0.9 there are two ways, both rehearsed by V0.10's deploy gate on a database V0.10 had used (ADR-014). V0.9 checks no token version, so every session V0.10 ended with a password change, a reset or a deactivation would work again under V0.9 until it expired, up to 7 days for a refresh token: each way rotates `APP_SECRET_KEY`.
+
+**With a shell in the container** (whether the platform offers one is `TBC, re-verify`):
+
+1. On the **Users** page, note every account whose password is temporary: the downgrade clears that flag.
+2. Rotate `APP_SECRET_KEY` (at least 32 characters) and apply the settings, so every V0.10 token stops verifying and everyone signs in again. Change no account from here until V0.9 runs.
+3. In the running V0.10 container, run the command below. It prints nothing and exits 0, dropping `must_change_password` and `token_version` and keeping every account. The image ships no `alembic.ini`, so `alembic downgrade` fails there.
+4. Upload V0.9's package straight away. Until V0.9 replaces it, V0.10 answers 500 to sign-in and to every request that reads an account. If V0.10 restarts first, it applies 0018 again and V0.9 would stop at boot: run step 3 again.
+5. Under V0.9 the accounts noted in step 1 sign in on their temporary password with full access, since V0.9 asks for no change: tell their users.
 
 ```sh
 python -c "from alembic import command; from app.migrate import alembic_config; command.downgrade(alembic_config(), '0017_audit_append_only')"
 ```
 
-The image ships no `alembic.ini`, so `alembic downgrade` fails there. The command drops `must_change_password` and `token_version` and keeps every account; V0.10's engineering review rehearsed it on PostgreSQL 16 (ADR-014). Until V0.9 replaces it, V0.10 answers 500 to requests that read an account, and a restart of V0.10 applies 0018 again. Under V0.9 a temporary password grants full access with no change asked, so reset no password between the downgrade and the upload. Whether the platform offers a shell in the container is `TBC, re-verify`; without one, restore the database instead.
+**Without a shell:** release V0.9's code with V0.10's migration file, `0018_user_password_state.py`, added and its test's revision count raised, as a new version above V0.10, through the gates like any release, and rotate `APP_SECRET_KEY` with it. It starts on the database as it is, with no window of 500s, and keeps V0.10's flags. Restoring the database is the last resort; its backups are the platform's (`TBC, re-verify`, section 09).
+
+**Rolling forward to V0.10 or later after the downgrade** applies 0018 again, with every token version at 0 and no change due: rotate `APP_SECRET_KEY` again with that upload, and give each account noted in step 1, and any changed meanwhile, a new temporary password with **Reset password**.
+
+From V0.12 to V0.11, migration 0019 is undone the same way, in the V0.12 container, immediately before V0.11 is deployed:
+
+```sh
+python -c "from alembic import command; from app.migrate import alembic_config; command.downgrade(alembic_config(), '0018_user_password_state')"
+```
+
+It drops `mattermost_channel`, the channel list and who followed what, and keeps every message. V0.10 then pulls the channels `MATTERMOST_CHANNEL_IDS` names, so set it to the channels to keep first. Both releases check the token version, so this step needs no key rotation.
 
 ### Deployment parameters
 
@@ -138,6 +156,7 @@ Holly writes one JSON object per line to standard output. Named events (`boot`, 
 ● `Event summary failed for <event key>`: the event's stored publications could not be read, so nothing was sent for it; the next event still runs.
 ● `Sign-in refused: too many attempts from <address>` or `Sign-in refused: 4 password checks already running`: see section 10.
 ● `Mattermost channel <id> skipped: ...`: the bot cannot read that channel.
+● `Mattermost channel sweep failed: <reason>`: Holly could not list the bot's teams or channels, so it changed nothing in the channel list and pulled the channels it already knew. The Comms page shows the same reason.
 
 **SECTION 06**
 
@@ -163,7 +182,9 @@ curl -s -X POST https://<host>/api/v1/notifications/ingest \
 
 The token goes in `X-Holly-Token`, the token alone. Holly never reads `Authorization`, and the App Store's gateway refuses a Holly token there (section 10). Whether the gateway lets a request through without your App Store sign-in is `TBC, re-verify`.
 
-The answer is `{"pulled": <n>, "inserted": <n>, "updated": <n>, "skipped": <n>}`, and the audit row records your user id and address. `max_results` may be at most 10,000; a pull that names none, as the background pulls do, gets UDL's own default page size (`TBC, re-verify` its value). `POST /api/v1/elsets/ingest` takes `{"epoch_gte": "<ISO 8601 time>", "sat_no": <number>, "max_results": <number>}` and answers the same way; it is the only way element sets arrive. Manoeuvres and Mattermost chat are pulled only by the background loops.
+The answer is `{"pulled": <n>, "inserted": <n>, "updated": <n>, "skipped": <n>}`, and the audit row records your user id and address. `max_results` may be at most 10,000; a pull that names none, as the background pulls do, gets UDL's own default page size (`TBC, re-verify` its value). `POST /api/v1/elsets/ingest` takes `{"epoch_gte": "<ISO 8601 time>", "sat_no": <number>, "max_results": <number>}` and answers the same way; it is the only way element sets arrive. Manoeuvres are pulled only by the background loop.
+
+**Comms channels.** Every Mattermost cycle, 60 seconds by default, Holly asks Mattermost for every public and private channel the bot account is a member of, across its teams, and pulls new messages from the ones followed (ADR-015). Direct and group messages are never pulled. To have Holly read a channel, add the bot to it in Mattermost; it is followed at once and named on the Comms page as new until someone selects **Mark reviewed**. Any signed-in user can switch a channel off or on there, for everyone, audited as `mattermost.channel.update`. A channel archived in Mattermost, or with the word CLOSED in its name or display name in any case, is closed: Holly keeps what it pulled and pulls nothing more, and taking the word out reopens it. A channel the bot leaves shows **Bot removed**. **Find channels now** runs the cycle at once, joining one already running, at most 6 times a minute for each user. `MATTERMOST_CHANNEL_IDS` is a seed: the channels it names arrive already reviewed on the first sweep, and until a sweep has succeeded once they are the channels pulled.
 
 **SECTION 07**
 
@@ -271,9 +292,10 @@ Holly's limits, all counted in the one worker and reset when the container resta
 | Sign-in attempts | Every sign-in attempt, per client address, counted before any password check | 30 in any 60 seconds |
 | Sign-in | Checked sign-ins, per username, each counted before its check; a success clears the count | 10 in any 15 minutes |
 | Assistant | Evaluations, **Pull from UDL**, new shift-log entries, re-polish and the end-of-shift narrative, per user | 30 in any 10 minutes |
+| Channel sweep | **Find channels now** on the Comms page, per user | 6 in any 60 seconds |
 | Daily tokens | Every assistant call, across all users, per UTC day | `LLM_DAILY_TOKEN_CAP`, 2,000,000 by default |
 
-The first four answer 429 with `Retry-After`, with one exception: a new shift-log entry made after the assistant allowance is spent is still saved, unpolished, with `Not polished: the assistant limit is reached. Re-polish in <n> seconds.` The daily token cap refuses nothing at the door: each assistant call holds its output allowance and an estimate of its input against the cap before it is sent, and a call the rest of the day's cap cannot cover fails. An evaluation, polish or end-of-shift narrative then stores the error; an event narrative keeps its earlier text. The probes and the dashboard's static files are never limited. Behind the platform ingress, the client address may be the ingress's own for every caller (see the [security overview](../security/overview.md)); if so, all users share one coarse allowance and one allowance of sign-in attempts, which anyone who can reach Holly can spend, with no credentials, by one attempt every 2 seconds. Setting `FORWARDED_ALLOW_IPS` to the ingress's addresses ends the sharing.
+The first five answer 429 with `Retry-After`, with one exception: a new shift-log entry made after the assistant allowance is spent is still saved, unpolished, with `Not polished: the assistant limit is reached. Re-polish in <n> seconds.` The daily token cap refuses nothing at the door: each assistant call holds its output allowance and an estimate of its input against the cap before it is sent, and a call the rest of the day's cap cannot cover fails. An evaluation, polish or end-of-shift narrative then stores the error; an event narrative keeps its earlier text. The probes and the dashboard's static files are never limited. Behind the platform ingress, the client address may be the ingress's own for every caller (see the [security overview](../security/overview.md)); if so, all users share one coarse allowance and one allowance of sign-in attempts, which anyone who can reach Holly can spend, with no credentials, by one attempt every 2 seconds. Setting `FORWARDED_ALLOW_IPS` to the ingress's addresses ends the sharing.
 
 ### Symptom: sign-in answers HTTP 503 `Sign-in is busy. Try again in a moment.`
 
@@ -313,7 +335,7 @@ A notice the Dashboard marks `Not sent to the assistant: its classification mark
 
 ### Symptom: the Comms page stays empty
 
-Check `MATTERMOST_URL` (https), `MATTERMOST_BOT_TOKEN` and `MATTERMOST_CHANNEL_IDS`, and that the bot account is a member of every listed channel. A channel the bot cannot read is logged as `Mattermost channel <id> skipped: Mattermost denied access (403): is the bot in the channel?`. A wrong token logs `Mattermost rejected the bot token (401).`
+Check `MATTERMOST_URL` (https) and `MATTERMOST_BOT_TOKEN`, and that the bot account is a member of at least one public or private channel: Holly lists only the bot's own channels. The strip above the channel list says when Holly last swept and whether it worked; a failure also logs `Mattermost channel sweep failed: <reason>`. On the page, `The last channel sweep failed: Mattermost is not configured (MATTERMOST_URL / MATTERMOST_BOT_TOKEN).` means either setting is empty. A wrong token logs `Mattermost rejected the bot token (401).` A channel listed but empty may be switched off: select its switch. A channel the bot cannot read is logged as `Mattermost channel <id> skipped: Mattermost denied access (403): is the bot in the channel?`.
 
 ### Symptom: a procedure upload is refused
 

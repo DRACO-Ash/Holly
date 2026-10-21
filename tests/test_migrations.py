@@ -59,7 +59,7 @@ def test_there_is_one_linear_history_with_one_head() -> None:
     scripts = ScriptDirectory.from_config(alembic_config())
     assert len(scripts.get_heads()) == 1
     revisions = list(scripts.walk_revisions())
-    assert len(revisions) == 18
+    assert len(revisions) == 19
     # The container smoke rung reads the head from the newest file's name.
     newest = sorted(path.stem for path in (MIGRATIONS_DIR / "versions").glob("0*.py"))[-1]
     assert scripts.get_current_head() == newest
@@ -111,6 +111,14 @@ def test_users_gain_a_password_change_flag_and_a_token_version_existing_ones_kee
     down = offline_sql("downgrade", "0018_user_password_state:0017_audit_append_only")
     assert "ALTER TABLE app_user DROP COLUMN token_version" in down
     assert "ALTER TABLE app_user DROP COLUMN must_change_password" in down
+
+
+def test_channels_get_a_table_of_their_own_followed_and_new_by_default() -> None:
+    sql = offline_sql("upgrade", "head")
+    assert "CREATE TABLE mattermost_channel (" in sql
+    assert "following BOOLEAN DEFAULT true NOT NULL" in sql
+    assert "reviewed BOOLEAN DEFAULT false NOT NULL" in sql
+    assert "CONSTRAINT uq_mattermost_channel_mm_channel_id UNIQUE (mm_channel_id)" in sql
 
 
 def test_the_developer_ini_points_at_the_packaged_migrations() -> None:

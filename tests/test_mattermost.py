@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies import TOKEN_HEADER
 from app.models.mattermost_message import MattermostMessage
 from app.models.user import User
-from app.services import mattermost_ingest
+from app.services import mattermost_channels, mattermost_ingest
 from app.services.mattermost_client import (
     MattermostAuthError,
     MattermostClient,
@@ -702,7 +702,7 @@ class TestTheIngest:
         }
         session.commit.assert_awaited_once()
 
-    async def test_without_a_server_the_run_is_abandoned_and_every_channel_counted_failed(
+    async def test_without_a_server_nothing_is_asked_or_written_and_comms_says_why(
         self,
         serve_mattermost: ServeMattermost,
         settings_env: SettingsEnv,
@@ -712,10 +712,35 @@ class TestTheIngest:
         server = serve_mattermost({})
         settings_env(MATTERMOST_URL="")
         session = FakeSession()
-        result = await run_ingest(session, channel_ids=["chan-1", "chan-2"])
-        assert result == MattermostIngestResult(channels_failed=2)
+        result = await run_ingest(session)
+        assert result == MattermostIngestResult()
         assert server.requests == []
         session.execute.assert_not_awaited()
+        audit.assert_not_awaited()
+        session.commit.assert_not_awaited()
+        # Quiet in the log, where it would repeat every cycle: the Comms page says it instead.
+        assert logged(caplog, INGEST_LOG) == []
+        assert mattermost_channels.SWEEP_STATE.ok is False
+        assert mattermost_channels.SWEEP_STATE.problem == (
+            "Mattermost is not configured (MATTERMOST_URL / MATTERMOST_BOT_TOKEN)."
+        )
+
+    async def test_a_client_that_fails_to_open_counts_every_channel_failed(
+        self,
+        serve_mattermost: ServeMattermost,
+        monkeypatch: pytest.MonkeyPatch,
+        audit: AsyncMock,
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        serve_mattermost({})
+
+        def refuse(*_args: object, **_kwargs: object) -> MattermostClient:
+            return MattermostClient(base_url="", bot_token="")
+
+        monkeypatch.setattr(mattermost_ingest, "MattermostClient", refuse)
+        session = FakeSession()
+        result = await run_ingest(session, channel_ids=["chan-1", "chan-2"])
+        assert result == MattermostIngestResult(channels_failed=2)
         assert audit.await_args_list[0].kwargs["detail"]["channels_failed"] == 2
         session.commit.assert_awaited_once()
         assert logged(caplog, INGEST_LOG) == [
@@ -723,33 +748,42 @@ class TestTheIngest:
             "Mattermost is not configured (MATTERMOST_URL / MATTERMOST_BOT_TOKEN)."
         ]
 
-    async def test_channels_come_from_the_settings_when_none_are_given(
+    async def test_until_a_sweep_succeeds_the_channels_come_from_the_settings(
         self, serve_mattermost: ServeMattermost, settings_env: SettingsEnv
     ) -> None:
         server = serve_mattermost(
             {posts_path("chan-1"): posts_page(), posts_path("chan-2"): posts_page()}
         )
         settings_env(MATTERMOST_CHANNEL_IDS=" chan-1 , ,chan-2,")
-        result = await run_ingest(FakeSession([scalar_result(None), scalar_result(None)]))
-        assert server.paths() == [posts_path("chan-1"), posts_path("chan-2")]
+        # The sweep fails at its first call; the channel table is empty; each channel is new.
+        session = FakeSession([rows_result([]), scalar_result(None), scalar_result(None)])
+        result = await run_ingest(session)
+        assert server.paths() == [f"{API}/users/me", posts_path("chan-1"), posts_path("chan-2")]
         assert result == MattermostIngestResult(channels_polled=2)
+        assert mattermost_channels.SWEEP_STATE.ok is False
 
-    @pytest.mark.parametrize(("channel_ids", "configured"), [([], "chan-1"), (None, " , ")])
-    async def test_with_no_channels_nothing_is_asked_stored_or_audited(
-        self,
-        serve_mattermost: ServeMattermost,
-        settings_env: SettingsEnv,
-        audit: AsyncMock,
-        channel_ids: list[str] | None,
-        configured: str,
+    async def test_with_no_channels_named_nothing_is_asked_stored_or_audited(
+        self, serve_mattermost: ServeMattermost, settings_env: SettingsEnv, audit: AsyncMock
     ) -> None:
         server = serve_mattermost({})
-        settings_env(MATTERMOST_CHANNEL_IDS=configured)
+        settings_env(MATTERMOST_CHANNEL_IDS="chan-1")
         session = FakeSession()
-        result = await run_ingest(session, channel_ids=channel_ids)
+        result = await run_ingest(session, channel_ids=[])
         assert result == MattermostIngestResult()
         assert server.requests == []
         session.execute.assert_not_awaited()
+        audit.assert_not_awaited()
+        session.commit.assert_not_awaited()
+
+    async def test_a_failed_first_sweep_with_nothing_seeded_pulls_and_writes_nothing(
+        self, serve_mattermost: ServeMattermost, settings_env: SettingsEnv, audit: AsyncMock
+    ) -> None:
+        server = serve_mattermost({})
+        settings_env(MATTERMOST_CHANNEL_IDS=" , ")
+        session = FakeSession([rows_result([])])
+        result = await run_ingest(session)
+        assert result == MattermostIngestResult()
+        assert server.paths() == [f"{API}/users/me"]
         audit.assert_not_awaited()
         session.commit.assert_not_awaited()
 
@@ -849,9 +883,9 @@ class TestTheMessagesRoute:
         )
         assert response.status_code == 200
         where = (
-            "WHERE mattermost_message.channel_id = 'chan-1' "
-            "AND mattermost_message.user_id = 'user-1' "
-            "AND mattermost_message.posted_at >= '2026-06-01 00:00:00+00:00'"
+            "WHERE mattermost_message.user_id = 'user-1' "
+            "AND mattermost_message.posted_at >= '2026-06-01 00:00:00+00:00' "
+            "AND mattermost_message.channel_id IN ('chan-1')"
         )
         count, page = (sql(call.args[0]) for call in session.execute.await_args_list)
         assert where in count
@@ -886,4 +920,4 @@ class TestTheMessagesRoute:
         )
         assert response.status_code == 200
         page = sql(session.execute.await_args_list[1].args[0])
-        assert "WHERE mattermost_message.channel_id = 'chan-1' ORDER BY" in page
+        assert "WHERE mattermost_message.channel_id IN ('chan-1') ORDER BY" in page

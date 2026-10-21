@@ -95,6 +95,30 @@ describe("the change password page", () => {
     expect(screen.queryByRole("status")).toBeNull();
   });
 
+  it("says which field the server refused, and why", async () => {
+    vi.mocked(changePassword).mockRejectedValue(
+      Object.assign(new Error("Request failed with status code 422"), {
+        response: {
+          status: 422,
+          data: {
+            detail: [
+              {
+                type: "value_error",
+                loc: ["body", "new_password"],
+                msg: "Value error, must not be spaces alone",
+              },
+            ],
+          },
+        },
+      }),
+    );
+    shown();
+    fillIn(typed, chosen);
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "New password: must not be spaces alone",
+    );
+  });
+
   it("falls back to a plain message when the failure says nothing", async () => {
     vi.mocked(changePassword).mockRejectedValue({});
     shown();

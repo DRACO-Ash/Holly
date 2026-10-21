@@ -350,7 +350,9 @@ class TestTheMattermostPull:
     ) -> None:
         [session] = sessions.script(FakeSession())
         await background_refresh._pull_mattermost_once()
-        services.ingest_mattermost_messages.assert_awaited_once_with(session)
+        services.ingest_mattermost_messages.assert_awaited_once_with(
+            session, user_id_actor=None, ip_address=None
+        )
         assert sessions.closed == [session]
 
     async def test_a_failed_pull_is_logged_and_survived(

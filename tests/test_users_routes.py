@@ -151,12 +151,12 @@ class TestCreate:
         assert "lower(app_user.email) = " in sql(session, 0)
         session.commit.assert_awaited_once()
 
+    @pytest.mark.usefixtures("audit_calls")
     async def test_an_empty_email_means_none_and_the_role_defaults_to_analyst(
         self, api: httpx2.AsyncClient, use_session: UseSession, admin: User
     ) -> None:
         assert admin.role == UserRole.ADMIN.value
         session = use_session(stored(FakeSession([scalar_result(None)])))
-        users.write_audit = AsyncMock()  # type: ignore[attr-defined]
         response = await api.post(
             USERS, json={"username": "carol", "email": "  ", "temporary_password": TEMPORARY}
         )

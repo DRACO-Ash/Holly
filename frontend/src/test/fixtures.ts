@@ -4,6 +4,9 @@ import type {
   AssistantEvaluation,
   AssistantFeedItem,
   EventTimer,
+  MattermostChannel,
+  MattermostMessage,
+  MattermostSweep,
   NotificationDetail,
   User,
 } from "../types";
@@ -104,6 +107,59 @@ export function aTimer(minutesAhead: number, overrides: Partial<EventTimer> = {}
     shift_date: null,
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-01-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
+// A channel as the Comms page reads it: open, followed and readable, with no messages yet.
+export function aChannel(overrides: Partial<MattermostChannel> = {}): MattermostChannel {
+  return {
+    mm_channel_id: "channel1",
+    name: "synthetic-ops",
+    display_name: "Synthetic Ops",
+    team_name: "Synthetic Team",
+    channel_type: "O",
+    status: "open",
+    archived: false,
+    accessible: true,
+    following: true,
+    is_new: false,
+    pulled: true,
+    first_seen_at: "2026-01-01T00:00:00Z",
+    last_seen_at: "2026-01-02T00:00:00Z",
+    closed_at: null,
+    message_count: 0,
+    last_message_at: null,
+    activity: Array.from({ length: 24 }, () => 0),
+    new_since: null,
+    ...overrides,
+  };
+}
+
+export function aChatMessage(overrides: Partial<MattermostMessage> = {}): MattermostMessage {
+  return {
+    id: "message-1",
+    mm_post_id: "post-1",
+    channel_id: "channel1",
+    channel_name: "synthetic-ops",
+    user_id: "poster-1",
+    user_display_name: "synthetic.poster",
+    posted_at: "2026-01-02T03:04:05Z",
+    message: "Synthetic message",
+    post_type: null,
+    created_at: "2026-01-02T03:05:00Z",
+    updated_at: "2026-01-02T03:05:00Z",
+    ...overrides,
+  };
+}
+
+export function aSweep(overrides: Partial<MattermostSweep> = {}): MattermostSweep {
+  return {
+    last_at: "2026-01-02T03:00:00Z",
+    ok: true,
+    problem: null,
+    bot: "synthetic-bot",
+    interval_seconds: 60,
     ...overrides,
   };
 }

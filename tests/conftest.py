@@ -41,7 +41,7 @@ from app.db.session import get_db
 from app.dependencies import get_current_user
 from app.factory import create_app
 from app.models.user import User
-from app.services import claude
+from app.services import claude, mattermost_channels
 from fakes import FakeSession
 
 
@@ -53,6 +53,7 @@ def _isolated_state(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator
     monkeypatch.delenv("STORAGE_MOUNT_PATH", raising=False)
     get_settings.cache_clear()
     rate_limit.reset_all()
+    mattermost_channels.forget_sweep()
     claude.BUDGET.day = None
     claude.BUDGET.spent = 0
     yield

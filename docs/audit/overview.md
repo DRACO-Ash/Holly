@@ -4,8 +4,8 @@
 
 **Data classification:** Unclassified (per ADR-006)
 **Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned the edition this one replaces)
-**Version:** 0.3
-**Last updated:** 2026-10-14
+**Version:** 0.4
+**Last updated:** 2026-10-20
 
 > **STRATEGIC SIGNIFICANCE**
 >
@@ -120,13 +120,19 @@ Action types are dotted strings, `<domain>.<entity>.<verb>` where that fits. Eve
 | Action type | Written when | `detail` carries |
 |-------------|--------------|------------------|
 | `auth.user.login` | Every sign-in attempt, except one refused by the per-address limit or because sign-in is busy (HTTP 503). | `success`; the `username` on success, and on failure only when it names an account; and on failure a `reason`: `unknown_user`, `inactive_user`, `wrong_password` or `rate_limited`. `user_id` is null when the username names no account. |
-| `auth.token.refresh` | Every refresh-token exchange. | `success`, and on failure a `reason`: `invalid_token`, `malformed_subject`, `revoked_token` or `inactive_user`. On success the old refresh token's JWT ID (JTI) joins the `revoked_jti` block-list. |
-| `auth.user.logout` | Every sign-out (`POST /api/v1/auth/logout`, refresh token in the body). | `success`, and on failure a `reason`: `invalid_token`, `malformed_subject` or `already_revoked`. |
+| `auth.token.refresh` | Every refresh-token exchange. | `success`, and on failure a `reason`: `invalid_token`, `malformed_subject`, `revoked_token`, `inactive_user` or `stale_token` (issued before the user's token version moved, ADR-014). On success the old refresh token's JWT ID (JTI) joins the `revoked_jti` block-list. |
+| `auth.user.logout` | Every sign-out (`POST /api/v1/auth/logout`, refresh token in the body). | `success`, and on failure a `reason`: `invalid_token`, `malformed_subject`, `already_revoked` or `stale_token`. |
+| `auth.user.password_change` | A user's own password change (`POST /api/v1/auth/password`), except a request refused before its current password is checked by the 4 concurrent checks (HTTP 503). | `success`, and on failure a `reason`: `wrong_password`, `rate_limited`, `same_password`, `stale_token` (the session ended while the change ran) or `inactive_user`. Never a password. |
+| `auth.user.create` | An admin creates an account on the Users page. Entity type `user`, the new account's id; the admin's user id and address. | `username` and `role`. Never the temporary password. |
+| `auth.user.password_reset` | An admin resets an account's password to a temporary one. | `username`. Never the temporary password. |
+| `auth.user.update` | An admin changes an account's role or status. | `username`, and `role` or `is_active` each as `from` and `to`. A change to what is already set writes nothing. |
 | `auth.user.admin_upsert` | `python -m app.cli.create_admin` creates or resets an admin. | `username` and `action` (`created` or `updated`). No user id or address. |
 | `udl.notification.ingest` | A notification pull: the hourly cycle, **Pull from UDL**, or `POST /api/v1/notifications/ingest`. | The request (`msg_type`, `created_at_gte`, `data_mode`, `source`, `max_results`) and the counts `pulled`, `inserted`, `updated`, `skipped`. |
 | `udl.maneuver.ingest` | A manoeuvre pull by the background loop. | `event_start_time_gte`, `sat_no`, `data_mode`, `max_results` and the counts. |
 | `udl.elset.ingest` | `POST /api/v1/elsets/ingest`. | `epoch_gte`, `sat_no`, `data_mode`, `max_results` and the counts. |
-| `mattermost.ingest` | A Mattermost pull that polled at least one channel or failed one. | `channels_polled`, `channels_failed`, `pulled`, `inserted`, `skipped`. |
+| `mattermost.ingest` | A Mattermost cycle, background or **Find channels now**, that polled at least one channel, failed one, or found a channel new, closed, reopened or lost. A cycle started by **Find channels now** records that user and address; one that joins a cycle already running adds no row of its own. | `channels_polled`, `channels_failed`, `pulled`, `inserted`, `skipped`, and after a sweep `sweep`: `found`, `new`, `closed`, `reopened`, `lost`. |
+| `mattermost.channel.update` | A user follows or unfollows a channel, or marks it reviewed, on the Comms page. Entity type `mattermost_channel`, the Mattermost channel id. | `channel` (its display name or name), `following` as `from` and `to`, and `reviewed`. A change to what is already set writes nothing. |
+| `mattermost.channel.review` | A user marks every new channel reviewed. | `count` and `channels`, their names. |
 | `assistant.evaluate` | An evaluation: on demand (`POST /api/v1/assistant/evaluate/{id}`), or by the background cycle with no user id or address. A request for a notice whose classification marking is not cleared is recorded too, with `had_error` true. | `evaluation_id`, `model`, `procedures_used`, `had_error`; a background row also carries `trigger` (`background`). |
 | `assistant.event_summary` | Each event narrative the background cycle attempts, in the same transaction as the narrative. Entity type `event`, entity id the event key; no user id or address. | `trigger` (`background`), `publications` (the number of the event's cleared publications), `had_error`. |
 | `procedure.upload` | A procedure upload. | `name`, `filename`, `size_bytes`. |
@@ -199,6 +205,6 @@ Audit data is part of the PostgreSQL database, which the App Store POSTGRESQL ad
 ● Nothing anchors the chain outside the database, so a consistent rewrite of every later hash would verify (section 03).
 ● Rows written before Holly V0.2 cannot be verified (section 03).
 ● Whether the recorded `ip_address` is the analyst's or the ingress's depends on platform configuration: `TBC, re-verify`.
-● The Mattermost loop writes a `mattermost.ingest` row every cycle while channels are configured: up to 1,440 rows a day at the default 60-second interval.
+● The Mattermost loop writes a `mattermost.ingest` row every cycle that polls a channel: up to 1,440 rows a day at the default 60-second interval.
 
 Bluestaq Limited | Holly documentation | 2026

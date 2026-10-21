@@ -4,7 +4,7 @@
 
 **Data classification:** Unclassified (per ADR-006)
 **Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned the edition this one replaces)
-**Version:** 0.6
+**Version:** 0.7
 **Last updated:** 2026-10-20
 
 > **BLUF**
@@ -95,9 +95,9 @@ Three loops start with the application unless `BACKGROUND_REFRESH_ENABLED` is `f
 |------|-----------------|--------------|
 | Notifications | Every 3600 seconds (`BACKGROUND_NOTIFICATION_INTERVAL_SECONDS`) | Pulls `TACREP_NOTSO` notifications created in the last 120 hours (`BACKGROUND_NOTIFICATION_WINDOW_HOURS`) with data mode `REAL` and source `JCO`, then has the assistant evaluate up to 20 notices cleared for it that have no evaluation yet, then refreshes up to 20 event narratives. |
 | Manoeuvres | Every 600 seconds (`BACKGROUND_MANEUVER_INTERVAL_SECONDS`) | Pulls UDL manoeuvre records whose event started in the last 48 hours (`BACKGROUND_MANEUVER_WINDOW_HOURS`), data mode `REAL`. |
-| Mattermost | Every 60 seconds (`MATTERMOST_INTERVAL_SECONDS`) | Pulls new posts from each channel in `MATTERMOST_CHANNEL_IDS`, from the newest stored post onwards, or the last 24 hours on the first run. |
+| Mattermost | Every 60 seconds (`MATTERMOST_INTERVAL_SECONDS`) | Sweeps for the bot's public and private channels across its teams and records them in `mattermost_channel`, then pulls new posts from each followed, open and readable channel, from the newest stored post onwards, or the last 24 hours on the first run (ADR-015). Until a sweep has succeeded once, it pulls the channels in `MATTERMOST_CHANNEL_IDS`. |
 
-The notification cycle is single-flight: an analyst's **Pull from UDL** during a running cycle joins it rather than starting a second. No loop pulls element sets; the element-set routes and table remain for recovery. gunicorn runs exactly one worker ([src/app/gunicorn_conf.py](../../src/app/gunicorn_conf.py)), so each loop runs once per container.
+The notification and Mattermost cycles are single-flight: an analyst's **Pull from UDL** or **Find channels now** during a running cycle joins it rather than starting a second. No loop pulls element sets; the element-set routes and table remain for recovery. gunicorn runs exactly one worker ([src/app/gunicorn_conf.py](../../src/app/gunicorn_conf.py)), so each loop runs once per container.
 
 ### Assistant
 

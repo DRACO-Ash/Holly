@@ -2,7 +2,9 @@
 
 Holly uses Mattermost's `/api/v4` surface with a bot personal access token. The bot must be a
 member of any channel Holly polls; channels it is not in answer 403, which the caller treats
-as "skip silently". Mattermost's response bodies go to the server log, never to a browser.
+as "skip silently". The channel sweep (services/mattermost_channels.py) lists the bot's own
+teams and its channels in each, so a channel the bot joins is found without a setting.
+Mattermost's response bodies go to the server log, never to a browser.
 """
 
 import logging
@@ -22,6 +24,9 @@ logger = logging.getLogger(__name__)
 # goes into a request path is checked against it, so a value taken from a post can never point
 # the bot's token at a different API path.
 PLAIN_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
+
+
+NOT_CONFIGURED = "Mattermost is not configured (MATTERMOST_URL / MATTERMOST_BOT_TOKEN)."
 
 
 class MattermostClientError(Exception):
@@ -57,8 +62,7 @@ class MattermostClient(ApiClient):
 
     async def __aenter__(self) -> Self:
         if not self._base_url or not self._bot_token:
-            msg = "Mattermost is not configured (MATTERMOST_URL / MATTERMOST_BOT_TOKEN)."
-            raise MattermostClientError(msg)
+            raise MattermostClientError(NOT_CONFIGURED)
         client = httpx2.AsyncClient(
             base_url=f"{self._base_url}/api/v4",
             headers={"Authorization": f"Bearer {self._bot_token}"},
@@ -83,6 +87,28 @@ class MattermostClient(ApiClient):
             msg = f"Mattermost response was not a JSON object (got {type(data).__name__})."
             raise MattermostClientError(msg)
         return data
+
+    async def _get_list(self, path: str, params: dict[str, Any] | None = None) -> list[Any]:
+        """The JSON array at `path`; anything else raises MattermostClientError."""
+        data = await self._get_json(path, params)
+        if not isinstance(data, list):
+            msg = f"Mattermost response was not a JSON array (got {type(data).__name__})."
+            raise MattermostClientError(msg)
+        return data
+
+    async def get_me(self) -> dict[str, Any]:
+        """The bot's own account."""
+        return await self._get_object("/users/me")
+
+    async def get_my_teams(self) -> list[Any]:
+        """The teams the bot belongs to."""
+        return await self._get_list("/users/me/teams")
+
+    async def get_my_team_channels(self, team_id: str) -> list[Any]:
+        """Every channel the bot is a member of in one team, archived ones included."""
+        return await self._get_list(
+            f"/users/me/teams/{_checked(team_id)}/channels", params={"include_deleted": "true"}
+        )
 
     async def get_channel(self, channel_id: str) -> dict[str, Any]:
         return await self._get_object(f"/channels/{_checked(channel_id)}")

@@ -4,7 +4,7 @@
 
 **Data classification:** Unclassified (per ADR-006)
 **Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned the edition this one replaces)
-**Version:** 0.4
+**Version:** 0.5
 **Last updated:** 2026-10-20
 
 > **BLUF**
@@ -173,7 +173,7 @@ UDL manoeuvre records published by fusion providers, pulled every 10 minutes by 
 
 ### `mattermost_message`
 
-Posts from the Mattermost channels listed in `MATTERMOST_CHANNEL_IDS`, pulled every 60 seconds. A post already stored is left alone. System messages, empty posts and malformed posts are skipped and counted ([src/app/services/mattermost_ingest.py](../../src/app/services/mattermost_ingest.py)).
+Posts from the Mattermost channels Holly follows (`mattermost_channel`, below), pulled every 60 seconds. A post stays when its channel closes, is unfollowed or the bot leaves it. A post already stored is left alone. System messages, empty posts and malformed posts are skipped and counted ([src/app/services/mattermost_ingest.py](../../src/app/services/mattermost_ingest.py)).
 
 | Column | Type | Nullable | Notes |
 |--------|------|----------|-------|
@@ -191,6 +191,34 @@ Posts from the Mattermost channels listed in `MATTERMOST_CHANNEL_IDS`, pulled ev
 | `updated_at` | timestamptz | no | Row update time. |
 
 **Constraints and indexes:** `uq_mattermost_message_post_id` (unique on `mm_post_id`), `ix_mattermost_message_channel_id`, `ix_mattermost_message_posted_at`, `ix_mattermost_message_user_id`.
+
+### `mattermost_channel`
+
+Each public or private Mattermost channel the bot is a member of, as the latest complete sweep found it (ADR-015, migration 0019). Holly pulls a channel's posts while it is followed, open and readable. Rows are never deleted: a channel the bot leaves is marked unreadable, and one it rejoins is readable again. Every value from Mattermost is checked before it is stored: a channel whose id or name is not plain, printable text is skipped, and such a display name or team name is left out ([src/app/services/mattermost_channels.py](../../src/app/services/mattermost_channels.py)).
+
+| Column | Type | Nullable | Notes |
+|--------|------|----------|-------|
+| `id` | UUID | no | Primary key. |
+| `mm_channel_id` | varchar(64) | no | Mattermost's channel id. Unique. |
+| `team_id` | varchar(64) | yes | The team the sweep found it in. |
+| `team_name` | varchar(200) | yes | The team's display name, else its name. |
+| `name` | varchar(200) | no | The channel's name. |
+| `display_name` | varchar(200) | yes | The channel's display name. |
+| `channel_type` | varchar(8) | no | `O` public or `P` private; direct and group messages are never recorded. |
+| `archived` | boolean | no | Database default `false`. Mattermost's `delete_at` is set. |
+| `closed` | boolean | no | Database default `false`. Archived, or the word CLOSED, in any case, in the name or display name. Holly pulls nothing more from a closed channel and refuses to follow it. |
+| `closed_at` | timestamptz | yes | When a sweep first found it closed; cleared when it reopens. |
+| `accessible` | boolean | no | Database default `true`. False when a complete sweep no longer finds it. |
+| `following` | boolean | no | Database default `true`. The shared follow list: any signed-in user may change it, audited as `mattermost.channel.update`. |
+| `reviewed` | boolean | no | Database default `false`. False while the channel is new on the Comms page; a channel named in `MATTERMOST_CHANNEL_IDS` arrives reviewed on the first sweep. |
+| `first_seen_at` | timestamptz | no | When a sweep first found it. |
+| `last_seen_at` | timestamptz | no | When a sweep last found it. |
+| `following_changed_at` | timestamptz | yes | When someone last followed or unfollowed it. |
+| `following_changed_by` | UUID | yes | Who did, `app_user.id`, set to null if that account were deleted. |
+| `created_at` | timestamptz | no | Row creation time. |
+| `updated_at` | timestamptz | no | Row update time. |
+
+**Constraints and indexes:** `uq_mattermost_channel_mm_channel_id` (unique on `mm_channel_id`); foreign key `following_changed_by` to `app_user.id`, `ON DELETE SET NULL`.
 
 ### `procedure`
 
@@ -376,7 +404,7 @@ The hash chain, the advisory-lock concurrency control, the action types and the 
 All schema changes are Alembic migrations, packaged with the application:
 
 ● [src/app/migrations/env.py](../../src/app/migrations/env.py): async-aware. It imports every model, reads the database URL from the settings, and runs each migration session under a PostgreSQL advisory lock (`0x484F4C4C`), so two containers starting together cannot migrate at once.
-● [src/app/migrations/versions/](../../src/app/migrations/versions/): one file per migration, `0001_create_elset` to `0018_user_password_state`, in one linear history.
+● [src/app/migrations/versions/](../../src/app/migrations/versions/): one file per migration, `0001_create_elset` to `0019_mattermost_channel`, in one linear history.
 ● [src/app/migrations/columns.py](../../src/app/migrations/columns.py): column groups the migrations share. Frozen, because migrations that have already run import it; a new shape gets a new function.
 ● [alembic.ini](../../alembic.ini) at the repository root serves the developer's `alembic` command line: `script_location = %(here)s/src/app/migrations` and `prepend_sys_path = %(here)s/src`. The container does not use it.
 

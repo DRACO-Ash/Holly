@@ -159,6 +159,32 @@ describe("the users page", () => {
     expect(vi.mocked(createUser).mock.lastCall?.[0].email).toBe("erin@example.org");
   });
 
+  it("says which field the server refused, and why", async () => {
+    // The username rule is checked on the server alone, so its 422 is how an admin learns it.
+    vi.mocked(createUser).mockRejectedValue(
+      Object.assign(new Error("Request failed with status code 422"), {
+        response: {
+          status: 422,
+          data: {
+            detail: [
+              {
+                type: "value_error",
+                loc: ["body", "username"],
+                msg: "Value error, use 1 to 50 of a to z, 0 to 9 and . _ @ -",
+              },
+            ],
+          },
+        },
+      }),
+    );
+    shown();
+    await screen.findByText("test.bob");
+    fireEvent.change(screen.getByLabelText("Username"), { target: { value: "bob smith" } });
+    fireEvent.change(screen.getByLabelText("Temporary password"), { target: { value: chosen } });
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+    expect(await alert()).toBe("Username: use 1 to 50 of a to z, 0 to 9 and . _ @ -");
+  });
+
   it("resets a password to a temporary one, which ends the user's sessions", async () => {
     vi.mocked(resetPassword).mockResolvedValue({ ...bob, must_change_password: true });
     shown();

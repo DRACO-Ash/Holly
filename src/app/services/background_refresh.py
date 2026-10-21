@@ -44,7 +44,7 @@ from app.services.event_summary import (
     publication_order,
 )
 from app.services.maneuver_ingest import ingest_maneuvers
-from app.services.mattermost_ingest import ingest_mattermost_messages
+from app.services.mattermost_ingest import MattermostIngestResult, ingest_mattermost_messages
 from app.services.notification_ingest import ingest_notifications
 from app.services.notification_query import (
     aliased_deduped_notifications,
@@ -255,10 +255,25 @@ async def run_pull_notifications_now() -> None:
 # Mattermost ------------------------------------------------------
 
 
+_MATTERMOST: SingleFlight[MattermostIngestResult] = SingleFlight()
+
+
+async def _mattermost_cycle(actor: Any, ip_address: str | None) -> MattermostIngestResult:
+    async with get_session_factory()() as db:
+        return await ingest_mattermost_messages(db, user_id_actor=actor, ip_address=ip_address)
+
+
+async def run_mattermost_now(
+    actor: Any = None, ip_address: str | None = None
+) -> MattermostIngestResult:
+    """Sweep the channels and pull them now. A call made while a cycle is running joins it,
+    and its audit row carries whoever started that cycle."""
+    return await _MATTERMOST.run("mattermost", lambda: _mattermost_cycle(actor, ip_address))
+
+
 async def _pull_mattermost_once() -> None:
     try:
-        async with get_session_factory()() as db:
-            await ingest_mattermost_messages(db)
+        await run_mattermost_now()
     except Exception:
         logger.exception("Mattermost ingest crashed unexpectedly")
 

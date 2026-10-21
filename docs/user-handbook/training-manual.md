@@ -4,7 +4,7 @@
 
 **Data classification:** Unclassified (per ADR-006)
 **Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned the edition this one replaces)
-**Version:** 0.6
+**Version:** 0.7
 **Last updated:** 2026-10-20
 **Audience:** Watch analysts new to Holly, plus the trainers delivering induction. Sections labelled **Trainer note** are for delivery, not for the trainee handout.
 
@@ -68,7 +68,7 @@ You stay signed in while you use Holly: your 30-minute access renews itself in t
 
 ● **The header** shows Holly, two screen effects, your username and **Sign out**. **Scanlines** gives the screen the fine horizontal lines of an old cathode ray tube (CRT) monitor: behind the text, and across the page titles and the dashboard's counts. **CRT flicker** makes the screen flicker faintly. Scanlines start on and flicker starts off; each choice is kept in your browser only. If your computer is set to reduce motion, flicker stays off and its box is greyed out.
 ● **The timer banner**, under the header, appears on every page while an event timer is firing, and when sound alerts are not yet enabled.
-● **The side navigation** lists **Dashboard**, **Notifications**, **Maneuvers**, **Comms**, **Procedures** and **Shift log**. Operators and administrators also see **Audit log**.
+● **The side navigation** lists **Dashboard**, **Notifications**, **Maneuvers**, **Comms**, **Procedures**, **Shift log** and **Password**. Operators and administrators also see **Audit log**, and administrators **Users**.
 
 Times are shown in UTC unless a field says otherwise.
 
@@ -131,9 +131,25 @@ UDL manoeuvre records from fusion providers, pulled in the background every 10 m
 
 ## The Comms page
 
-Recent messages from the team's Mattermost channels that Holly is configured to read, pulled every minute, newest first, 100 to a page. Each shows the channel, the author, the time and the text. **Channel ID** filters to one channel.
+The team's chat from Mattermost. Every minute Holly looks for every channel its bot account is a member of and pulls new messages from the ones it follows. Holly only reads Mattermost; it never posts. Times are in UTC.
 
-The assistant reads up to 30 messages from the last 6 hours as soft context when it evaluates a notice. Holly only reads Mattermost; it never posts. An empty page means no channel is configured or the bot account is not a member of the channels; tell the operator.
+**The channel list**, on the left, shows each open channel with a dot of its own colour, a switch, and a small bar chart of its last 24 hours, one bar an hour, every chart drawn to the same scale so a quiet channel looks quiet beside a busy one. Beside the chart are its total for the day, when its latest message arrived, how many messages are new since your last visit, and the tags **New**, **Private** or **Bot removed**. A channel Holly does not pull shows **Not pulled** instead of a chart, since Holly cannot know how busy it has been.
+
+● **The switch** follows or unfollows the channel. Holly pulls messages only from the channels switched **On**. The list is shared: switching a channel off stops it for everyone, and the audit log records who did it. Messages already pulled stay. **Undo**, beside the message that confirms the change, puts it back.
+● **A new channel** is followed as soon as Holly finds it, so nothing is missed, and a banner names it. Switch off any the team does not want, then select **Mark reviewed**.
+● **Closed channels** sit folded away under **Closed**, tagged **Archived** or **Closed by name**. A channel archived in Mattermost, or whose name holds the word CLOSED in any case, is closed: Holly keeps what it pulled and pulls nothing more. Take the word out of its name in Mattermost and the next sweep opens it again.
+● **Bot removed** means the bot is no longer in that channel; Holly pulls nothing from it until the bot is added back.
+
+**Feed and Channels**, at the top right, switch between two layouts, and Holly remembers your choice in this browser.
+
+● **Feed** opens with **Last 24 hours**: a lane for each followed channel Holly pulls, all on one scale, the current hour on the right and a dashed line where your last visit falls. Below it, every followed channel in one stream, newest first, each message edged and dotted in its channel's colour. **All channels** adds the unfollowed and closed ones. Select a lane, or a channel's name in the list, to show that channel alone; select more to add them, and each shows as a chip you select again to take it out, or select **Show every followed channel**. **Search messages** finds text in any case and marks it. When new messages arrive, **Show N new messages** appears at the top and stays in view, rather than moving what you are reading; **Load older** reads further back.
+● **Channels** shows one channel as a conversation, oldest at the top and the latest at the bottom, opening where the messages new since your last visit begin. New messages join at the bottom while you are there; if you have scrolled up, **N new messages below** waits for you. **Load earlier messages** reads further back.
+
+Each day has its own heading, and a marker shows where the messages new since your last visit begin.
+
+**Find channels now** looks for new channels and pulls at once, rather than at the next minute. The light beside it is green when the last look worked, rust when it failed, and amber while one runs, and the words beside it say the same; if it failed, a message says why, and Holly keeps pulling the channels it already knows.
+
+The assistant reads up to 30 messages from the last 6 hours as soft context when it evaluates a notice. A page with no channel means the bot account is not yet a member of any channel, or Mattermost is not set up; tell the operator.
 
 **SECTION 09**
 
@@ -246,7 +262,7 @@ If you find yourself wishing Holly did something it does not, tell the team.
 | **Pull from UDL** shows a red error | If it says to try again in a number of seconds, your assistant allowance is spent: wait. Otherwise tell the operator. |
 | **Pull from UDL** finishes but nothing new appears | Either UDL has nothing new, or the pull failed: UDL failures show only in Holly's log. If it persists, tell the operator. |
 | A notice stays **Awaiting analysis** | Open it. If the assistant panel shows an error, select **Re-evaluate**; if the error mentions the daily token cap, evaluations resume the next UTC day. If the Dashboard says the notice was not sent to the assistant, its classification marking is not cleared and no evaluation will come; tell the operator if you expected one. |
-| The Comms page is empty | No channel is configured or the bot cannot read the channels; tell the operator. |
+| The Comms page shows no channel, or says the last sweep failed | The bot account is in no channel, or Holly cannot reach Mattermost; tell the operator. |
 | A timer makes no sound | Click anywhere in Holly or select **Enable alerts** in the banner, and check your browser allows sound for Holly. |
 | A table is empty when you expect rows | Check your filter, then **Clear** and look again. |
 

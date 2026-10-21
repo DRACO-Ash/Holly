@@ -1,6 +1,7 @@
-"""Pull the configured Mattermost channels and store their posts.
+"""Sweep the bot's Mattermost channels, then pull the followed open ones and store their posts.
 
-Strategy per channel:
+Each cycle first sweeps the channels the bot can read (services/mattermost_channels.py), which
+decides the channels to pull: followed, open and still readable. Strategy per channel:
 1. Find the most recent `posted_at` already stored for that channel.
 2. Ask Mattermost for posts since that high-water mark plus 1 ms, or for the last 24 hours on
    the first run.
@@ -25,7 +26,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.models.mattermost_message import MattermostMessage
 from app.services.audit import write_audit
+from app.services.mattermost_channels import (
+    SWEEP_STATE,
+    SweepResult,
+    channels_to_pull,
+    sweep_channels,
+)
 from app.services.mattermost_client import (
+    NOT_CONFIGURED,
     PLAIN_ID,
     MattermostAuthError,
     MattermostClient,
@@ -68,6 +76,8 @@ class MattermostIngestResult:
     pulled: int = 0
     inserted: int = 0
     skipped: int = 0
+    # The cycle's channel sweep; None when none ran or it failed.
+    sweep: SweepResult | None = None
 
 
 @dataclass
@@ -94,11 +104,6 @@ class _NameCache:
             except MattermostClientError:
                 self.channels[channel_id] = None
         return self.channels[channel_id]
-
-
-def _configured_channel_ids() -> list[str]:
-    raw = get_settings().mattermost_channel_ids or ""
-    return [c.strip() for c in raw.split(",") if c.strip()]
 
 
 async def _since_ms(db: AsyncSession, channel_id: str) -> int:
@@ -210,6 +215,34 @@ async def _store(db: AsyncSession, rows: list[dict[str, Any]]) -> int:
     return result.rowcount or 0
 
 
+def _configured() -> bool:
+    settings = get_settings()
+    return bool(settings.mattermost_url and settings.mattermost_bot_token.get_secret_value())
+
+
+def _audit_detail(tally: MattermostIngestResult) -> dict[str, Any]:
+    detail: dict[str, Any] = {
+        "channels_polled": tally.channels_polled,
+        "channels_failed": tally.channels_failed,
+        "pulled": tally.pulled,
+        "inserted": tally.inserted,
+        "skipped": tally.skipped,
+    }
+    if tally.sweep is not None:
+        detail["sweep"] = {
+            "found": tally.sweep.found,
+            "new": tally.sweep.new,
+            "closed": tally.sweep.closed,
+            "reopened": tally.sweep.reopened,
+            "lost": tally.sweep.lost,
+        }
+    return detail
+
+
+def _changed(sweep: SweepResult | None) -> bool:
+    return sweep is not None and bool(sweep.new or sweep.closed or sweep.reopened or sweep.lost)
+
+
 async def ingest_mattermost_messages(
     db: AsyncSession,
     *,
@@ -217,34 +250,38 @@ async def ingest_mattermost_messages(
     user_id_actor: Any = None,
     ip_address: str | None = None,
 ) -> MattermostIngestResult:
-    channels = channel_ids if channel_ids is not None else _configured_channel_ids()
+    """Sweep the channels and pull the ones to pull, or pull `channel_ids` alone, unswept."""
     tally = MattermostIngestResult()
-    if not channels:
+    if not _configured():
+        SWEEP_STATE.ok = False
+        SWEEP_STATE.problem = NOT_CONFIGURED
         return tally
 
+    channels: dict[str, str | None] = dict.fromkeys(channel_ids or [])
     try:
         async with MattermostClient() as client:
-            names = _NameCache()
+            if channel_ids is None:
+                tally.sweep = await sweep_channels(db, client)
+                channels = await channels_to_pull(db)
+            names = _NameCache(channels={k: v for k, v in channels.items() if v is not None})
             for channel_id in channels:
                 await _ingest_channel(db, client, channel_id, names, tally)
     except MattermostClientError as exc:
         logger.warning("Mattermost ingest aborted: %s", exc)
         tally.channels_failed = len(channels) - tally.channels_polled
 
-    if tally.channels_polled or tally.channels_failed:
+    audited = bool(tally.channels_polled or tally.channels_failed or _changed(tally.sweep))
+    if audited:
         await write_audit(
             db,
             action_type="mattermost.ingest",
             entity_type="mattermost_ingest_run",
             user_id=user_id_actor,
             ip_address=ip_address,
-            detail={
-                "channels_polled": tally.channels_polled,
-                "channels_failed": tally.channels_failed,
-                "pulled": tally.pulled,
-                "inserted": tally.inserted,
-                "skipped": tally.skipped,
-            },
+            detail=_audit_detail(tally),
         )
+    # A sweep's own changes, such as when each channel was last seen, are kept even when nothing
+    # new arrived.
+    if audited or tally.sweep is not None:
         await db.commit()
     return tally
