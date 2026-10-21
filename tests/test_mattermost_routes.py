@@ -83,7 +83,13 @@ class TestTheChannelList:
                     rows_result([zulu, shut, alpha]),
                     rows_result([("chan-a", 5, NOW)]),
                     rows_result(
-                        [("chan-a", hour, 3), ("chan-a", hour - 23, 2), ("chan-a", hour - 30, 9)]
+                        [
+                            ("chan-a", hour, 3),
+                            ("chan-a", hour - 23, 2),
+                            ("chan-a", hour - 30, 9),
+                            # A post dated in the future, past the current hour, is not drawn.
+                            ("chan-a", hour + 1, 4),
+                        ]
                     ),
                 ]
             )
@@ -109,6 +115,7 @@ class TestTheChannelList:
         assert body["sweep"]["ok"] is True
         assert body["sweep"]["bot"] == "test-bot"
         assert body["sweep"]["interval_seconds"] == 60
+        assert body["sweep"]["configured"] is False
         # Activity is counted in UTC hours from the epoch, whatever the session's time zone.
         hours = "floor(EXTRACT(epoch FROM mattermost_message.posted_at) / CAST(3600 AS NUMERIC))"
         assert hours in sql(session, 2)
@@ -227,6 +234,9 @@ class TestFollowingAChannel:
         [
             ("chan-1", {}),
             ("chan-1", {"reviewed": False}),
+            ("chan-1", {"reviewed": 1}),
+            ("chan-1", {"reviewed": 1.0}),
+            ("chan-1", {"following": 1}),
             ("chan-1", {"following": "yes"}),
             ("bad.id", {"following": False}),
             ("x" * 65, {"following": False}),
@@ -279,6 +289,7 @@ class TestASweepOnDemand:
         )
         run = AsyncMock(return_value=tally)
         monkeypatch.setattr(routes, "run_mattermost_now", run)
+        monkeypatch.setattr(routes, "client_ip", lambda _request: "203.0.113.9")
         SWEEP_STATE.ok = True
         response = await api.post("/api/v1/mattermost/sweep")
         assert response.status_code == 200
@@ -295,7 +306,7 @@ class TestASweepOnDemand:
             "inserted": 7,
         }
         assert run.await_args is not None
-        assert run.await_args.args[0] == analyst.id
+        assert run.await_args.args == (analyst.id, "203.0.113.9")
 
     @pytest.mark.usefixtures("analyst")
     async def test_a_failed_sweep_says_why_and_six_a_minute_is_the_limit(
@@ -318,6 +329,19 @@ class TestASweepOnDemand:
         assert limited.status_code == 429
         assert limited.headers["retry-after"]
 
+    async def test_the_limit_is_each_users_own(
+        self, api: httpx2.AsyncClient, sign_in: SignIn, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            routes, "run_mattermost_now", AsyncMock(return_value=MattermostIngestResult())
+        )
+        sign_in(make_user(username="first"))
+        for _ in range(6):
+            await api.post("/api/v1/mattermost/sweep")
+        assert (await api.post("/api/v1/mattermost/sweep")).status_code == 429
+        sign_in(make_user(username="second"))
+        assert (await api.post("/api/v1/mattermost/sweep")).status_code == 200
+
 
 @pytest.mark.usefixtures("analyst")
 class TestSearchingMessages:
@@ -332,7 +356,7 @@ class TestSearchingMessages:
         assert response.status_code == 200
         for call in (0, 1):
             text = sql(session, call)
-            assert "mattermost_message.channel_id IN ('chan-1', 'chan-2')" in text
+            assert "mattermost_message.channel_id = ANY (ARRAY['chan-1', 'chan-2'])" in text
             assert "mattermost_message.message ILIKE" in text
             assert "ESCAPE '\\'" in text
             statement = session.execute.await_args_list[call].args[0]
@@ -343,6 +367,28 @@ class TestSearchingMessages:
             ]
             # The search is trimmed, and its own wildcards and escape are taken literally.
             assert patterns == ["%50\\%\\_off\\\\%"]
+
+    async def test_the_followed_channels_are_asked_for_by_the_follow_list_not_by_id(
+        self, api: httpx2.AsyncClient, use_session: UseSession
+    ) -> None:
+        session = use_session(FakeSession([scalar_result(0), rows_result([])]))
+        response = await api.get(MESSAGES, params={"followed": "true"})
+        assert response.status_code == 200
+        followed = (
+            "mattermost_message.channel_id IN (SELECT mattermost_channel.mm_channel_id "
+            "FROM mattermost_channel WHERE mattermost_channel.following IS true "
+            "AND mattermost_channel.closed IS false)"
+        )
+        assert followed in sql(session, 0)
+        assert followed in sql(session, 1)
+
+    async def test_without_followed_no_follow_list_is_read(
+        self, api: httpx2.AsyncClient, use_session: UseSession
+    ) -> None:
+        session = use_session(FakeSession([scalar_result(0), rows_result([])]))
+        await api.get(MESSAGES, params={"followed": "false"})
+        assert "mattermost_channel" not in sql(session, 0)
+        assert (await api.get(MESSAGES, params={"followed": "maybe"})).status_code == 422
 
     async def test_a_blank_search_filters_nothing(
         self, api: httpx2.AsyncClient, use_session: UseSession

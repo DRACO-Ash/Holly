@@ -54,6 +54,7 @@ class ApiClient:
             raise self.error(msg)
         try:
             return response.json()
-        except ValueError as exc:
+        except (ValueError, RecursionError) as exc:
+            # RecursionError: a body nested deeper than the decoder can follow.
             msg = f"{self.service} response was not valid JSON."
             raise self.error(msg) from exc

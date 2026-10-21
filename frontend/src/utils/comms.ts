@@ -103,16 +103,38 @@ export function ago(iso: string, now: Date = new Date()): string {
 }
 
 // The message split around each match of the search, in any case, so the matches can be marked.
+// Each character lowered on its own, with where each lowered unit starts and ends in `text`:
+// "İ" lowers to two units, which would otherwise shift every highlight after it.
+function lowered(text: string): { lower: string; starts: number[]; ends: number[] } {
+  let lower = "";
+  const starts: number[] = [];
+  const ends: number[] = [];
+  let at = 0;
+  for (const char of text) {
+    const low = char.toLowerCase();
+    for (let unit = 0; unit < low.length; unit += 1) {
+      starts.push(at);
+      ends.push(at + char.length);
+    }
+    lower += low;
+    at += char.length;
+  }
+  return { lower, starts, ends };
+}
+
 export function matchParts(text: string, search: string): { text: string; match: boolean }[] {
   const needle = search.trim().toLowerCase();
   if (!needle) return [{ text, match: false }];
   const parts: { text: string; match: boolean }[] = [];
-  const lower = text.toLowerCase();
+  const { lower, starts, ends } = lowered(text);
   let from = 0;
-  for (let at = lower.indexOf(needle); at !== -1; at = lower.indexOf(needle, from)) {
-    if (at > from) parts.push({ text: text.slice(from, at), match: false });
-    parts.push({ text: text.slice(at, at + needle.length), match: true });
-    from = at + needle.length;
+  for (let at = lower.indexOf(needle); at !== -1; at = lower.indexOf(needle, at + needle.length)) {
+    const start = Math.max(starts[at], from);
+    const end = ends[at + needle.length - 1];
+    if (end <= start) continue;
+    if (start > from) parts.push({ text: text.slice(from, start), match: false });
+    parts.push({ text: text.slice(start, end), match: true });
+    from = end;
   }
   if (from < text.length) parts.push({ text: text.slice(from), match: false });
   return parts;

@@ -9,7 +9,7 @@ import ActivityTrace from "./ActivityTrace";
 import ChannelSwitchboard from "./ChannelSwitchboard";
 import FollowSwitch from "./FollowSwitch";
 import MessageList from "./MessageList";
-import { scopeIds, toggled } from "./scope";
+import { scopeQuery, toggled } from "./scope";
 import SweepStrip from "./SweepStrip";
 
 const NOW = new Date("2026-01-02T04:00:00Z");
@@ -506,16 +506,18 @@ describe("the feed's scope", () => {
   const unfollowed = aChannel({ mm_channel_id: "b", following: false });
   const closed = aChannel({ mm_channel_id: "c", status: "closed" });
 
-  it("asks for every channel, the ones chosen, or the followed open ones", () => {
+  it("asks for every channel, the ones chosen, or the followed open ones by the follow list", () => {
     const all = [followed, unfollowed, closed];
-    expect(scopeIds({ kind: "all" }, all)).toBeUndefined();
-    expect(scopeIds({ kind: "chosen", ids: ["b", "c"] }, all)).toEqual(["b", "c"]);
-    expect(scopeIds({ kind: "following" }, all)).toEqual(["a"]);
-    expect(scopeIds({ kind: "following" }, [unfollowed])).toEqual([]);
+    expect(scopeQuery({ kind: "all" }, all)).toEqual({});
+    expect(scopeQuery({ kind: "chosen", ids: ["b", "c"] }, all)).toEqual({
+      channel_id: ["b", "c"],
+    });
+    expect(scopeQuery({ kind: "following" }, all)).toEqual({ followed: true });
+    expect(scopeQuery({ kind: "following" }, [unfollowed, closed])).toBeNull();
   });
 
   it("asks for everything before the first sweep, when Holly knows no channel", () => {
-    expect(scopeIds({ kind: "following" }, [])).toBeUndefined();
+    expect(scopeQuery({ kind: "following" }, [])).toEqual({});
   });
 
   it("adds a channel picked, takes one picked again out, and widens when none is left", () => {

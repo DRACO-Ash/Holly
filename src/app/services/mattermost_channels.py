@@ -6,16 +6,20 @@ read. Every value Mattermost sends is checked here, at the boundary, so one malf
 skipped rather than stopping the sweep.
 
 ● A channel found for the first time is followed at once, so no channel the bot joins is missed,
-  and stays new until someone reviews it on the Comms page. On the very first sweep, a channel
-  already named in MATTERMOST_CHANNEL_IDS arrives reviewed: that list was the old way of choosing.
+  and stays new until someone reviews it on the Comms page. One found already closed arrives
+  reviewed, since Holly pulls nothing from it. While the table is empty, so does one named in
+  MATTERMOST_CHANNEL_IDS, the old way of choosing, and a seed the sweep does not find is
+  logged. The first sweep follows every channel the bot is in, not only the seed.
 ● A channel whose name or display name holds the word CLOSED, in any case, or that is archived,
   is closed: Holly keeps what it pulled and pulls nothing more. Should the word go, it reopens.
 ● A channel a complete sweep no longer finds is marked inaccessible and is not pulled. A sweep
-  that fails part-way changes nothing of the kind.
+  that fails part-way, or that skipped a malformed record (which might be that channel), marks
+  nothing lost. A bot in more than MAX_TEAMS teams or MAX_CHANNELS channels fails the sweep
+  rather than store an unbounded list.
 
-Until a sweep has succeeded once, Holly pulls the channels MATTERMOST_CHANNEL_IDS names, as
-before; afterwards the table decides. The outcome of the latest sweep is kept in this process,
-for the Comms page, never Mattermost's own words.
+While the table is empty, Holly pulls the channels MATTERMOST_CHANNEL_IDS names, as before;
+once a sweep has found a channel, the table decides. The outcome of the latest sweep is kept in
+this process, for the Comms page, never Mattermost's own words.
 """
 
 import logging
@@ -41,6 +45,10 @@ PULLED_TYPES = frozenset({"O", "P"})
 # Column limits (models/mattermost_channel.py): longer names are cut, never refused.
 _NAME_LENGTH = 200
 _BOT_NAME_LENGTH = 64
+# The most a sweep takes in: beyond these the bot was added far wider than Holly is meant to read.
+MAX_TEAMS = 100
+MAX_CHANNELS = 1000
+UNEXPECTED = "The channel sweep failed unexpectedly; the server log has the detail."
 
 
 @dataclass
@@ -83,7 +91,7 @@ class FoundChannel:
     archived: bool
 
 
-def _clean(value: object, limit: int = _NAME_LENGTH) -> str | None:
+def clean_name(value: object, limit: int = _NAME_LENGTH) -> str | None:
     """A name Holly can store and show: text, cut to `limit`, printable; None otherwise."""
     if not isinstance(value, str):
         return None
@@ -102,8 +110,8 @@ def found_channel(record: object, team_id: str, team_name: str | None) -> FoundC
     if not isinstance(record, dict):
         return None
     channel_id = record.get("id")
-    kind = record.get("type")
-    name = _clean(record.get("name"))
+    kind = _kind(record)
+    name = clean_name(record.get("name"))
     if not (isinstance(channel_id, str) and PLAIN_ID.fullmatch(channel_id)) or name is None:
         return None
     if kind not in PULLED_TYPES:
@@ -115,8 +123,8 @@ def found_channel(record: object, team_id: str, team_name: str | None) -> FoundC
         team_id=team_id,
         team_name=team_name,
         name=name,
-        display_name=_clean(record.get("display_name")),
-        channel_type=str(kind),
+        display_name=clean_name(record.get("display_name")),
+        channel_type=kind,
         archived=archived,
     )
 
@@ -128,12 +136,22 @@ def _team(record: object) -> tuple[str, str | None] | None:
     team_id = record.get("id")
     if not (isinstance(team_id, str) and PLAIN_ID.fullmatch(team_id)):
         return None
-    return team_id, _clean(record.get("display_name")) or _clean(record.get("name"))
+    return team_id, clean_name(record.get("display_name")) or clean_name(record.get("name"))
+
+
+def _kind(record: dict[str, object]) -> str:
+    # Only a string is looked up in a set: a list or an object there would raise TypeError.
+    kind = record.get("type")
+    return kind if isinstance(kind, str) else ""
 
 
 def _conversation(record: object) -> bool:
     # Direct and group messages are left out by design, not counted as malformed.
-    return isinstance(record, dict) and record.get("type") in {"D", "G"}
+    return isinstance(record, dict) and _kind(record) in {"D", "G"}
+
+
+def _too_many(what: str, limit: int) -> MattermostClientError:
+    return MattermostClientError(f"The bot is in more than {limit} {what}; the sweep stopped.")
 
 
 async def list_bot_channels(client: MattermostClient) -> tuple[list[FoundChannel], int]:
@@ -142,7 +160,10 @@ async def list_bot_channels(client: MattermostClient) -> tuple[list[FoundChannel
     never taken for the whole."""
     found: dict[str, FoundChannel] = {}
     skipped = 0
-    for record in await client.get_my_teams():
+    teams = await client.get_my_teams()
+    if len(teams) > MAX_TEAMS:
+        raise _too_many("teams", MAX_TEAMS)
+    for record in teams:
         team = _team(record)
         if team is None:
             skipped += 1
@@ -153,6 +174,8 @@ async def list_bot_channels(client: MattermostClient) -> tuple[list[FoundChannel
                 found[channel.mm_channel_id] = channel
             elif not _conversation(item):
                 skipped += 1
+        if len(found) > MAX_CHANNELS:
+            raise _too_many("channels", MAX_CHANNELS)
     return list(found.values()), skipped
 
 
@@ -160,6 +183,11 @@ def seed_channel_ids() -> set[str]:
     """The channels MATTERMOST_CHANNEL_IDS names: the old fixed list, now a seed."""
     raw = get_settings().mattermost_channel_ids or ""
     return {part.strip() for part in raw.split(",") if PLAIN_ID.fullmatch(part.strip())}
+
+
+def is_pulled(row: MattermostChannel) -> bool:
+    """Whether Holly pulls a channel: followed, open and still readable."""
+    return row.following and not row.closed and row.accessible
 
 
 def _apply(row: MattermostChannel, channel: FoundChannel, now: datetime) -> None:
@@ -176,7 +204,7 @@ def _apply(row: MattermostChannel, channel: FoundChannel, now: datetime) -> None
 def _new_row(
     channel: FoundChannel, reviewed: bool, closed: bool, now: datetime
 ) -> MattermostChannel:
-    """A channel found for the first time: followed at once, new unless the seed named it."""
+    """A channel found for the first time: followed at once, new unless `reviewed`."""
     return MattermostChannel(
         mm_channel_id=channel.mm_channel_id,
         following=True,
@@ -197,29 +225,44 @@ def _note_closing(row: MattermostChannel, closed: bool, now: datetime, result: S
         row.closed_at = None
 
 
+def _note_missing_seeds(seeded: set[str], channels: list[FoundChannel]) -> None:
+    missing = seeded - {channel.mm_channel_id for channel in channels}
+    if missing:
+        logger.warning(
+            "The sweep did not find %s channel(s) MATTERMOST_CHANNEL_IDS names: %s",
+            len(missing),
+            ", ".join(sorted(missing)),
+        )
+
+
 async def record_sweep(
-    db: AsyncSession, channels: list[FoundChannel], now: datetime | None = None
+    db: AsyncSession,
+    channels: list[FoundChannel],
+    now: datetime | None = None,
+    skipped: int = 0,
 ) -> SweepResult:
-    """Bring the channel table up to a complete sweep's findings; flushed, not committed."""
+    """Bring the channel table up to a sweep's findings; flushed, not committed. With
+    `skipped` records, no channel is marked lost: a skipped one might be it."""
     now = now or datetime.now(UTC)
     known = {
         row.mm_channel_id: row
         for row in (await db.execute(select(MattermostChannel))).scalars().all()
     }
     seeded = seed_channel_ids() if not known else set()
-    result = SweepResult(found=len(channels))
+    _note_missing_seeds(seeded, channels)
+    result = SweepResult(found=len(channels), skipped=skipped)
     for channel in channels:
         closed = is_closed(channel.name, channel.display_name, channel.archived)
         row = known.pop(channel.mm_channel_id, None)
         if row is None:
-            row = _new_row(channel, channel.mm_channel_id in seeded, closed, now)
+            row = _new_row(channel, closed or channel.mm_channel_id in seeded, closed, now)
             db.add(row)
             result.new += 0 if row.reviewed else 1
         else:
             _note_closing(row, closed, now, result)
         row.closed = closed
         _apply(row, channel, now)
-    for row in known.values():
+    for row in known.values() if not skipped else ():
         if row.accessible:
             result.lost += 1
             row.accessible = False
@@ -234,15 +277,25 @@ async def sweep_channels(db: AsyncSession, client: MattermostClient) -> SweepRes
     SWEEP_STATE.last_at = now
     try:
         if SWEEP_STATE.bot is None:
-            SWEEP_STATE.bot = _clean((await client.get_me()).get("username"), _BOT_NAME_LENGTH)
+            SWEEP_STATE.bot = clean_name((await client.get_me()).get("username"), _BOT_NAME_LENGTH)
         channels, skipped = await list_bot_channels(client)
+        result = await record_sweep(db, channels, now, skipped)
     except MattermostClientError as exc:
         SWEEP_STATE.ok = False
         SWEEP_STATE.problem = _problem(exc)
         logger.warning("Mattermost channel sweep failed: %s", SWEEP_STATE.problem)
         return None
-    result = await record_sweep(db, channels, now)
-    result.skipped = skipped
+    except Exception:
+        # Fail closed in Holly's words: nothing of the sweep is kept, and the page says it failed.
+        await db.rollback()
+        SWEEP_STATE.ok = False
+        SWEEP_STATE.problem = UNEXPECTED
+        logger.exception("Mattermost channel sweep crashed")
+        return None
+    if skipped:
+        logger.warning(
+            "The channel sweep skipped %s malformed record(s); none marked lost", skipped
+        )
     SWEEP_STATE.ok = True
     SWEEP_STATE.problem = None
     return result
@@ -255,11 +308,11 @@ def _problem(exc: MattermostClientError) -> str:
 
 async def channels_to_pull(db: AsyncSession) -> dict[str, str | None]:
     """The channels to pull now, followed, open and readable, with the name each is shown by.
-    Until a sweep has succeeded once the table is empty, and MATTERMOST_CHANNEL_IDS decides."""
+    While the table is empty, MATTERMOST_CHANNEL_IDS decides."""
     rows = (await db.execute(select(MattermostChannel))).scalars().all()
     if not rows:
         return dict.fromkeys(sorted(seed_channel_ids()))
-    pulled = (row for row in rows if row.following and not row.closed and row.accessible)
+    pulled = (row for row in rows if is_pulled(row))
     return {
         row.mm_channel_id: row.display_name or row.name
         for row in sorted(pulled, key=lambda row: row.mm_channel_id)

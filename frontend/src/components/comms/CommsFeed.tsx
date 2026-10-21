@@ -5,7 +5,7 @@ import { channelHue, channelHues, channelLabel } from "../../utils/comms";
 import { extractErrorMessage } from "../../utils/errors";
 import ActivityLanes from "./ActivityLanes";
 import MessageList from "./MessageList";
-import { type FeedScope, scopeIds, toggled } from "./scope";
+import { type FeedScope, type ScopeQuery, scopeQuery, toggled } from "./scope";
 
 const PAGE = 50;
 // The feed looks for newer messages this often, and offers them rather than moving the list.
@@ -39,15 +39,12 @@ export default function CommsFeed({
   const byId = useMemo(() => new Map(channels.map((c) => [c.mm_channel_id, c])), [channels]);
   const hues = useMemo(() => channelHues(channels), [channels]);
   // Keyed by content, so a channel list refreshed with the same channels does not reload.
-  const idsKey = scopeIds(scope, channels)?.join("\n");
+  const scopeKey = JSON.stringify(scopeQuery(scope, channels));
+  const none = scopeKey === "null";
   const filters = useMemo(
-    () => ({
-      channel_id: idsKey === undefined ? undefined : idsKey.split("\n").filter(Boolean),
-      q: query || undefined,
-    }),
-    [idsKey, query],
+    () => ({ ...(JSON.parse(scopeKey) as ScopeQuery | null), q: query || undefined }),
+    [scopeKey, query],
   );
-  const none = filters.channel_id !== undefined && filters.channel_id.length === 0;
 
   useEffect(() => {
     const timer = window.setTimeout(() => setQuery(search.trim()), SEARCH_PAUSE_MS);
@@ -84,6 +81,8 @@ export default function CommsFeed({
 
   useEffect(() => {
     if (none) return undefined;
+    // A poll answered after the scope changed, or after the feed closed, changes nothing.
+    let cancelled = false;
     const timer = window.setInterval(() => {
       const newest = shown.current[0]?.posted_at;
       listMattermostMessages({
@@ -93,12 +92,16 @@ export default function CommsFeed({
         ...(newest ? { posted_at_gte: newest } : {}),
       })
         .then((page) => {
+          if (cancelled) return;
           const known = new Set(shown.current.map((m) => m.id));
           setWaiting(page.items.filter((m) => !known.has(m.id)));
         })
         .catch(() => undefined);
     }, FEED_POLL_MS);
-    return () => window.clearInterval(timer);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
   }, [filters, none]);
 
   function showWaiting() {

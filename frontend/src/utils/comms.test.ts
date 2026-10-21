@@ -142,6 +142,18 @@ describe("matchParts", () => {
     ]);
     expect(matchParts("no hit here", "burn")).toEqual([{ text: "no hit here", match: false }]);
   });
+
+  it("keeps each highlight on its own letters after one that lowers to two", () => {
+    // "İ" lowers to "i" and a combining dot: a search of the lowered text alone would shift.
+    expect(matchParts("İstanbul burn", "burn")).toEqual([
+      { text: "İstanbul ", match: false },
+      { text: "burn", match: true },
+    ]);
+    expect(matchParts("İx", "i")).toEqual([
+      { text: "İ", match: true },
+      { text: "x", match: false },
+    ]);
+  });
 });
 
 describe("what a sweep found", () => {

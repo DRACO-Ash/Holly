@@ -108,7 +108,9 @@ describe("the Comms console", () => {
     expect(screen.getByRole("region", { name: "Feed" })).toBeTruthy();
     expect(screen.getByText(/Channels swept/)).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Last 24 hours" })).toBeTruthy();
-    await waitFor(() => expect(messageQueries()[0]?.channel_id).toEqual(["ops", "fresh"]));
+    // The followed channels go by the server's follow list, never as a list of ids.
+    await waitFor(() => expect(messageQueries()[0]).toMatchObject({ followed: true }));
+    expect(messageQueries()[0]?.channel_id).toBeUndefined();
   });
 
   it("asks how much is new since this user's last visit, and records this one", async () => {
@@ -202,6 +204,7 @@ describe("the Comms console", () => {
     fireEvent.click(nameButton("Fresh"));
     // None picked: the followed channels again.
     await waitFor(() => expect(screen.queryByText("Showing only")).toBeNull());
+    expect(latest(messageQueries())).toMatchObject({ followed: true });
     fireEvent.click(nameButton("Shut"));
     fireEvent.click(screen.getByRole("button", { name: "All channels" }));
     await waitFor(() => expect(latest(messageQueries())?.channel_id).toBeUndefined());
@@ -341,6 +344,29 @@ describe("the Comms console", () => {
     ]);
     expect(screen.getByText(/The last channel sweep, .*, failed\./)).toBeTruthy();
     expect(screen.queryByText(/^Found /)).toBeNull();
+  });
+
+  it("says Holly pulls nothing while Mattermost is not configured", async () => {
+    const problem = "Mattermost is not configured (MATTERMOST_URL / MATTERMOST_BOT_TOKEN).";
+    vi.mocked(listChannels).mockResolvedValue(
+      channelsOf([], aSweep({ configured: false, ok: false, problem })),
+    );
+    shown();
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      `The last channel sweep failed: ${problem} Holly pulls nothing until both are set.`,
+    );
+  });
+
+  it("clears a failed read of the channels once a later one succeeds", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    vi.mocked(listChannels).mockRejectedValueOnce({});
+    shown();
+    expect((await screen.findByRole("alert")).textContent).toBe("Failed to load the channels.");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CHANNELS_POLL_MS);
+    });
+    await screen.findByRole("complementary", { name: "Channels" });
+    expect(screen.queryByText("Failed to load the channels.")).toBeNull();
   });
 
   it("says why a sweep could not run", async () => {

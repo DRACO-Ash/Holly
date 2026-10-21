@@ -1,13 +1,15 @@
 """Sweep the bot's Mattermost channels, then pull the followed open ones and store their posts.
 
 Each cycle first sweeps the channels the bot can read (services/mattermost_channels.py), which
-decides the channels to pull: followed, open and still readable. Strategy per channel:
+decides the channels to pull: followed, open and still readable. The sweep is committed before
+the pull, so no channel row stays locked while Mattermost is asked for posts. Strategy per channel:
 1. Find the most recent `posted_at` already stored for that channel.
 2. Ask Mattermost for posts since that high-water mark plus 1 ms, or for the last 24 hours on
    the first run.
 3. Insert by `mm_post_id`; a post already stored is ignored.
-4. System messages (type starting `system_`), empty posts, and posts whose id, timestamp or
-   shape is malformed are skipped and counted. Mattermost's data is validated here, at the
+4. System messages (type starting `system_`), empty posts, posts PostgreSQL cannot store (a NUL
+   anywhere in them, say), and posts whose id, timestamp or shape is malformed are skipped and
+   counted. Mattermost's data is validated here, at the
    boundary, so one bad post can never abort a run or stall every later run at the same post.
 
 User and channel display names are looked up once per ingest cycle and cached, so a burst of
@@ -24,12 +26,14 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.db.storable import json_problem
 from app.models.mattermost_message import MattermostMessage
 from app.services.audit import write_audit
 from app.services.mattermost_channels import (
     SWEEP_STATE,
     SweepResult,
     channels_to_pull,
+    clean_name,
     sweep_channels,
 )
 from app.services.mattermost_client import (
@@ -45,8 +49,7 @@ from app.services.mattermost_client import (
 logger = logging.getLogger(__name__)
 
 _FIRST_RUN_WINDOW = timedelta(hours=24)
-# Column limits (models/mattermost_message.py): longer names are cut, never refused.
-_NAME_LENGTH = 200
+# Column limits (models/mattermost_message.py): longer types are cut, never refused.
 _POST_TYPE_LENGTH = 50
 # Timestamps outside the years 1970 to 9999 (epoch milliseconds) are malformed.
 _LATEST_MS = 253_402_300_799_999
@@ -57,9 +60,10 @@ def _text(value: object) -> str:
 
 
 def _display_name(record: dict[str, Any], *keys: str) -> str | None:
+    """The first of `keys` holding a name Holly can store and show, as the sweep checks them."""
     for key in keys:
-        if name := _text(record.get(key)):
-            return name[:_NAME_LENGTH]
+        if name := clean_name(record.get(key)):
+            return name
     return None
 
 
@@ -125,7 +129,7 @@ async def _row_for_post(
     names: _NameCache,
 ) -> dict[str, Any] | None:
     """The row to store for one post, or None to skip it."""
-    if not isinstance(post, dict):
+    if not isinstance(post, dict) or json_problem(post) is not None:
         return None
     post_id = _text(post.get("id"))
     post_type = _text(post.get("type"))
@@ -215,7 +219,8 @@ async def _store(db: AsyncSession, rows: list[dict[str, Any]]) -> int:
     return result.rowcount or 0
 
 
-def _configured() -> bool:
+def configured() -> bool:
+    """Whether Mattermost's address and the bot's token are both set."""
     settings = get_settings()
     return bool(settings.mattermost_url and settings.mattermost_bot_token.get_secret_value())
 
@@ -235,6 +240,7 @@ def _audit_detail(tally: MattermostIngestResult) -> dict[str, Any]:
             "closed": tally.sweep.closed,
             "reopened": tally.sweep.reopened,
             "lost": tally.sweep.lost,
+            "skipped": tally.sweep.skipped,
         }
     return detail
 
@@ -252,7 +258,7 @@ async def ingest_mattermost_messages(
 ) -> MattermostIngestResult:
     """Sweep the channels and pull the ones to pull, or pull `channel_ids` alone, unswept."""
     tally = MattermostIngestResult()
-    if not _configured():
+    if not configured():
         SWEEP_STATE.ok = False
         SWEEP_STATE.problem = NOT_CONFIGURED
         return tally
@@ -262,6 +268,9 @@ async def ingest_mattermost_messages(
         async with MattermostClient() as client:
             if channel_ids is None:
                 tally.sweep = await sweep_channels(db, client)
+                if tally.sweep is not None:
+                    # Kept even when nothing new arrives, and no row stays locked during the pull.
+                    await db.commit()
                 channels = await channels_to_pull(db)
             names = _NameCache(channels={k: v for k, v in channels.items() if v is not None})
             for channel_id in channels:
@@ -280,8 +289,6 @@ async def ingest_mattermost_messages(
             ip_address=ip_address,
             detail=_audit_detail(tally),
         )
-    # A sweep's own changes, such as when each channel was last seen, are kept even when nothing
-    # new arrived.
-    if audited or tally.sweep is not None:
+    if audited:
         await db.commit()
     return tally

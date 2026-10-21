@@ -165,6 +165,8 @@ class TestAChannelRecord:
             channel("chan-1", "bad\x00name"),
             channel("chan-1", "bad\u202ename"),
             {"id": 7, "type": "O", "name": "op"},
+            {"id": "chan-1", "type": ["O"], "name": "op"},
+            {"id": "chan-1", "type": {"O": 1}, "name": "op"},
             ["not", "a", "record"],
         ],
     )
@@ -210,6 +212,29 @@ class TestListingTheBotsChannels:
         assert [c.mm_channel_id for c in channels] == ["chan-1"]
         assert skipped == 3
 
+    async def test_a_type_that_is_not_text_is_counted_skipped_not_raised(self) -> None:
+        odd = [{**channel("chan-1", "ops"), "type": ["O"]}, {**channel("chan-2", "x"), "type": {}}]
+        routes = team_routes(("team-1", "Team One", odd))
+        async with client_for(FakeMattermost(routes)) as client:
+            assert await list_bot_channels(client) == ([], 2)
+
+    async def test_more_teams_or_channels_than_the_caps_fail_the_sweep(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(mattermost_channels, "MAX_TEAMS", 1)
+        monkeypatch.setattr(mattermost_channels, "MAX_CHANNELS", 1)
+        two_teams = team_routes(("team-1", "One", []), ("team-2", "Two", []))
+        async with client_for(FakeMattermost(two_teams)) as client:
+            with pytest.raises(MattermostClientError, match="more than 1 teams"):
+                await list_bot_channels(client)
+        two_channels = team_routes(("team-1", "One", [channel("c-1", "a"), channel("c-2", "b")]))
+        async with client_for(FakeMattermost(two_channels)) as client:
+            with pytest.raises(MattermostClientError, match="more than 1 channels"):
+                await list_bot_channels(client)
+        one_each = team_routes(("team-1", "One", [channel("c-1", "a")]))
+        async with client_for(FakeMattermost(one_each)) as client:
+            assert len((await list_bot_channels(client))[0]) == 1
+
     async def test_a_listing_that_fails_part_way_fails_the_whole(self) -> None:
         routes = team_routes(("team-1", "Team One", [channel("chan-1", "ops")]))
         routes[f"{API}/users/me/teams"] = (200, [{"id": "team-1"}, {"id": "team-2"}])
@@ -226,8 +251,9 @@ class TestRecordingASweep:
         fresh, closed = session.added
         assert (fresh.mm_channel_id, fresh.following, fresh.reviewed) == ("chan-1", True, False)
         assert (fresh.first_seen_at, fresh.last_seen_at, fresh.closed) == (NOW, NOW, False)
-        assert (closed.closed, closed.closed_at) == (True, NOW)
-        assert (result.found, result.new) == (3, 2)
+        # One found already closed is nothing to review: Holly pulls nothing from it.
+        assert (closed.closed, closed.closed_at, closed.reviewed) == (True, NOW, True)
+        assert (result.found, result.new) == (3, 1)
         session.flush.assert_awaited_once()
 
     async def test_on_the_first_sweep_the_seeded_channels_arrive_reviewed(
@@ -241,6 +267,21 @@ class TestRecordingASweep:
         assert (seeded.reviewed, other.reviewed) == (True, False)
         assert (seeded.following, other.following) == (True, True)
         assert result.new == 1
+
+    async def test_a_seed_the_first_sweep_does_not_find_is_logged(
+        self, settings_env: SettingsEnv, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        settings_env(MATTERMOST_CHANNEL_IDS="chan-1,chan-9,chan-8")
+        await record_sweep(db(FakeSession([rows_result([])])), [found("chan-1", "ops")], NOW)
+        assert [r.getMessage() for r in caplog.records] == [
+            "The sweep did not find 2 channel(s) MATTERMOST_CHANNEL_IDS names: chan-8, chan-9"
+        ]
+
+    async def test_a_seed_entry_is_trimmed_and_one_that_is_not_an_id_is_ignored(
+        self, settings_env: SettingsEnv
+    ) -> None:
+        settings_env(MATTERMOST_CHANNEL_IDS=" chan-1 ,,chan/2, ,chan-3")
+        assert mattermost_channels.seed_channel_ids() == {"chan-1", "chan-3"}
 
     async def test_after_the_first_sweep_the_seed_no_longer_counts(
         self, settings_env: SettingsEnv
@@ -282,6 +323,11 @@ class TestRecordingASweep:
         assert row.closed_at == since
         assert result.closed == 0
 
+    async def test_a_sweep_that_skipped_a_record_marks_nothing_lost(self) -> None:
+        row = stored("chan-1", "ops")
+        result = await record_sweep(db(FakeSession([rows_result([row])])), [], NOW, skipped=1)
+        assert (row.accessible, result.lost, result.skipped) == (True, 0, 1)
+
     async def test_a_channel_no_longer_found_is_lost_once_and_found_again_later(self) -> None:
         row = stored("chan-1", "ops")
         result = await record_sweep(db(FakeSession([rows_result([row])])), [], NOW)
@@ -322,6 +368,32 @@ class TestASweep:
         # Mattermost's body for the server log alone.
         swept = [r.getMessage() for r in caplog.records if r.name.endswith("mattermost_channels")]
         assert swept == ["Mattermost channel sweep failed: Mattermost returned HTTP 500."]
+
+    async def test_any_other_failure_fails_closed_in_holly_s_words(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        server = FakeMattermost(team_routes(("team-1", "Team One", [channel("chan-1", "ops")])))
+        monkeypatch.setattr(
+            mattermost_channels, "record_sweep", AsyncMock(side_effect=RuntimeError("boom"))
+        )
+        session = FakeSession()
+        async with client_for(server) as client:
+            assert await sweep_channels(db(session), client) is None
+        session.rollback.assert_awaited_once()
+        assert SWEEP_STATE.ok is False
+        assert SWEEP_STATE.problem == mattermost_channels.UNEXPECTED
+        assert "boom" not in SWEEP_STATE.problem
+        assert "Mattermost channel sweep crashed" in caplog.text
+
+    async def test_a_sweep_that_skipped_records_says_so_in_the_log(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        server = FakeMattermost(team_routes(("team-1", "Team One", [{"id": "x"}])))
+        async with client_for(server) as client:
+            result = await sweep_channels(db(FakeSession([rows_result([])])), client)
+        assert result is not None
+        assert result.skipped == 1
+        assert "skipped 1 malformed record(s); none marked lost" in caplog.text
 
 
 class TestTheChannelsToPull:
@@ -366,9 +438,11 @@ async def test_a_cycle_sweeps_then_pulls_the_followed_open_channels_and_audits_b
         return scalar_result(None)
 
     session.execute.side_effect = execute
+    asked_at_commit: list[list[str]] = []
+    session.commit.side_effect = lambda: asked_at_commit.append(server.paths())
     result = await mattermost_ingest.ingest_mattermost_messages(db(session))
     assert result.sweep is not None
-    assert (result.sweep.found, result.sweep.new, result.sweep.closed) == (2, 2, 0)
+    assert (result.sweep.found, result.sweep.new, result.sweep.closed) == (2, 1, 0)
     assert result.channels_polled == 1
     # The closed channel is never asked for, and the pulled one's name came from the sweep.
     assert f"{API}/channels/chan-2/posts" not in server.paths()
@@ -376,12 +450,58 @@ async def test_a_cycle_sweeps_then_pulls_the_followed_open_channels_and_audits_b
     [call] = audit.await_args_list
     assert call.kwargs["detail"]["sweep"] == {
         "found": 2,
-        "new": 2,
+        "new": 1,
         "closed": 0,
         "reopened": 0,
         "lost": 0,
+        "skipped": 0,
     }
+    # The sweep is committed before any post is asked for, then the pull with its audit row.
+    assert session.commit.await_count == 2
+    assert not any(path.endswith("/posts") for path in asked_at_commit[0])
+    assert f"{API}/channels/chan-1/posts" in asked_at_commit[1]
+
+
+async def test_a_sweep_that_changed_nothing_and_pulled_nothing_is_committed_not_audited(
+    monkeypatch: pytest.MonkeyPatch, settings_env: SettingsEnv
+) -> None:
+    server = FakeMattermost(team_routes(("team-1", "Team One", [channel("chan-1", "o-closed")])))
+    settings_env(MATTERMOST_URL=BASE_URL, MATTERMOST_BOT_TOKEN=BOT_TOKEN)
+    bound = partial(MattermostClient, transport=httpx2.MockTransport(server))
+    monkeypatch.setattr(mattermost_ingest, "MattermostClient", bound)
+    audit = AsyncMock()
+    monkeypatch.setattr(mattermost_ingest, "write_audit", audit)
+    known = stored("chan-1", "o-closed", closed=True, closed_at=NOW)
+    session = FakeSession([rows_result([known]), rows_result([known])])
+    result = await mattermost_ingest.ingest_mattermost_messages(db(session))
+    assert result.sweep is not None
+    assert result.channels_polled == 0
+    audit.assert_not_awaited()
+    # Only the sweep's own commit: when each channel was last seen is kept.
     session.commit.assert_awaited_once()
+
+
+async def test_a_sweep_that_only_lost_a_channel_is_audited(
+    monkeypatch: pytest.MonkeyPatch, settings_env: SettingsEnv
+) -> None:
+    server = FakeMattermost(team_routes(("team-1", "Team One", [])))
+    settings_env(MATTERMOST_URL=BASE_URL, MATTERMOST_BOT_TOKEN=BOT_TOKEN)
+    bound = partial(MattermostClient, transport=httpx2.MockTransport(server))
+    monkeypatch.setattr(mattermost_ingest, "MattermostClient", bound)
+    audit = AsyncMock()
+    monkeypatch.setattr(mattermost_ingest, "write_audit", audit)
+    gone = stored("chan-1", "ops")
+    session = FakeSession([rows_result([gone]), rows_result([gone])])
+    await mattermost_ingest.ingest_mattermost_messages(db(session))
+    [call] = audit.await_args_list
+    assert call.kwargs["detail"]["sweep"]["lost"] == 1
+    assert session.commit.await_count == 2
+
+
+def test_a_pulled_channel_is_followed_open_and_readable() -> None:
+    assert mattermost_channels.is_pulled(stored("c", "a"))
+    for field in ({"following": False}, {"closed": True}, {"accessible": False}):
+        assert not mattermost_channels.is_pulled(stored("c", "a", **field))
 
 
 def test_the_sweep_state_is_forgotten_between_tests() -> None:

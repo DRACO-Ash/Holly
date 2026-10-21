@@ -50,7 +50,7 @@ describe("CommsFeed", () => {
     );
     feed();
     expect(await screen.findByText("Synthetic burn report")).toBeTruthy();
-    expect(calls()[0]).toEqual({ channel_id: ["ops"], q: undefined, limit: 50, offset: 0 });
+    expect(calls()[0]).toEqual({ followed: true, q: undefined, limit: 50, offset: 0 });
     expect(screen.getByText("1 of 1 messages")).toBeTruthy();
     expect((screen.getByRole("button", { name: "Load older" }) as HTMLButtonElement).disabled).toBe(
       true,
@@ -178,6 +178,51 @@ describe("CommsFeed", () => {
       await vi.advanceTimersByTimeAsync(FEED_POLL_MS);
     });
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("drops a poll answered after the scope changed, and stops polling once closed", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const late = aChatMessage({ id: "late", channel_id: "ops", message: "Late" });
+    let answer: (page: MattermostMessagePage) => void = () => undefined;
+    vi.mocked(listMattermostMessages)
+      .mockResolvedValueOnce(pageOf([]))
+      .mockImplementationOnce(() => new Promise((resolve) => (answer = resolve)))
+      .mockResolvedValue(pageOf([]));
+    const onScope = vi.fn();
+    const { rerender, unmount } = render(
+      <CommsFeed
+        channels={[ops]}
+        scope={{ kind: "following" }}
+        onScope={onScope}
+        lastSeen={null}
+        now={NOW}
+      />,
+    );
+    await waitFor(() => expect(calls()).toHaveLength(1));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(FEED_POLL_MS);
+    });
+    expect(calls()).toHaveLength(2);
+    rerender(
+      <CommsFeed
+        channels={[ops]}
+        scope={{ kind: "all" }}
+        onScope={onScope}
+        lastSeen={null}
+        now={NOW}
+      />,
+    );
+    await act(async () => {
+      answer(pageOf([late]));
+      await Promise.resolve();
+    });
+    expect(screen.queryByRole("button", { name: /new message/ })).toBeNull();
+    const asked = calls().length;
+    unmount();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(FEED_POLL_MS * 2);
+    });
+    expect(calls()).toHaveLength(asked);
   });
 });
 

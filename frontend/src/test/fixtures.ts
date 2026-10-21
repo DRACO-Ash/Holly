@@ -155,6 +155,7 @@ export function aChatMessage(overrides: Partial<MattermostMessage> = {}): Matter
 
 export function aSweep(overrides: Partial<MattermostSweep> = {}): MattermostSweep {
   return {
+    configured: true,
     last_at: "2026-01-02T03:00:00Z",
     ok: true,
     problem: null,

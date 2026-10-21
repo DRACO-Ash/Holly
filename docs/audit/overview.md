@@ -205,6 +205,6 @@ Audit data is part of the PostgreSQL database, which the App Store POSTGRESQL ad
 ● Nothing anchors the chain outside the database, so a consistent rewrite of every later hash would verify (section 03).
 ● Rows written before Holly V0.2 cannot be verified (section 03).
 ● Whether the recorded `ip_address` is the analyst's or the ingress's depends on platform configuration: `TBC, re-verify`.
-● The Mattermost loop writes a `mattermost.ingest` row every cycle that polls a channel: up to 1,440 rows a day at the default 60-second interval.
+● The Mattermost loop writes a `mattermost.ingest` row every cycle that polls or fails a channel, or whose sweep found, closed, reopened or lost one: up to 1,440 rows a day at the default 60-second interval while any channel is followed. Its detail carries the sweep's counts, `skipped` among them.
 
 Bluestaq Limited | Holly documentation | 2026

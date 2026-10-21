@@ -27,6 +27,12 @@ All notable changes to Holly are recorded here, newest first. Holly V0.2 is the 
 
 ● **The documents catch up with V0.10:** the audit log's list of actions names the account actions, and the training manual's navigation names **Users** and **Password**.
 
+### Fixed
+
+● **From the first review of Comms (ungated, so these await the gates):** a channel whose `type` is not text is skipped, where it stopped the sweep; the sweep is committed before the pull, so no channel row stays locked while Mattermost answers; any other failure fails the sweep in Holly's own words; a sweep that skipped a malformed record marks no channel lost, and says how many it skipped in the log and the audit row; a channel found already closed arrives reviewed; a seed the first sweep does not find is logged; a bot in more than 100 teams or 1,000 channels fails the sweep rather than store an unbounded list; a post holding a NUL, or anything else PostgreSQL cannot store, is skipped rather than stalling every later cycle at it; a nickname or channel name Holly cannot show gives way to the next; a Mattermost body nested too deep to decode is a client error, not a crash; `{"reviewed": 1}` is refused; channel ids go to the database as one array; the feed of followed channels asks by the follow list, so more than 200 followed channels no longer break it; a poll answered after the feed's scope changed is dropped; a failed read of the channel list clears once a later one succeeds; while Mattermost is not configured the page says Holly pulls nothing; and a search highlight no longer shifts after a letter such as "İ".
+
+● **The documents:** the seed's wording matches the code (it decides while Holly holds no channel), the operator manual warns that the first sweep follows every channel the bot is already in, the audit overview counts the rows a day, SECURITY.md records a bot added to a private channel by mistake, with its remedy, and the background loops' description names the sweep.
+
 ### Security
 
 ● **Three dependency advisories published since V0.11 are closed:** vite 7.3.6 to 7.3.7 (GHSA-698v-4r3x-3vcv, GHSA-r825-w8mm-5pxw, GHSA-587h-7wmj-h5pm, all in its development server's launch-editor), follow-redirects 1.16.0 to 1.16.1 under axios (GHSA-q3jh-wrc6-jgq8, GHSA-8r9p-f939-6h3c) and certifi 2026.7.22 to 2026.10.19 in the development lock only (PYSEC-2026-4320). Inference: none reaches the running image, since vite and certifi are build or test tools and the dashboard's axios uses the browser's request, not follow-redirects.

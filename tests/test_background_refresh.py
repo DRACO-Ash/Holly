@@ -25,6 +25,7 @@ from app.schemas.assistant import AssistantEvaluationRead
 from app.services import assistant, background_refresh
 from app.services.assistant import EvaluationRun
 from app.services.event_summary import SummaryOutcome
+from app.services.mattermost_ingest import MattermostIngestResult
 from app.services.udl_client import UDLAuthError, UDLClientError
 from fakes import NOW, FakeSession, rows_result
 
@@ -365,6 +366,33 @@ class TestTheMattermostPull:
         [record] = logged(caplog, logging.ERROR)
         assert record.getMessage() == "Mattermost ingest crashed unexpectedly"
         assert raised(record) is error
+
+    async def test_a_sweep_on_demand_during_a_running_cycle_joins_it(
+        self, sessions: SessionFactory, services: Services
+    ) -> None:
+        pulling, release = asyncio.Event(), asyncio.Event()
+        tally = MattermostIngestResult(inserted=3)
+
+        async def slow_ingest(*_args: object, **_kwargs: object) -> MattermostIngestResult:
+            pulling.set()
+            await release.wait()
+            return tally
+
+        services.ingest_mattermost_messages.side_effect = slow_ingest
+        [session] = sessions.script(FakeSession())
+        async with asyncio.timeout(1):
+            scheduled = asyncio.create_task(background_refresh.run_mattermost_now())
+            await pulling.wait()
+            manual = asyncio.create_task(background_refresh.run_mattermost_now("user-1", "ip"))
+            await asyncio.sleep(0)
+            release.set()
+            results = await asyncio.gather(scheduled, manual)
+        assert list(results) == [tally, tally]
+        # One cycle, one session, and its audit row carries whoever started it.
+        services.ingest_mattermost_messages.assert_awaited_once_with(
+            session, user_id_actor=None, ip_address=None
+        )
+        assert sessions.opened == [session]
 
 
 class TestAutoEvaluation:

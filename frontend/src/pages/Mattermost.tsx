@@ -53,6 +53,8 @@ export default function MattermostPage() {
   const [notice, setNotice] = useState("");
   const [undo, setUndo] = useState<Undo | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // The channel list's own failure, cleared by the next read that succeeds.
+  const [loadError, setLoadError] = useState<string | null>(null);
   // When this user last looked: undefined until it is read, null on a first visit. Read at once
   // when the user is already known, as after any move within the dashboard, so the channels are
   // asked for once.
@@ -67,8 +69,9 @@ export default function MattermostPage() {
     try {
       setData(await listChannels(lastSeen ?? undefined));
       setNow(new Date());
+      setLoadError(null);
     } catch (err) {
-      setError(extractErrorMessage(err, "Failed to load the channels."));
+      setLoadError(extractErrorMessage(err, "Failed to load the channels."));
     }
   }, [lastSeen]);
 
@@ -208,8 +211,10 @@ export default function MattermostPage() {
       )}
       {data?.sweep.ok === false && data.sweep.problem && (
         <div className="form-error" role="alert">
-          The last channel sweep failed: {data.sweep.problem} Holly keeps pulling the channels it
-          already knows.
+          The last channel sweep failed: {data.sweep.problem}{" "}
+          {data.sweep.configured
+            ? "Holly keeps pulling the channels it already knows."
+            : "Holly pulls nothing until both are set."}
         </div>
       )}
       {fresh.length > 0 && (
@@ -244,13 +249,18 @@ export default function MattermostPage() {
           </button>
         )}
       </div>
+      {loadError && (
+        <div className="form-error" role="alert">
+          {loadError}
+        </div>
+      )}
       {error && (
         <div className="form-error" role="alert">
           {error}
         </div>
       )}
 
-      {data === null && !error && <p className="muted">Loading channels...</p>}
+      {data === null && !loadError && <p className="muted">Loading channels...</p>}
       {data && (
         <div className={`comms-console view-${view}`}>
           <ChannelSwitchboard

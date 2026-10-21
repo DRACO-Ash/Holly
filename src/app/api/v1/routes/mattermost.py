@@ -13,7 +13,8 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Path, Query, Request, status
 from pydantic import AwareDatetime
-from sqlalchemy import func, select
+from sqlalchemy import ColumnElement, String, any_, func, literal, select
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.common import Offset, fetch_page, present_filters
@@ -38,7 +39,8 @@ from app.schemas.mattermost import (
 )
 from app.services.audit import write_audit
 from app.services.background_refresh import run_mattermost_now
-from app.services.mattermost_channels import SWEEP_STATE, SweepResult
+from app.services.mattermost_channels import SWEEP_STATE, SweepResult, is_pulled
+from app.services.mattermost_ingest import configured
 
 router = APIRouter(prefix="/mattermost", tags=["mattermost"])
 
@@ -52,6 +54,12 @@ AUDIT_CHANNEL_UPDATE = "mattermost.channel.update"
 AUDIT_CHANNEL_REVIEW = "mattermost.channel.review"
 
 
+def _any_of(ids: Sequence[str]) -> ColumnElement[bool]:
+    """The message's channel is one of `ids`, sent as one array parameter rather than one
+    parameter per id."""
+    return MattermostMessage.channel_id == any_(literal(list(ids), ARRAY(String)))
+
+
 def _contains(text: str) -> str:
     """A LIKE pattern matching `text` anywhere, its own wildcards taken literally."""
     escaped = text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
@@ -63,14 +71,15 @@ async def list_messages(
     db: DbSession,
     _current_user: CurrentUser,
     channel_id: Annotated[list[StorableText] | None, Query()] = None,
+    followed: bool = False,
     user_id: StorableText | None = None,
     posted_at_gte: datetime | None = None,
     q: Annotated[StorableText | None, Query(max_length=MAX_SEARCH_LENGTH)] = None,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
     offset: Offset = 0,
 ) -> MattermostMessagePage:
-    """Messages newest first, from any of the channels named (repeat `channel_id`), and holding
-    `q` when given, in any case."""
+    """Messages newest first, from any of the channels named (repeat `channel_id`), with
+    `followed` only from the followed open channels, and holding `q` when given, in any case."""
     if channel_id is not None and len(channel_id) > MAX_CHANNEL_FILTER:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
@@ -83,7 +92,12 @@ async def list_messages(
         ]
     )
     if channel_id:
-        conditions.append(MattermostMessage.channel_id.in_(channel_id))
+        conditions.append(_any_of(channel_id))
+    if followed:
+        followed_open = select(MattermostChannel.mm_channel_id).where(
+            MattermostChannel.following.is_(True), MattermostChannel.closed.is_(False)
+        )
+        conditions.append(MattermostMessage.channel_id.in_(followed_open))
     if q and q.strip():
         conditions.append(MattermostMessage.message.ilike(_contains(q.strip()), escape="\\"))
     base = select(MattermostMessage).where(*conditions)
@@ -101,7 +115,7 @@ async def _counts_since(db: AsyncSession, ids: list[str], since: datetime) -> di
     """How many messages Holly holds from each channel posted after `since`."""
     result = await db.execute(
         select(MattermostMessage.channel_id, func.count())
-        .where(MattermostMessage.channel_id.in_(ids), MattermostMessage.posted_at > since)
+        .where(_any_of(ids), MattermostMessage.posted_at > since)
         .group_by(MattermostMessage.channel_id)
     )
     return {channel: int(count) for channel, count in result.all()}
@@ -124,7 +138,7 @@ async def _channel_reads(
                     func.count(),
                     func.max(MattermostMessage.posted_at),
                 )
-                .where(MattermostMessage.channel_id.in_(ids))
+                .where(_any_of(ids))
                 .group_by(MattermostMessage.channel_id)
             )
         ).all()
@@ -136,7 +150,7 @@ async def _channel_reads(
         await db.execute(
             select(MattermostMessage.channel_id, hour, func.count())
             .where(
-                MattermostMessage.channel_id.in_(ids),
+                _any_of(ids),
                 MattermostMessage.posted_at >= datetime.fromtimestamp(first_hour * _HOUR, tz=UTC),
             )
             .group_by(MattermostMessage.channel_id, hour)
@@ -161,7 +175,7 @@ async def _channel_reads(
                 accessible=row.accessible,
                 following=row.following,
                 is_new=not row.reviewed,
-                pulled=row.following and not row.closed and row.accessible,
+                pulled=is_pulled(row),
                 first_seen_at=row.first_seen_at,
                 last_seen_at=row.last_seen_at,
                 closed_at=row.closed_at,
@@ -176,6 +190,7 @@ async def _channel_reads(
 
 def _sweep_read() -> SweepRead:
     return SweepRead(
+        configured=configured(),
         last_at=SWEEP_STATE.last_at,
         ok=SWEEP_STATE.ok,
         problem=SWEEP_STATE.problem,

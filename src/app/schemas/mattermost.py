@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Literal, Self
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, StrictBool, model_validator
+from pydantic import BaseModel, ConfigDict, StrictBool, field_validator, model_validator
 
 
 class MattermostMessageRead(BaseModel):
@@ -58,6 +58,8 @@ class ChannelRead(BaseModel):
 
 
 class SweepRead(BaseModel):
+    # False when MATTERMOST_URL or MATTERMOST_BOT_TOKEN is unset: Holly then pulls nothing.
+    configured: bool
     last_at: datetime | None
     ok: bool | None
     problem: str | None
@@ -72,7 +74,16 @@ class ChannelsResponse(BaseModel):
 
 class ChannelUpdate(BaseModel):
     following: StrictBool | None = None
+    # Only the JSON value true: Literal[True] alone also takes 1, which equals True in Python.
     reviewed: Literal[True] | None = None
+
+    @field_validator("reviewed", mode="before")
+    @classmethod
+    def _only_true(cls, value: object) -> object:
+        if value is not None and value is not True:
+            msg = "reviewed can only be true"
+            raise ValueError(msg)
+        return value
 
     @model_validator(mode="after")
     def _something_to_change(self) -> Self:

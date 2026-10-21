@@ -102,7 +102,7 @@ Every setting Holly reads. Names are environment variable names. Secret values a
 |---------|---------|---------|----------|
 | `MATTERMOST_URL` | Mattermost server URL; Holly calls `/api/v4` under it. Must be https outside development. | empty | For chat |
 | `MATTERMOST_BOT_TOKEN` | The bot account's personal access token. Secret. | empty | For chat |
-| `MATTERMOST_CHANNEL_IDS` | A seed since V0.12: comma-separated channel ids. Holly finds the bot's channels itself on every cycle and pulls the followed open ones (ADR-015); those named here arrive already reviewed on the first sweep, and until a sweep has succeeded once, these are the channels pulled. | empty | No |
+| `MATTERMOST_CHANNEL_IDS` | A seed since V0.12: comma-separated channel ids. Holly finds the bot's channels itself on every cycle and pulls the followed open ones (ADR-015); while Holly holds no channel, these are the channels pulled, and they arrive already reviewed on the first sweep that finds any; one that sweep does not find is logged. The first sweep follows every channel the bot is in, not only these. | empty | No |
 | `MATTERMOST_INTERVAL_SECONDS` | How often Holly sweeps for the bot's channels and pulls new posts, at least 10 seconds. | `60` | No |
 | `MATTERMOST_PROMPT_WINDOW_HOURS` | How many hours of chat the assistant reads per evaluation; `0` sends none. | `6` | No |
 | `MATTERMOST_MAX_MESSAGES_IN_PROMPT` | Most chat messages per evaluation; `0` sends none. | `30` | No |

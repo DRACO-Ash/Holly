@@ -6,17 +6,24 @@ export type FeedScope =
   | { kind: "all" }
   | { kind: "chosen"; ids: readonly string[] };
 
-// The channel ids to ask for, or undefined for every channel. An empty list asks for none.
-export function scopeIds(
+// What the feed asks the server for: the channels picked, every channel, or the followed open
+// ones by the server's own follow list, so no list of ids grows past the 200 it accepts. Null
+// when the scope can hold no message.
+export interface ScopeQuery {
+  channel_id?: string[];
+  followed?: true;
+}
+
+export function scopeQuery(
   scope: FeedScope,
   channels: readonly MattermostChannel[],
-): string[] | undefined {
-  if (scope.kind === "all") return undefined;
-  if (scope.kind === "chosen") return [...scope.ids];
+): ScopeQuery | null {
+  if (scope.kind === "all") return {};
+  if (scope.kind === "chosen") return { channel_id: [...scope.ids] };
   // Before the first sweep Holly knows no channel and pulls those MATTERMOST_CHANNEL_IDS names:
   // every message it holds is from a channel it follows.
-  if (channels.length === 0) return undefined;
-  return channels.filter((c) => c.following && c.status === "open").map((c) => c.mm_channel_id);
+  if (channels.length === 0) return {};
+  return channels.some((c) => c.following && c.status === "open") ? { followed: true } : null;
 }
 
 // The scope after a channel is picked: added to those chosen, or taken out of them, back to the

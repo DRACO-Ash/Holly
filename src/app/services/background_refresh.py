@@ -7,15 +7,18 @@ Three independent asyncio tasks, each owning one external surface on its own cad
   refreshed. Only notices whose classification marking is cleared for the assistant are sent
   (services/disclosure.py), and each sending is written to the audit chain.
 ● maneuvers: every 10 minutes, a 48-hour window from UDL. Pull only.
-● mattermost: every 60 seconds from the configured chat channels. Pull only; the messages
-  reach the assistant's prompt at evaluation time.
+● mattermost: every 60 seconds (MATTERMOST_INTERVAL_SECONDS), a sweep of the channels the bot
+  can read, then a pull of the followed open ones (ADR-015). It writes to Mattermost nothing,
+  and the messages reach the assistant's prompt at evaluation time. A cycle that polled or
+  failed a channel, or changed the channel list, writes one audit row: up to 1,440 a day at
+  the default cadence while a channel is followed. Single-flight, like the notification cycle.
 
 Element-set auto-pulling was removed because operators were not using the data; the route,
 model and table remain for recoverability.
 
 Each loop opens its own session per phase, and logs and survives any failure, so a transient
-outage never kills it. The notification cycle is single-flight: a manual refresh during a
-running cycle joins it instead of starting a second.
+outage never kills it. The notification and Mattermost cycles are single-flight: a manual
+refresh during a running cycle joins it instead of starting a second.
 """
 
 import asyncio

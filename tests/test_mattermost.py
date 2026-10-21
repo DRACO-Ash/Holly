@@ -295,6 +295,8 @@ class TestTheClient:
         ("status", "body", "message"),
         [
             (200, "<html>Sign in</html>", "^Mattermost response was not valid JSON.$"),
+            # Nested deeper than the decoder can follow: RecursionError, not a crash.
+            (200, "[" * 100_000 + "]" * 100_000, "^Mattermost response was not valid JSON.$"),
             (200, [{"id": "chan-1"}], "^Mattermost response was not a JSON object"),
             (302, "Moved", "^Mattermost returned HTTP 302.$"),
         ],
@@ -311,12 +313,28 @@ class TestTheClient:
             async with mm_client(handler) as client:
                 await client.get_channel("chan-1")
 
+    async def test_a_listing_that_is_not_a_json_array_is_a_client_error(self) -> None:
+        def handler(_request: httpx2.Request) -> httpx2.Response:
+            return httpx2.Response(200, json={"id": "team-1"})
+
+        with pytest.raises(
+            MattermostClientError, match=r"^Mattermost response was not a JSON array"
+        ):
+            async with mm_client(handler) as client:
+                await client.get_my_teams()
+
     @pytest.mark.parametrize("identifier", ["../users/me", "chan-1/posts", "a?b=c", "", "x" * 65])
-    async def test_a_malformed_id_never_reaches_a_request_path(self, identifier: str) -> None:
+    @pytest.mark.parametrize(
+        "read", ["get_user", "get_channel", "get_my_team_channels", "get_channel_posts_since"]
+    )
+    async def test_a_malformed_id_never_reaches_a_request_path(
+        self, identifier: str, read: str
+    ) -> None:
         server = FakeMattermost({})
-        with pytest.raises(MattermostClientError, match="malformed"):
-            async with mm_client(server) as client:
-                await client.get_user(identifier)
+        args = (identifier, 0) if read.endswith("since") else (identifier,)
+        async with mm_client(server) as client:
+            with pytest.raises(MattermostClientError, match="malformed"):
+                await getattr(client, read)(*args)
         assert server.requests == []
 
     @pytest.mark.parametrize(("base_url", "bot_token"), [("", BOT_TOKEN), (BASE_URL, "")])
@@ -510,6 +528,9 @@ class TestTheIngest:
             "flag-time": {**post("flag-time"), "create_at": True},
             "far-future": {**post("far-future"), "create_at": 10**20},
             "number-text": {**post("number-text"), "message": 123},
+            # PostgreSQL stores no NUL, in the text or anywhere in the raw post.
+            "nul-text": {**post("nul-text"), "message": "a\x00b"},
+            "nul-raw": {**post("nul-raw"), "props": {"note": "\x00"}},
         }
         page = {"order": [*malformed, ["a", "list"], "post-1"], "posts": {**malformed}}
         page["posts"]["post-1"] = post("post-1")  # type: ignore[index]
@@ -522,7 +543,7 @@ class TestTheIngest:
         )
         session = FakeSession([scalar_result(None), inserted(1)])
         result = await run_ingest(session, channel_ids=["chan-1"])
-        assert result == MattermostIngestResult(channels_polled=1, pulled=8, inserted=1, skipped=7)
+        assert result == MattermostIngestResult(channels_polled=1, pulled=10, inserted=1, skipped=9)
         assert [row["mm_post_id"] for row in stored_rows(session)] == ["post-1"]
 
     @pytest.mark.parametrize("author", ["", "../users/me", None])
@@ -540,6 +561,21 @@ class TestTheIngest:
         [row] = stored_rows(session)
         assert (row["user_id"], row["user_display_name"]) == ("", None)
         assert not [path for path in server.paths() if "/users/" in path]
+
+    async def test_a_nickname_or_channel_name_holly_cannot_show_gives_way_to_the_next(
+        self, serve_mattermost: ServeMattermost
+    ) -> None:
+        serve_mattermost(
+            {
+                posts_path("chan-1"): posts_page(post("post-1")),
+                f"{API}/channels/chan-1": (200, {"display_name": "bad\u202e", "name": "ops"}),
+                f"{API}/users/user-1": (200, {"nickname": "bell\x07", "username": "analyst"}),
+            }
+        )
+        session = FakeSession([scalar_result(None), inserted(1)])
+        await run_ingest(session, channel_ids=["chan-1"])
+        [row] = stored_rows(session)
+        assert (row["channel_name"], row["user_display_name"]) == ("ops", "analyst")
 
     async def test_long_names_are_cut_to_fit_their_columns(
         self, serve_mattermost: ServeMattermost
@@ -885,7 +921,7 @@ class TestTheMessagesRoute:
         where = (
             "WHERE mattermost_message.user_id = 'user-1' "
             "AND mattermost_message.posted_at >= '2026-06-01 00:00:00+00:00' "
-            "AND mattermost_message.channel_id IN ('chan-1')"
+            "AND mattermost_message.channel_id = ANY (ARRAY['chan-1'])"
         )
         count, page = (sql(call.args[0]) for call in session.execute.await_args_list)
         assert where in count
@@ -920,4 +956,4 @@ class TestTheMessagesRoute:
         )
         assert response.status_code == 200
         page = sql(session.execute.await_args_list[1].args[0])
-        assert "WHERE mattermost_message.channel_id IN ('chan-1') ORDER BY" in page
+        assert "WHERE mattermost_message.channel_id = ANY (ARRAY['chan-1']) ORDER BY" in page

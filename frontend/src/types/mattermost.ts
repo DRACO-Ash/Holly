@@ -22,6 +22,8 @@ export interface MattermostMessagePage {
 export interface MattermostListQuery {
   // One channel or several; none means every channel.
   channel_id?: string | string[];
+  // Only the followed open channels, by the server's follow list.
+  followed?: boolean;
   user_id?: string;
   posted_at_gte?: string;
   // Text the message holds, in any case.
@@ -56,6 +58,8 @@ export interface MattermostChannel {
 }
 
 export interface MattermostSweep {
+  // False when Mattermost's address or the bot's token is not set: Holly pulls nothing.
+  configured: boolean;
   last_at: string | null;
   ok: boolean | null;
   problem: string | null;
