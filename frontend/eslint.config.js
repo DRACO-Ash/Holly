@@ -28,12 +28,18 @@ export default tseslint.config(
       "react-refresh/only-export-components": ["warn", { allowConstantExport: true }],
       // SonarQube rules the App Store gate counts, checked here so they never reach it:
       // S2004, no function nested more than 4 deep; S4138, for-of over an index loop;
-      // S6557, startsWith and endsWith over an anchored regular expression.
+      // S6557, startsWith and endsWith over an anchored regular expression; S7723, a built-in
+      // constructor called with new.
       "no-restricted-syntax": [
         "error",
         {
           selector: ":function :function :function :function :function",
           message: "Do not nest functions more than 4 levels deep (SonarQube S2004).",
+        },
+        {
+          selector:
+            "CallExpression[callee.type='Identifier'][callee.name=/^(Array|ArrayBuffer|DataView|Date|Error|EvalError|RangeError|ReferenceError|SyntaxError|TypeError|URIError|AggregateError|Function|Map|WeakMap|Set|WeakSet|Promise|RegExp|Proxy|WeakRef|FinalizationRegistry|SharedArrayBuffer|(Ui|I)nt(8|16|32)Array|Uint8ClampedArray|Float(32|64)Array|Big(Ui|I)nt64Array)$/]",
+          message: "Call a built-in constructor with new (SonarQube S7723).",
         },
       ],
       "@typescript-eslint/prefer-for-of": "error",

@@ -16,11 +16,11 @@ A fix for V0.12's failed upload: the App Store's Code Quality stage found 8 new 
 ### Fixed
 
 ● The Comms feed's and a channel's new-message checks no longer nest functions more than 4 levels deep (S2004): a shared `unseen` helper picks the messages not yet shown, and a channel's answer is handled in its own callback.
-● A help-page link is tested with `startsWith` (S6557), and the search highlighter fills its offsets without an index loop (S4138).
+● A help-page link is tested with `startsWith` (S6557), and the search highlighter fills its offsets with `Array.from` in place of an index loop (S4138, without S7723's `Array()` call missing `new`).
 
 ### Changed
 
-● The dashboard's lint now enforces S2004, S4138 and S6557, so these smells fail the verification loop before an upload.
+● The dashboard's lint now enforces S2004, S4138, S6557 and S7723, so these smells fail the verification loop before an upload.
 
 ## Holly V0.12 (2026-10-21)
 
