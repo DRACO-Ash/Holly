@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listMattermostMessages } from "../../api/mattermost";
 import type { MattermostChannel, MattermostMessage } from "../../types";
-import { channelLabel, closedReason, fullTime } from "../../utils/comms";
+import { alsoAsked, channelLabel, closedReason, fullTime } from "../../utils/comms";
 import { extractErrorMessage } from "../../utils/errors";
 import { FEED_POLL_MS } from "./CommsFeed";
 import FollowSwitch from "./FollowSwitch";
@@ -143,7 +143,7 @@ export default function ChannelConversation({
           } else {
             setBelow(arrived);
             setBelowMore(more);
-            setBelowCount(page.total - (page.items.length - arrived.length));
+            setBelowCount(page.total - alsoAsked(shown.current, newest));
           }
         })
         .catch(() => undefined);

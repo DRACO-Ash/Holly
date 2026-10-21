@@ -402,7 +402,15 @@ describe("the Comms console", () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     shown();
     await ready();
-    const before = vi.mocked(listChannels).mock.calls.length;
+    // Only once the first reads have settled, the one the last visit asks for among them, is the
+    // count taken: then a minute brings exactly one more.
+    let before = -1;
+    while (before !== vi.mocked(listChannels).mock.calls.length) {
+      before = vi.mocked(listChannels).mock.calls.length;
+      await act(async () => {
+        await Promise.resolve();
+      });
+    }
     await act(async () => {
       await vi.advanceTimersByTimeAsync(CHANNELS_POLL_MS);
     });

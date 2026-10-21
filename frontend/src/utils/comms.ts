@@ -205,3 +205,11 @@ export function saveLastSeen(userId: string, iso: string): void {
     // Remembered for this page only.
   }
 }
+
+// How many of the messages shown a poll from `newest` also counts: it asks from that time on,
+// that time included, so the newest shown, and any posted at the same moment, are in its total.
+export function alsoAsked(shown: readonly { posted_at: string }[], newest: string | undefined) {
+  if (!newest) return 0;
+  const from = Date.parse(newest);
+  return shown.filter((m) => Date.parse(m.posted_at) >= from).length;
+}
