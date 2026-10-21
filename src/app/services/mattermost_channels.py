@@ -23,6 +23,7 @@ this process, for the Comms page, never Mattermost's own words.
 """
 
 import logging
+import math
 import re
 import unicodedata
 from collections.abc import Iterable
@@ -123,13 +124,13 @@ _DROPPED = frozenset({"Cf", "Mn", "Me", "Cc", "Cn"})
 
 def _word_text(value: object) -> str:
     """A name as Mattermost sent it, read for the word CLOSED as a reader sees it: compatibility
-    forms folded (fullwidth and styled letters become plain ones, by NFKC), and every invisible,
-    combining or control character taken out, so none can split or hide the word; a space, a tab
-    or a line break still parts two words. A combining accent folds into its letter, which is
-    then another letter; one with no letter of its own, such as a diaeresis over the C, is dropped,
-    so it closes. A letter from
-    another script that only looks Latin, such as the Cyrillic Es, is not folded (SECURITY.md). A
-    name that is not text, which Mattermost never sends, reads as empty."""
+    forms folded (fullwidth and styled letters become plain ones, by NFKC), and every format,
+    combining, enclosing, control and unassigned character taken out, so none can split or hide
+    the word; a space, a tab or a line break still parts two words. A combining accent folds into
+    its letter where Unicode has one, which is then another letter, and is otherwise dropped, so
+    a diaeresis over the C closes. A letter from another script that only looks Latin, such as
+    the Cyrillic Es, is not folded (SECURITY.md). A name that is not text, which Mattermost never
+    sends, reads as empty."""
     if not isinstance(value, str):
         return ""
     folded = unicodedata.normalize("NFKC", value)
@@ -165,7 +166,7 @@ def found_channel(record: object, team_id: str, team_name: str | None) -> FoundC
     archived = (
         isinstance(delete_at, int | float)
         and not isinstance(delete_at, bool)
-        and not delete_at <= 0
+        and (delete_at > 0 or math.isnan(delete_at))
     )
     return FoundChannel(
         mm_channel_id=channel_id,

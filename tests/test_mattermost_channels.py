@@ -201,6 +201,8 @@ class TestAChannelRecord:
             "Op Falcon CLO\ufff0SED",
             "Op Falcon CLO\u2065SED",
             "Op Falcon C\u0308LOSED",
+            "Op Falcon CLO\u0332SED",
+            "Op Falcon CLO\u20ddSED",
             "Op Falcon CLO\U00016fe4SED",
             "Op Falcon \uff23\uff2c\uff2f\uff33\uff25\uff24",
             "Op Falcon \U0001d402\U0001d40b\U0001d40e\U0001d412\U0001d404\U0001d403",
@@ -242,7 +244,7 @@ class TestAChannelRecord:
         assert kept.closed is False
 
     @pytest.mark.parametrize("deleted", [1.5e12, 1, float("inf"), float("nan")])
-    def test_any_number_above_nothing_in_delete_at_archives_it(self, deleted: float) -> None:
+    def test_any_number_but_zero_or_below_in_delete_at_archives_it(self, deleted: float) -> None:
         kept = found_channel({**channel("chan-1", "op"), "delete_at": deleted}, "t", None)
         assert kept is not None
         assert (kept.archived, kept.closed) == (True, True)
