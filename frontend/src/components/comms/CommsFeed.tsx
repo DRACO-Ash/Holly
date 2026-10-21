@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { listMattermostMessages } from "../../api/mattermost";
 import type { MattermostChannel, MattermostMessage } from "../../types";
-import { alsoAsked, channelHue, channelHues, channelLabel } from "../../utils/comms";
+import { alsoAsked, channelHue, channelHues, channelLabel, unseen } from "../../utils/comms";
 import { extractErrorMessage } from "../../utils/errors";
 import ActivityLanes from "./ActivityLanes";
 import MessageList from "./MessageList";
@@ -99,9 +99,7 @@ export default function CommsFeed({
       })
         .then((page) => {
           if (cancelled) return;
-          const known = new Set(shown.current.map((m) => m.id));
-          const fresh = page.items.filter((m) => !known.has(m.id));
-          setWaiting(fresh);
+          setWaiting(unseen(page.items, shown.current));
           setArrived({
             count: page.total - alsoAsked(shown.current, newest),
             more: page.total > page.items.length,

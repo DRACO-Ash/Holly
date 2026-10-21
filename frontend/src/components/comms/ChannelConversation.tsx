@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listMattermostMessages } from "../../api/mattermost";
 import type { MattermostChannel, MattermostMessage } from "../../types";
-import { alsoAsked, channelLabel, closedReason, fullTime } from "../../utils/comms";
+import { alsoAsked, channelLabel, closedReason, fullTime, unseen } from "../../utils/comms";
 import { extractErrorMessage } from "../../utils/errors";
 import { FEED_POLL_MS } from "./CommsFeed";
 import FollowSwitch from "./FollowSwitch";
@@ -117,6 +117,32 @@ export default function ChannelConversation({
     setTotal(page.total);
   }, [channelId]);
 
+  // A poll's answer: messages that joined at the bottom are shown if the reader is there,
+  // else held below with their count.
+  const arrive = useCallback(
+    async (
+      items: MattermostMessage[],
+      total: number,
+      more: boolean,
+      newest: string | undefined,
+    ) => {
+      const arrived = unseen(items, shown.current);
+      if (arrived.length === 0) return;
+      const box = scroller.current;
+      if (box && atBottom(box)) {
+        if (more) return await latest();
+        stick.current = true;
+        setMessages((current) => [...current, ...arrived]);
+        setTotal((count) => count + arrived.length);
+      } else {
+        setBelow(arrived);
+        setBelowMore(more);
+        setBelowCount(total - alsoAsked(shown.current, newest));
+      }
+    },
+    [latest],
+  );
+
   useEffect(() => {
     // A poll answered after the channel changed, or after it closed, changes nothing.
     let cancelled = false;
@@ -130,21 +156,8 @@ export default function ChannelConversation({
       })
         .then(async (page) => {
           if (cancelled) return;
-          const known = new Set(shown.current.map((m) => m.id));
-          const arrived = [...page.items].reverse().filter((m) => !known.has(m.id));
-          if (arrived.length === 0) return;
           const more = page.total > page.items.length;
-          const box = scroller.current;
-          if (box && atBottom(box)) {
-            if (more) return await latest();
-            stick.current = true;
-            setMessages((current) => [...current, ...arrived]);
-            setTotal((count) => count + arrived.length);
-          } else {
-            setBelow(arrived);
-            setBelowMore(more);
-            setBelowCount(page.total - alsoAsked(shown.current, newest));
-          }
+          await arrive([...page.items].reverse(), page.total, more, newest);
         })
         .catch(() => undefined);
     }, FEED_POLL_MS);
@@ -152,7 +165,7 @@ export default function ChannelConversation({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [channelId, latest]);
+  }, [channelId, arrive]);
 
   async function showBelow() {
     const more = belowMore;

@@ -28,7 +28,7 @@ function link(href: string, children: ReactNode, key: string): ReactNode {
       </Link>
     );
   }
-  if (/^https:\/\//.test(href)) {
+  if (href.startsWith("https://")) {
     return (
       <a key={key} href={href} target="_blank" rel="noopener noreferrer">
         {children}

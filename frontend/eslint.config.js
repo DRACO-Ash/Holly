@@ -25,6 +25,25 @@ export default tseslint.config(
       "react-hooks/rules-of-hooks": "error",
       "react-hooks/exhaustive-deps": "warn",
       "react-refresh/only-export-components": ["warn", { allowConstantExport: true }],
+      // SonarQube rules the App Store gate counts, checked here so they never reach it:
+      // S2004, no function nested more than 4 deep; S4138, for-of over an index loop;
+      // S6557, startsWith and endsWith over an anchored regular expression.
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: ":function :function :function :function :function",
+          message: "Do not nest functions more than 4 levels deep (SonarQube S2004).",
+        },
+      ],
+      "@typescript-eslint/prefer-for-of": "error",
+      "@typescript-eslint/prefer-string-starts-ends-with": "error",
+    },
+  },
+  {
+    // The type-aware rule above reads the TypeScript project.
+    files: ["src/**/*.{ts,tsx}"],
+    languageOptions: {
+      parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname },
     },
   },
   {
