@@ -20,27 +20,69 @@ export type Block =
   | { kind: "quote"; blocks: Block[] }
   | { kind: "code"; text: string };
 
-// One inline mark: code, bold, italic or a link, in that order of precedence.
-const INLINE = /`([^`]+)`|\*\*(.+?)\*\*|\*([^*\s][^*]*?)\*|\[([^\]]+)\]\(([^)\s]+)\)/;
+// One inline mark at `at`, and where it ends, or null when none starts there. Each is found with
+// indexOf, never with a backtracking pattern: code, then bold, italic and a link.
+type Mark = { part: Inline; end: number } | null;
+
+function codeAt(text: string, at: number): Mark {
+  const close = text.indexOf("`", at + 1);
+  if (close <= at + 1) return null;
+  return { part: { kind: "code", text: text.slice(at + 1, close) }, end: close + 1 };
+}
+
+function strongAt(text: string, at: number): Mark {
+  const close = text.indexOf("**", at + 3);
+  if (close === -1) return null;
+  return {
+    part: { kind: "strong", children: parseInline(text.slice(at + 2, close)) },
+    end: close + 2,
+  };
+}
+
+function emAt(text: string, at: number): Mark {
+  const first = text[at + 1];
+  if (first === undefined || first === "*" || /\s/.test(first)) return null;
+  const close = text.indexOf("*", at + 2);
+  if (close === -1) return null;
+  return { part: { kind: "em", children: parseInline(text.slice(at + 1, close)) }, end: close + 1 };
+}
+
+function linkAt(text: string, at: number): Mark {
+  const middle = text.indexOf("](", at + 2);
+  if (middle === -1 || text.slice(at + 1, middle).includes("]")) return null;
+  const close = text.indexOf(")", middle + 2);
+  const href = close === -1 ? "" : text.slice(middle + 2, close);
+  if (!href || /\s/.test(href)) return null;
+  const children = parseInline(text.slice(at + 1, middle));
+  return { part: { kind: "link", href, children }, end: close + 1 };
+}
+
+function markAt(text: string, at: number): Mark {
+  const char = text[at];
+  if (char === "`") return codeAt(text, at);
+  if (char === "[") return linkAt(text, at);
+  if (char !== "*") return null;
+  return text[at + 1] === "*" ? strongAt(text, at) : emAt(text, at);
+}
 
 export function parseInline(text: string): Inline[] {
   const out: Inline[] = [];
-  let rest = text;
-  for (let match = INLINE.exec(rest); match; match = INLINE.exec(rest)) {
-    if (match.index > 0) out.push({ kind: "text", text: rest.slice(0, match.index) });
-    out.push(inlineMark(match));
-    rest = rest.slice(match.index + match[0].length);
+  let plain = "";
+  let at = 0;
+  while (at < text.length) {
+    const mark = markAt(text, at);
+    if (mark) {
+      if (plain) out.push({ kind: "text", text: plain });
+      plain = "";
+      out.push(mark.part);
+      at = mark.end;
+    } else {
+      plain += text[at];
+      at += 1;
+    }
   }
-  if (rest) out.push({ kind: "text", text: rest });
+  if (plain) out.push({ kind: "text", text: plain });
   return out;
-}
-
-function inlineMark(match: RegExpExecArray): Inline {
-  const [, code, strong, em, label, href] = match;
-  if (code !== undefined) return { kind: "code", text: code };
-  if (strong !== undefined) return { kind: "strong", children: parseInline(strong) };
-  if (em !== undefined) return { kind: "em", children: parseInline(em) };
-  return { kind: "link", href: href ?? "", children: parseInline(label ?? "") };
 }
 
 // The words of an inline run, marks dropped: for headings' ids and the contents list.

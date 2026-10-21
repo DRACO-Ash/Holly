@@ -88,6 +88,8 @@ def found(channel_id: str, name: str, **fields: Any) -> FoundChannel:
         "archived": False,
         **fields,
     }
+    # As found_channel decides it, from the names it was sent.
+    values.setdefault("closed", is_closed(name, values["display_name"], values["archived"]))
     return FoundChannel(mm_channel_id=channel_id, name=name, **values)
 
 
@@ -180,6 +182,50 @@ class TestAChannelRecord:
         kept = found_channel({**channel("chan-2", "op"), "delete_at": True}, "t", None)
         assert kept is not None
         assert kept.archived is False
+
+    @pytest.mark.parametrize(
+        "display",
+        [
+            "CLOSED \U0001f469\u200d\U0001f4bb dev",
+            "CLOSED\tOp Falcon",
+            "Op Falcon\u200b CLOSED",
+            "Op Falcon CLO\u200bSED",
+            "Op Falcon \u202eCLOSED",
+            "Op Falcon " + "x" * 300 + " CLOSED",
+        ],
+    )
+    def test_closed_in_a_display_name_holly_cannot_show_still_closes_it(self, display: str) -> None:
+        kept = found_channel({**channel("chan-1", "op-falcon"), "display_name": display}, "t", None)
+        assert kept is not None
+        assert kept.closed is True
+
+    def test_a_name_without_the_word_stays_open_whatever_it_holds(self) -> None:
+        kept = found_channel(
+            {
+                **channel("chan-1", "op-falcon"),
+                "display_name": "Disclosed\u200b \U0001f469\u200d\U0001f4bb",
+            },
+            "t",
+            None,
+        )
+        assert kept is not None
+        assert kept.closed is False
+
+    @pytest.mark.parametrize("deleted", [1.5e12, 1, float("inf")])
+    def test_any_number_above_nothing_in_delete_at_archives_it(self, deleted: float) -> None:
+        kept = found_channel({**channel("chan-1", "op"), "delete_at": deleted}, "t", None)
+        assert kept is not None
+        assert (kept.archived, kept.closed) == (True, True)
+
+    async def test_a_known_channel_renamed_closed_in_a_way_holly_cannot_show_closes(
+        self,
+    ) -> None:
+        row = stored("chan-1", "ops")
+        raw = {**channel("chan-1", "ops"), "display_name": "CLOSED\tOps"}
+        swept = found_channel(raw, "team-1", "Team One")
+        assert swept is not None
+        result = await record_sweep(db(FakeSession([rows_result([row])])), [swept], NOW)
+        assert (row.closed, result.closed, row.display_name) == (True, 1, None)
 
     def test_long_names_are_cut_and_a_bad_display_name_is_dropped(self) -> None:
         kept = found_channel({**channel("chan-1", "n" * 300), "display_name": "bad\x07"}, "t", None)
@@ -495,6 +541,26 @@ async def test_a_sweep_that_only_lost_a_channel_is_audited(
     await mattermost_ingest.ingest_mattermost_messages(db(session))
     [call] = audit.await_args_list
     assert call.kwargs["detail"]["sweep"]["lost"] == 1
+    assert session.commit.await_count == 2
+
+
+async def test_a_sweep_that_only_skipped_a_record_is_audited(
+    monkeypatch: pytest.MonkeyPatch, settings_env: SettingsEnv
+) -> None:
+    known = stored("chan-1", "o-closed", closed=True, closed_at=NOW)
+    server = FakeMattermost(
+        team_routes(("team-1", "Team One", [channel("chan-1", "o-closed"), {"id": "x"}]))
+    )
+    settings_env(MATTERMOST_URL=BASE_URL, MATTERMOST_BOT_TOKEN=BOT_TOKEN)
+    bound = partial(MattermostClient, transport=httpx2.MockTransport(server))
+    monkeypatch.setattr(mattermost_ingest, "MattermostClient", bound)
+    audit = AsyncMock()
+    monkeypatch.setattr(mattermost_ingest, "write_audit", audit)
+    session = FakeSession([rows_result([known]), rows_result([known])])
+    result = await mattermost_ingest.ingest_mattermost_messages(db(session))
+    assert result.channels_polled == 0
+    [call] = audit.await_args_list
+    assert call.kwargs["detail"]["sweep"]["skipped"] == 1
     assert session.commit.await_count == 2
 
 

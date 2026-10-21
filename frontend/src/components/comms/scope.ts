@@ -28,8 +28,12 @@ export function scopeQuery(
 
 // The scope after a channel is picked: added to those chosen, or taken out of them, back to the
 // followed channels when none is left.
+// At most MAX_PICKED, the most channels the server takes in one ask: a pick past it is ignored.
+export const MAX_PICKED = 200;
+
 export function toggled(scope: FeedScope, channelId: string): FeedScope {
   const ids = scope.kind === "chosen" ? scope.ids : [];
+  if (!ids.includes(channelId) && ids.length >= MAX_PICKED) return scope;
   const next = ids.includes(channelId) ? ids.filter((id) => id !== channelId) : [...ids, channelId];
   return next.length ? { kind: "chosen", ids: next } : { kind: "following" };
 }

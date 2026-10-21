@@ -9,7 +9,7 @@ import ActivityTrace from "./ActivityTrace";
 import ChannelSwitchboard from "./ChannelSwitchboard";
 import FollowSwitch from "./FollowSwitch";
 import MessageList from "./MessageList";
-import { scopeQuery, toggled } from "./scope";
+import { type FeedScope, MAX_PICKED, scopeQuery, toggled } from "./scope";
 import SweepStrip from "./SweepStrip";
 
 const NOW = new Date("2026-01-02T04:00:00Z");
@@ -518,6 +518,13 @@ describe("the feed's scope", () => {
 
   it("asks for everything before the first sweep, when Holly knows no channel", () => {
     expect(scopeQuery({ kind: "following" }, [])).toEqual({});
+  });
+
+  it("takes at most the 200 channels the server reads in one ask, and still takes one out", () => {
+    const ids = Array.from({ length: MAX_PICKED }, (_, n) => `c${n}`);
+    const full: FeedScope = { kind: "chosen", ids };
+    expect(toggled(full, "one-more")).toBe(full);
+    expect(toggled(full, "c0")).toEqual({ kind: "chosen", ids: ids.slice(1) });
   });
 
   it("adds a channel picked, takes one picked again out, and widens when none is left", () => {

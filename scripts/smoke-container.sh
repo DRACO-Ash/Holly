@@ -251,6 +251,13 @@ code="$(curl -s -o /dev/null -w '%{http_code}' -H "X-Holly-Token: $access" "$bas
 [ "$code" = 200 ] || fail "the admin's token in X-Holly-Token was refused ($code)"
 code="$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $access" "$base/api/v1/auth/me")"
 [ "$code" = 401 ] || fail "a token in Authorization answered $code, not 401: Holly reads X-Holly-Token alone"
+# The image carries both manuals the Help page serves (services/manuals.py), read from the image.
+for manual in training operator; do
+  shown="$(curl -s -w '\n%{http_code}' -H "X-Holly-Token: $access" "$base/api/v1/manuals/$manual")"
+  [ "$(printf '%s\n' "$shown" | tail -n 1)" = 200 ] || fail "the $manual manual is not served from the image"
+  printf '%s\n' "$shown" | grep -q '"markdown":"\*\*BLUESTAQ LIMITED\*\*' \
+    || fail "the $manual manual served is not the manual"
+done
 if docker logs "$cid" 2>&1 | grep -qF "$ADMIN_SECRET"; then fail "the admin password reached the log"; fi
 cid="$(run_holly "" "$WRITABLE" -e ADMIN_USERNAME=someone-else -e "ADMIN_PASSWORD=$(random_hex 16)")"
 CIDS="$CIDS $cid"

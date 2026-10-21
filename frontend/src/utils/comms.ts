@@ -152,7 +152,8 @@ export function sweepSummary(result: MattermostSweepResult): string {
     result.reopened > 0 && `${result.reopened} reopened`,
     result.lost > 0 && `${result.lost} the bot can no longer read`,
   ].filter(Boolean);
-  const found = `Found ${plural(result.found, "channel")}${changes.length ? `: ${changes.join(", ")}` : ""}.`;
+  const what = changes.length ? `: ${changes.join(", ")}` : "";
+  const found = `Found ${plural(result.found, "channel")}${what}.`;
   const pulled = `Pulled ${plural(result.inserted, "new message")} from ${plural(result.channels_polled, "channel")}`;
   const failed = result.channels_failed > 0 ? `; ${result.channels_failed} could not be read` : "";
   return `${found} ${pulled}${failed}.`;

@@ -98,7 +98,8 @@ export default function HelpPage() {
         </div>
         <div className="help-actions">
           {manuals && manuals.length > 1 && (
-            <div className="segmented" role="group" aria-label="Manual">
+            <fieldset className="segmented">
+              <legend className="visually-hidden">Manual</legend>
               {manuals.map((m) => (
                 <button
                   key={m.slug}
@@ -109,7 +110,7 @@ export default function HelpPage() {
                   {m.title}
                 </button>
               ))}
-            </div>
+            </fieldset>
           )}
           <button type="button" onClick={() => window.print()} disabled={!manual}>
             Print or save as PDF

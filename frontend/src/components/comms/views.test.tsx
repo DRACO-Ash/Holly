@@ -224,6 +224,112 @@ describe("CommsFeed", () => {
     });
     expect(calls()).toHaveLength(asked);
   });
+
+  function many(count: number, from: number) {
+    return Array.from({ length: count }, (_, n) =>
+      aChatMessage({
+        id: `m${from + n}`,
+        channel_id: "ops",
+        message: `Message ${from + n}`,
+        posted_at: new Date(Date.UTC(2026, 0, 2, 3, 0, 0) + (from + n) * 1000).toISOString(),
+      }),
+    ).reverse();
+  }
+
+  it("reloads the latest page when more arrived than one poll holds, so none is skipped", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const shown = aChatMessage({ id: "a", channel_id: "ops", message: "Shown" });
+    vi.mocked(listMattermostMessages)
+      .mockResolvedValueOnce(pageOf([shown]))
+      .mockResolvedValueOnce(pageOf(many(50, 12), 61))
+      .mockResolvedValueOnce(pageOf(many(50, 12), 62));
+    feed();
+    expect(await screen.findByText("Shown")).toBeTruthy();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(FEED_POLL_MS);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Show 61 new messages" }));
+    expect(await screen.findByText("50 of 62 messages")).toBeTruthy();
+    // The reload asks for the latest page itself, not for what came after the newest shown.
+    expect(latest(calls())).toEqual({ followed: true, q: undefined, limit: 50, offset: 0 });
+    expect(screen.queryByText("Shown")).toBeNull();
+    expect((screen.getByRole("button", { name: "Load older" }) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+  });
+
+  it("shows the answer to the latest ask, whatever order the answers come in", async () => {
+    let slow: (page: MattermostMessagePage) => void = () => undefined;
+    vi.mocked(listMattermostMessages)
+      .mockImplementationOnce(() => new Promise((resolve) => (slow = resolve)))
+      .mockResolvedValueOnce(
+        pageOf([aChatMessage({ id: "n", channel_id: "ops", message: "Newer" })]),
+      );
+    const onScope = vi.fn();
+    const { rerender } = render(
+      <CommsFeed
+        channels={[ops]}
+        scope={{ kind: "following" }}
+        onScope={onScope}
+        lastSeen={null}
+        now={NOW}
+      />,
+    );
+    rerender(
+      <CommsFeed
+        channels={[ops]}
+        scope={{ kind: "all" }}
+        onScope={onScope}
+        lastSeen={null}
+        now={NOW}
+      />,
+    );
+    expect(await screen.findByText("Newer")).toBeTruthy();
+    await act(async () => {
+      slow(pageOf([aChatMessage({ id: "o", channel_id: "ops", message: "Older ask" })]));
+      await Promise.resolve();
+    });
+    expect(screen.queryByText("Older ask")).toBeNull();
+    expect(screen.getByText("Newer")).toBeTruthy();
+  });
+
+  it("drops older messages answered after the scope changed", async () => {
+    let slow: (page: MattermostMessagePage) => void = () => undefined;
+    vi.mocked(listMattermostMessages)
+      .mockResolvedValueOnce(
+        pageOf([aChatMessage({ id: "f", channel_id: "ops", message: "First" })], 2),
+      )
+      .mockImplementationOnce(() => new Promise((resolve) => (slow = resolve)))
+      .mockResolvedValueOnce(
+        pageOf([aChatMessage({ id: "e", channel_id: "ops", message: "Everything" })]),
+      );
+    const onScope = vi.fn();
+    const { rerender } = render(
+      <CommsFeed
+        channels={[ops]}
+        scope={{ kind: "following" }}
+        onScope={onScope}
+        lastSeen={null}
+        now={NOW}
+      />,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Load older" }));
+    rerender(
+      <CommsFeed
+        channels={[ops]}
+        scope={{ kind: "all" }}
+        onScope={onScope}
+        lastSeen={null}
+        now={NOW}
+      />,
+    );
+    expect(await screen.findByText("Everything")).toBeTruthy();
+    await act(async () => {
+      slow(pageOf([aChatMessage({ id: "x", channel_id: "ops", message: "Stale older" })], 2));
+      await Promise.resolve();
+    });
+    expect(screen.queryByText("Stale older")).toBeNull();
+  });
 });
 
 describe("ChannelConversation", () => {
@@ -302,6 +408,94 @@ describe("ChannelConversation", () => {
       await vi.advanceTimersByTimeAsync(FEED_POLL_MS);
     });
     expect(screen.queryByRole("button", { name: /new message/ })).toBeNull();
+  });
+
+  it("reloads the latest page when more arrived than one poll holds, at the bottom or below", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const burst = Array.from({ length: 50 }, (_, n) =>
+      aChatMessage({
+        id: `b${n}`,
+        message: `Burst ${n}`,
+        posted_at: `2026-01-02T03:${String(10 + n).padStart(2, "0")}:00Z`,
+      }),
+    ).reverse();
+    vi.mocked(listMattermostMessages)
+      .mockResolvedValueOnce(pageOf([first]))
+      .mockResolvedValueOnce(pageOf(burst, 70))
+      .mockResolvedValueOnce(pageOf(burst, 71));
+    conversation();
+    expect(await screen.findByText("First")).toBeTruthy();
+    // At the bottom: the latest page at once.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(FEED_POLL_MS);
+    });
+    await waitFor(() => expect(screen.queryByText("First")).toBeNull());
+    expect(calls()[2]).toEqual({ channel_id: "ops", limit: 50, offset: 0 });
+    // Scrolled up: offered, then the latest page on request.
+    scrolledUp();
+    vi.mocked(listMattermostMessages).mockResolvedValueOnce(
+      pageOf(
+        [
+          aChatMessage({ id: "z", message: "Far newer", posted_at: "2026-01-02T03:59:59Z" }),
+          ...burst,
+        ],
+        90,
+      ),
+    );
+    vi.mocked(listMattermostMessages).mockResolvedValueOnce(pageOf(burst, 91));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(FEED_POLL_MS);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "40 new messages below" }));
+    await waitFor(() =>
+      expect(latest(calls())).toEqual({ channel_id: "ops", limit: 50, offset: 0 }),
+    );
+  });
+
+  it("drops the answer for a channel no longer shown", async () => {
+    let slow: (page: MattermostMessagePage) => void = () => undefined;
+    vi.mocked(listMattermostMessages)
+      .mockImplementationOnce(() => new Promise((resolve) => (slow = resolve)))
+      .mockResolvedValueOnce(pageOf([aChatMessage({ id: "i", message: "Idle's own" })]));
+    const props = {
+      channels: [ops, idle],
+      busy: false,
+      onFollow: vi.fn(),
+      lastSeen: null,
+      now: NOW,
+    };
+    const { rerender } = render(<ChannelConversation channel={ops} {...props} />);
+    rerender(<ChannelConversation channel={idle} {...props} />);
+    expect(await screen.findByText("Idle's own")).toBeTruthy();
+    await act(async () => {
+      slow(pageOf([aChatMessage({ id: "o", message: "Ops, late" })]));
+      await Promise.resolve();
+    });
+    expect(screen.queryByText("Ops, late")).toBeNull();
+  });
+
+  it("stops polling once closed, and drops an answer that lands after", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let slow: (page: MattermostMessagePage) => void = () => undefined;
+    vi.mocked(listMattermostMessages)
+      .mockImplementationOnce(() => new Promise((resolve) => (slow = resolve)))
+      .mockResolvedValue(pageOf([]));
+    const { unmount } = render(
+      <ChannelConversation
+        channel={ops}
+        channels={[ops]}
+        busy={false}
+        onFollow={vi.fn()}
+        lastSeen={null}
+        now={NOW}
+      />,
+    );
+    unmount();
+    await act(async () => {
+      slow(pageOf([first]));
+      await vi.advanceTimersByTimeAsync(FEED_POLL_MS * 2);
+    });
+    expect(calls()).toHaveLength(1);
   });
 
   it("counts several messages waiting below, and polls from nothing in an empty channel", async () => {

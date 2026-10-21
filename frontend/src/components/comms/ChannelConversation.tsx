@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { listMattermostMessages } from "../../api/mattermost";
 import type { MattermostChannel, MattermostMessage } from "../../types";
 import { channelLabel, closedReason, fullTime } from "../../utils/comms";
@@ -61,6 +61,10 @@ export default function ChannelConversation({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [below, setBelow] = useState<MattermostMessage[]>([]);
+  // More arrived than one poll's page holds: showing them reloads the latest page instead, so
+  // none is skipped.
+  const [belowMore, setBelowMore] = useState(false);
+  const [belowCount, setBelowCount] = useState(0);
   const scroller = useRef<HTMLDivElement | null>(null);
   const shown = useRef<MattermostMessage[]>([]);
   shown.current = messages;
@@ -106,7 +110,16 @@ export default function ChannelConversation({
     stick.current = false;
   }, [messages]);
 
+  const latest = useCallback(async () => {
+    const page = await listMattermostMessages({ channel_id: channelId, limit: PAGE, offset: 0 });
+    stick.current = true;
+    setMessages([...page.items].reverse());
+    setTotal(page.total);
+  }, [channelId]);
+
   useEffect(() => {
+    // A poll answered after the channel changed, or after it closed, changes nothing.
+    let cancelled = false;
     const timer = window.setInterval(() => {
       const newest = shown.current[shown.current.length - 1]?.posted_at;
       listMattermostMessages({
@@ -115,32 +128,50 @@ export default function ChannelConversation({
         offset: 0,
         ...(newest ? { posted_at_gte: newest } : {}),
       })
-        .then((page) => {
+        .then(async (page) => {
+          if (cancelled) return;
           const known = new Set(shown.current.map((m) => m.id));
           const arrived = [...page.items].reverse().filter((m) => !known.has(m.id));
           if (arrived.length === 0) return;
+          const more = page.total > page.items.length;
           const box = scroller.current;
           if (box && atBottom(box)) {
+            if (more) return await latest();
             stick.current = true;
             setMessages((current) => [...current, ...arrived]);
             setTotal((count) => count + arrived.length);
           } else {
             setBelow(arrived);
+            setBelowMore(more);
+            setBelowCount(page.total - (page.items.length - arrived.length));
           }
         })
         .catch(() => undefined);
     }, FEED_POLL_MS);
-    return () => window.clearInterval(timer);
-  }, [channelId]);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [channelId, latest]);
 
-  function showBelow() {
+  async function showBelow() {
+    const more = belowMore;
+    setBelow([]);
+    setBelowMore(false);
+    if (more) {
+      try {
+        await latest();
+      } catch (err) {
+        setError(extractErrorMessage(err, "Failed to load this channel."));
+      }
+      return;
+    }
     stick.current = true;
     setMessages((current) => {
       const known = new Set(current.map((m) => m.id));
       return [...current, ...below.filter((m) => !known.has(m.id))];
     });
     setTotal((count) => count + below.length);
-    setBelow([]);
   }
 
   async function loadEarlier() {
@@ -217,8 +248,8 @@ export default function ChannelConversation({
         />
         <output className="conversation-status">
           {below.length > 0 && (
-            <button type="button" className="feed-waiting" onClick={showBelow}>
-              {below.length} new message{below.length === 1 ? "" : "s"} below
+            <button type="button" className="feed-waiting" onClick={() => void showBelow()}>
+              {belowCount} new message{belowCount === 1 ? "" : "s"} below
             </button>
           )}
         </output>

@@ -246,7 +246,11 @@ def _audit_detail(tally: MattermostIngestResult) -> dict[str, Any]:
 
 
 def _changed(sweep: SweepResult | None) -> bool:
-    return sweep is not None and bool(sweep.new or sweep.closed or sweep.reopened or sweep.lost)
+    """Whether the sweep is worth an audit row of its own: it changed the channel list, or it
+    skipped a record it could not read."""
+    if sweep is None:
+        return False
+    return bool(sweep.new or sweep.closed or sweep.reopened or sweep.lost or sweep.skipped)
 
 
 async def ingest_mattermost_messages(
@@ -289,6 +293,5 @@ async def ingest_mattermost_messages(
             ip_address=ip_address,
             detail=_audit_detail(tally),
         )
-    if audited:
         await db.commit()
     return tally

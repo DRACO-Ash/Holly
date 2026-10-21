@@ -379,6 +379,25 @@ describe("the Comms console", () => {
     expect((await screen.findByRole("alert")).textContent).toBe("Too many requests.");
   });
 
+  it("keeps the latest read of the channels when an earlier one answers late", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let slow: (value: MattermostChannels) => void = () => undefined;
+    vi.mocked(listChannels)
+      .mockImplementationOnce(() => new Promise((resolve) => (slow = resolve)))
+      .mockResolvedValue(channelsOf([ops]));
+    shown();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CHANNELS_POLL_MS);
+    });
+    expect(await screen.findByRole("button", { name: "Ops" })).toBeTruthy();
+    await act(async () => {
+      slow(channelsOf([shut]));
+      await Promise.resolve();
+    });
+    expect(screen.queryByRole("button", { name: "Shut" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Ops" })).toBeTruthy();
+  });
+
   it("reads the channels again every minute", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     shown();

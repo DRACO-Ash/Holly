@@ -13,6 +13,16 @@ import {
 
 // Messages under a heading for each day, with a marker where those posted since the last visit
 // begin, and any search match marked. The feed lists newest first; a conversation, oldest first.
+// Each part with where it starts in the message: its identity, since the parts never reorder.
+function placed(parts: { text: string; match: boolean }[]) {
+  let start = 0;
+  return parts.map((part) => {
+    const at = start;
+    start += part.text.length;
+    return { ...part, start: at };
+  });
+}
+
 export default function MessageList({
   messages,
   channels,
@@ -73,12 +83,11 @@ export default function MessageList({
                 </time>
               </div>
               <p className="comms-body">
-                {matchParts(m.message, search).map((part, at) =>
+                {placed(matchParts(m.message, search)).map((part) =>
                   part.match ? (
-                    // A part's place in the message is its identity: the parts never reorder.
-                    <mark key={at}>{part.text}</mark>
+                    <mark key={part.start}>{part.text}</mark>
                   ) : (
-                    <Fragment key={at}>{part.text}</Fragment>
+                    <Fragment key={part.start}>{part.text}</Fragment>
                   ),
                 )}
               </p>

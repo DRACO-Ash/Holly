@@ -6,6 +6,11 @@
 export const TRACE_HOURS = 24;
 const HEIGHT = 16;
 
+// Each hour's count with its hour, the bar's identity: a bar never moves to another hour.
+function bars(counts: readonly number[]) {
+  return counts.map((count, hour) => ({ count, hour }));
+}
+
 export default function ActivityTrace({
   counts,
   hue,
@@ -37,12 +42,11 @@ export default function ActivityTrace({
       preserveAspectRatio={stretch ? "none" : undefined}
       {...named}
     >
-      {counts.map((count, hour) => {
+      {bars(counts).map(({ count, hour }) => {
         const height = count === 0 ? 1 : Math.max(2, Math.round((count / scale) * HEIGHT));
         const current = hour === counts.length - 1 ? " trace-now" : "";
         return (
           <rect
-            // The hour's position is its identity: a bar never moves to another hour.
             key={hour}
             x={hour * step}
             y={HEIGHT - height}

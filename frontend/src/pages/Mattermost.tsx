@@ -65,13 +65,21 @@ export default function MattermostPage() {
   const noticeRef = useRef<HTMLOutputElement | null>(null);
   const stageRef = useRef<HTMLElement | null>(null);
 
+  // Each read is numbered, and only the latest one asked for may land: an answer to an earlier
+  // read, for an earlier last visit say, arriving late changes nothing.
+  const reads = useRef(0);
   const refresh = useCallback(async () => {
+    const read = ++reads.current;
     try {
-      setData(await listChannels(lastSeen ?? undefined));
+      const channels = await listChannels(lastSeen ?? undefined);
+      if (read !== reads.current) return;
+      setData(channels);
       setNow(new Date());
       setLoadError(null);
     } catch (err) {
-      setLoadError(extractErrorMessage(err, "Failed to load the channels."));
+      if (read === reads.current) {
+        setLoadError(extractErrorMessage(err, "Failed to load the channels."));
+      }
     }
   }, [lastSeen]);
 
@@ -192,7 +200,8 @@ export default function MattermostPage() {
             evaluates each NOTSO.
           </p>
         </div>
-        <div className="segmented" role="group" aria-label="Layout">
+        <fieldset className="segmented">
+          <legend className="visually-hidden">Layout</legend>
           <button type="button" aria-pressed={view === "feed"} onClick={() => choose("feed")}>
             Feed
           </button>
@@ -203,7 +212,7 @@ export default function MattermostPage() {
           >
             Channels
           </button>
-        </div>
+        </fieldset>
       </header>
 
       {data && (

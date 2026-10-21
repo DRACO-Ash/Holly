@@ -1895,6 +1895,13 @@ button:disabled {
   overflow: hidden;
 }
 
+/* A fieldset, its legend hidden: the group's name, without the browser's own frame. */
+fieldset.segmented {
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
 .segmented button {
   background: transparent;
   color: var(--color-text-muted);

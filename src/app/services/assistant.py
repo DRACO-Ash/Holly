@@ -14,7 +14,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from pydantic import ValidationError
-from sqlalchemy import or_, select
+from sqlalchemy import ColumnElement, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -23,6 +23,7 @@ from app.db.session import get_session_factory
 from app.db.storable import json_problem
 from app.models.assistant_evaluation import AssistantEvaluation
 from app.models.maneuver import Maneuver
+from app.models.mattermost_channel import MattermostChannel
 from app.models.mattermost_message import MattermostMessage
 from app.models.notification import Notification
 from app.models.procedure import Procedure
@@ -228,8 +229,22 @@ async def _load_relevant_maneuvers(db: AsyncSession, notification: Notification)
     return list((await db.execute(stmt)).scalars().all())
 
 
+def _switched_off_or_closed() -> ColumnElement[bool]:
+    return (
+        select(MattermostChannel.mm_channel_id)
+        .where(
+            MattermostChannel.mm_channel_id == MattermostMessage.channel_id,
+            or_(MattermostChannel.following.is_(False), MattermostChannel.closed.is_(True)),
+        )
+        .exists()
+    )
+
+
 async def _load_recent_chat(db: AsyncSession) -> list[MattermostMessage]:
-    """The latest chat from the configured channels, oldest first, as the operator reads it."""
+    """The latest chat, oldest first, as the operator reads it, leaving out every channel someone
+    has switched off or that has closed (ADR-015): switching a channel off stops what was pulled
+    from it reaching the assistant at once. A channel the table does not hold, as before the
+    first sweep, is kept."""
     settings = get_settings()
     window_hours = settings.mattermost_prompt_window_hours
     limit = settings.mattermost_max_messages_in_prompt
@@ -238,7 +253,7 @@ async def _load_recent_chat(db: AsyncSession) -> list[MattermostMessage]:
     window_start = datetime.now(UTC) - timedelta(hours=window_hours)
     stmt = (
         select(MattermostMessage)
-        .where(MattermostMessage.posted_at >= window_start)
+        .where(MattermostMessage.posted_at >= window_start, ~_switched_off_or_closed())
         .order_by(MattermostMessage.posted_at.desc())
         .limit(limit)
     )

@@ -24,6 +24,8 @@ this process, for the Comms page, never Mattermost's own words.
 
 import logging
 import re
+import unicodedata
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -89,6 +91,8 @@ class FoundChannel:
     display_name: str | None
     channel_type: str
     archived: bool
+    # Decided from the names as Mattermost sent them (is_closed), before they are cleaned.
+    closed: bool = False
 
 
 def clean_name(value: object, limit: int = _NAME_LENGTH) -> str | None:
@@ -101,8 +105,19 @@ def clean_name(value: object, limit: int = _NAME_LENGTH) -> str | None:
     return text
 
 
-def is_closed(name: str, display_name: str | None, archived: bool) -> bool:
-    return archived or any(CLOSED_WORD.search(text) for text in (name, display_name or ""))
+def _word_text(value: object) -> str:
+    # The text as Mattermost sent it, its format characters (a zero-width space or joiner, a
+    # direction mark) taken out, so none can hide the word or split it.
+    if not isinstance(value, str):
+        return ""
+    return "".join(char for char in value if unicodedata.category(char) != "Cf")
+
+
+def is_closed(name: object, display_name: object, archived: bool) -> bool:
+    """Closed when archived, or when either name holds the word CLOSED. The names are read as
+    Mattermost sent them, before Holly cleans them to show: a name too odd to show, which Holly
+    drops, still closes the channel."""
+    return archived or any(CLOSED_WORD.search(_word_text(text)) for text in (name, display_name))
 
 
 def found_channel(record: object, team_id: str, team_name: str | None) -> FoundChannel | None:
@@ -117,7 +132,11 @@ def found_channel(record: object, team_id: str, team_name: str | None) -> FoundC
     if kind not in PULLED_TYPES:
         return None
     delete_at = record.get("delete_at")
-    archived = isinstance(delete_at, int) and not isinstance(delete_at, bool) and delete_at > 0
+    # Any number above 0 marks it archived, a float too: a value that cannot be read as one
+    # fails towards closed only when it is a number, never towards open.
+    archived = (
+        isinstance(delete_at, int | float) and not isinstance(delete_at, bool) and delete_at > 0
+    )
     return FoundChannel(
         mm_channel_id=channel_id,
         team_id=team_id,
@@ -126,6 +145,7 @@ def found_channel(record: object, team_id: str, team_name: str | None) -> FoundC
         display_name=clean_name(record.get("display_name")),
         channel_type=kind,
         archived=archived,
+        closed=is_closed(record.get("name"), record.get("display_name"), archived),
     )
 
 
@@ -235,6 +255,14 @@ def _note_missing_seeds(seeded: set[str], channels: list[FoundChannel]) -> None:
         )
 
 
+def _mark_lost(rows: Iterable[MattermostChannel], result: SweepResult) -> None:
+    """Mark each channel a complete sweep did not find as one the bot can no longer read."""
+    for row in rows:
+        if row.accessible:
+            result.lost += 1
+            row.accessible = False
+
+
 async def record_sweep(
     db: AsyncSession,
     channels: list[FoundChannel],
@@ -252,7 +280,7 @@ async def record_sweep(
     _note_missing_seeds(seeded, channels)
     result = SweepResult(found=len(channels), skipped=skipped)
     for channel in channels:
-        closed = is_closed(channel.name, channel.display_name, channel.archived)
+        closed = channel.closed or channel.archived
         row = known.pop(channel.mm_channel_id, None)
         if row is None:
             row = _new_row(channel, closed or channel.mm_channel_id in seeded, closed, now)
@@ -262,10 +290,8 @@ async def record_sweep(
             _note_closing(row, closed, now, result)
         row.closed = closed
         _apply(row, channel, now)
-    for row in known.values() if not skipped else ():
-        if row.accessible:
-            result.lost += 1
-            row.accessible = False
+    if not skipped:
+        _mark_lost(known.values(), result)
     await db.flush()
     return result
 

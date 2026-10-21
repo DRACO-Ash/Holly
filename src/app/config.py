@@ -157,7 +157,8 @@ class Settings(BaseSettings):
     mattermost_url: str = ""
     mattermost_bot_token: SecretStr = SecretStr("")
     # Comma-separated Mattermost channel ids: a seed since Holly finds the bot's channels itself
-    # (ADR-015). They arrive reviewed on the first sweep, and are pulled until a sweep succeeds.
+    # (ADR-015). While Holly holds no channel they are the ones pulled, and they arrive reviewed on
+    # the first sweep that finds any.
     mattermost_channel_ids: str = ""
     mattermost_interval_seconds: int = Field(default=60, ge=10)
     mattermost_prompt_window_hours: int = Field(default=6, ge=0)

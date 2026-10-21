@@ -34,8 +34,12 @@ export default function CommsFeed({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [waiting, setWaiting] = useState<MattermostMessage[]>([]);
+  // How many arrived, and whether more than one poll's page did: showing those reloads the
+  // latest page, so the list never skips the ones the poll could not hold.
+  const [arrived, setArrived] = useState({ count: 0, more: false });
   const shown = useRef<MattermostMessage[]>([]);
   shown.current = messages;
+  const asked = useRef<object | null>(null);
   const byId = useMemo(() => new Map(channels.map((c) => [c.mm_channel_id, c])), [channels]);
   const hues = useMemo(() => channelHues(channels), [channels]);
   // Keyed by content, so a channel list refreshed with the same channels does not reload.
@@ -52,7 +56,9 @@ export default function CommsFeed({
   }, [search]);
 
   useEffect(() => {
+    asked.current = filters;
     setWaiting([]);
+    setArrived({ count: 0, more: false });
     if (none) {
       setMessages([]);
       setTotal(0);
@@ -94,7 +100,12 @@ export default function CommsFeed({
         .then((page) => {
           if (cancelled) return;
           const known = new Set(shown.current.map((m) => m.id));
-          setWaiting(page.items.filter((m) => !known.has(m.id)));
+          const fresh = page.items.filter((m) => !known.has(m.id));
+          setWaiting(fresh);
+          setArrived({
+            count: page.total - (page.items.length - fresh.length),
+            more: page.total > page.items.length,
+          });
         })
         .catch(() => undefined);
     }, FEED_POLL_MS);
@@ -104,19 +115,36 @@ export default function CommsFeed({
     };
   }, [filters, none]);
 
-  function showWaiting() {
-    setMessages((current) => [...waiting, ...current]);
-    setTotal((count) => count + waiting.length);
+  async function showWaiting() {
+    const { more } = arrived;
     setWaiting([]);
+    setArrived({ count: 0, more: false });
+    if (!more) {
+      setMessages((current) => [...waiting, ...current]);
+      setTotal((count) => count + waiting.length);
+      return;
+    }
+    const scoped = filters;
+    try {
+      const page = await listMattermostMessages({ ...scoped, limit: PAGE, offset: 0 });
+      if (asked.current !== scoped) return;
+      setMessages(page.items);
+      setTotal(page.total);
+    } catch (err) {
+      setError(extractErrorMessage(err, "Failed to load messages."));
+    }
   }
 
   async function loadOlder() {
+    const scoped = filters;
     try {
       const page = await listMattermostMessages({
-        ...filters,
+        ...scoped,
         limit: PAGE,
         offset: messages.length,
       });
+      // An answer for a scope or search since changed is dropped.
+      if (asked.current !== scoped) return;
       const known = new Set(messages.map((m) => m.id));
       setMessages([...messages, ...page.items.filter((m) => !known.has(m.id))]);
       setTotal(page.total);
@@ -142,7 +170,8 @@ export default function CommsFeed({
         now={now}
       />
       <div className="feed-controls">
-        <div className="segmented" role="group" aria-label="Show messages from">
+        <fieldset className="segmented">
+          <legend className="visually-hidden">Show messages from</legend>
           <button
             type="button"
             aria-pressed={scope.kind === "following"}
@@ -157,7 +186,7 @@ export default function CommsFeed({
           >
             All channels
           </button>
-        </div>
+        </fieldset>
         <label className="feed-search">
           Search messages{" "}
           <input
@@ -199,8 +228,8 @@ export default function CommsFeed({
       )}
       <output className="feed-status">
         {waiting.length > 0 && (
-          <button type="button" className="feed-waiting" onClick={showWaiting}>
-            Show {waiting.length} new message{waiting.length === 1 ? "" : "s"}
+          <button type="button" className="feed-waiting" onClick={() => void showWaiting()}>
+            Show {arrived.count} new message{arrived.count === 1 ? "" : "s"}
           </button>
         )}
       </output>

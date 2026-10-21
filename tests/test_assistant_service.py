@@ -661,7 +661,10 @@ class TestTheQueries:
         sql, params = sent(session, 2)
         assert sql.endswith(
             "FROM mattermost_message WHERE mattermost_message.posted_at >= "
-            "%(posted_at_1)s::TIMESTAMP WITH TIME ZONE "
+            "%(posted_at_1)s::TIMESTAMP WITH TIME ZONE AND NOT (EXISTS (SELECT "
+            "mattermost_channel.mm_channel_id FROM mattermost_channel WHERE "
+            "mattermost_channel.mm_channel_id = mattermost_message.channel_id AND "
+            "(mattermost_channel.following IS false OR mattermost_channel.closed IS true))) "
             "ORDER BY mattermost_message.posted_at DESC LIMIT %(param_1)s::INTEGER"
         )
         window = timedelta(hours=12)
