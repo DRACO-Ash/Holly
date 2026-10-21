@@ -1,5 +1,6 @@
 // ESLint 9 flat configuration for the Holly dashboard: the recommended JavaScript and
-// TypeScript rules, the React hooks rules, and the fast-refresh export check.
+// TypeScript rules, the React hooks rules, the fast-refresh export check, and the SonarQube
+// rules the App Store's Code Quality stage has failed an upload on.
 import js from "@eslint/js";
 import reactHooks from "eslint-plugin-react-hooks";
 import reactRefresh from "eslint-plugin-react-refresh";
@@ -36,15 +37,15 @@ export default tseslint.config(
         },
       ],
       "@typescript-eslint/prefer-for-of": "error",
-      "@typescript-eslint/prefer-string-starts-ends-with": "error",
     },
   },
   {
-    // The type-aware rule above reads the TypeScript project.
+    // S6557 needs type information, so it reads the TypeScript project, which covers src.
     files: ["src/**/*.{ts,tsx}"],
     languageOptions: {
       parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname },
     },
+    rules: { "@typescript-eslint/prefer-string-starts-ends-with": "error" },
   },
   {
     // Tests and their support files are never hot-reloaded, so the fast-refresh check is off.

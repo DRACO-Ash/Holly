@@ -417,6 +417,21 @@ describe("ChannelConversation", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
+  it("adds several messages that arrive at the bottom oldest first", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const later = aChatMessage({ id: "3", message: "Later", posted_at: "2026-01-02T04:00:00Z" });
+    vi.mocked(listMattermostMessages)
+      .mockResolvedValueOnce(pageOf([first]))
+      .mockResolvedValueOnce(pageOf([later, arrived, first]));
+    conversation(ops, "2026-01-02T02:00:00Z");
+    expect(await screen.findByText("First")).toBeTruthy();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(FEED_POLL_MS);
+    });
+    const bodies = [...document.querySelectorAll(".comms-body")].map((b) => b.textContent);
+    expect(bodies).toEqual(["First", "Arrived", "Later"]);
+  });
+
   it("holds a message that arrives below a reader who has scrolled up, until asked", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     vi.mocked(listMattermostMessages)

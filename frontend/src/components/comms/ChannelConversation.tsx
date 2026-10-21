@@ -122,7 +122,7 @@ export default function ChannelConversation({
   const arrive = useCallback(
     async (
       items: MattermostMessage[],
-      total: number,
+      pageTotal: number,
       more: boolean,
       newest: string | undefined,
     ) => {
@@ -137,7 +137,7 @@ export default function ChannelConversation({
       } else {
         setBelow(arrived);
         setBelowMore(more);
-        setBelowCount(total - alsoAsked(shown.current, newest));
+        setBelowCount(pageTotal - alsoAsked(shown.current, newest));
       }
     },
     [latest],

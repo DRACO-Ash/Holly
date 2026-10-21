@@ -112,8 +112,8 @@ function lowered(text: string): { lower: string; starts: number[]; ends: number[
   let at = 0;
   for (const char of text) {
     const low = char.toLowerCase();
-    starts.push(...Array<number>(low.length).fill(at));
-    ends.push(...Array<number>(low.length).fill(at + char.length));
+    starts.push(...Array.from({ length: low.length }, () => at));
+    ends.push(...Array.from({ length: low.length }, () => at + char.length));
     lower += low;
     at += char.length;
   }
@@ -204,14 +204,14 @@ export function saveLastSeen(userId: string, iso: string): void {
   }
 }
 
-// How many of the messages shown a poll from `newest` also counts: it asks from that time on,
-// that time included, so the newest shown, and any posted at the same moment, are in its total.
 // The messages in `items` that are not already shown.
 export function unseen<T extends { id: string }>(items: readonly T[], shown: readonly T[]): T[] {
   const known = new Set(shown.map((m) => m.id));
   return items.filter((m) => !known.has(m.id));
 }
 
+// How many of the messages shown a poll from `newest` also counts: it asks from that time on,
+// that time included, so the newest shown, and any posted at the same moment, are in its total.
 export function alsoAsked(shown: readonly { posted_at: string }[], newest: string | undefined) {
   if (!newest) return 0;
   const from = Date.parse(newest);
