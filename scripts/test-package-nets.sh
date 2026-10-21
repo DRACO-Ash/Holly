@@ -39,7 +39,8 @@ TAB="$(printf '\t')"
 DEL="$(printf '\177')"
 n=0
 # The members every upload must hold at its root (check-package.sh).
-MEMBERS="requirements.txt pyproject.toml package.json package-lock.json Dockerfile requirements-runtime.txt"
+MEMBERS="requirements.txt pyproject.toml package.json package-lock.json Dockerfile requirements-runtime.txt
+  docs/user-handbook/training-manual.md docs/runbook/operator-manual.md"
 
 # $1: output zip, then member name and content pairs. A content of KIND:TEXT encodes TEXT as
 # named below; any other content is stored as UTF-8.
@@ -133,7 +134,8 @@ zip_required() {
   out="$1"
   shift
   zip_of "$out" Dockerfile 'FROM scratch' requirements.txt '' pyproject.toml '' package.json '' \
-    package-lock.json '' requirements-runtime.txt '' "$@"
+    package-lock.json '' requirements-runtime.txt '' docs/user-handbook/training-manual.md '' \
+    docs/runbook/operator-manual.md '' "$@"
 }
 
 sha256_of() {

@@ -26,6 +26,7 @@ from app.api.v1.routes import (
     event_timers,
     health,
     maneuvers,
+    manuals,
     mattermost,
     notifications,
     procedures,
@@ -259,6 +260,7 @@ def create_app(static_dir: Path = STATIC_DIR) -> FastAPI:
         assistant,
         audit,
         users,
+        manuals,
     ):
         app.include_router(module.router, prefix="/api/v1")
     _mount_dashboard(app, static_dir)

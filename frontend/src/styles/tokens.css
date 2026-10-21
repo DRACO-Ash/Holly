@@ -2802,6 +2802,228 @@ button:disabled {
   color: var(--color-accent-on);
 }
 
+/* Help: the manuals, with their contents beside them ---------------- */
+
+.help-link {
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  text-decoration: none;
+  padding: 4px 8px;
+  border-bottom: 1px solid transparent;
+}
+
+.help-link:hover,
+.help-link[aria-current="page"] {
+  color: var(--color-accent);
+  border-bottom-color: var(--color-accent);
+}
+
+.help-top {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: var(--space-4);
+  margin-bottom: var(--space-5);
+}
+
+.help-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.help-layout {
+  display: grid;
+  grid-template-columns: minmax(200px, 260px) minmax(0, 1fr);
+  gap: var(--space-6);
+  align-items: start;
+}
+
+.help-toc {
+  position: sticky;
+  top: 0;
+  max-height: calc(100vh - 220px);
+  overflow-y: auto;
+  border-right: 1px solid var(--color-border);
+  padding-right: var(--space-4);
+}
+
+.help-find {
+  display: grid;
+  gap: var(--space-1);
+  margin-bottom: var(--space-3);
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+}
+
+.help-toc ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.help-toc a {
+  display: flex;
+  gap: var(--space-2);
+  padding: 5px 0;
+  color: var(--color-text-muted);
+  text-decoration: none;
+  font-size: 0.86rem;
+  line-height: 1.35;
+}
+
+.help-toc a:hover {
+  color: var(--color-accent);
+}
+
+.help-toc .toc-level-3 a {
+  padding-left: var(--space-5);
+  font-size: 0.8rem;
+}
+
+.toc-number {
+  color: var(--color-accent);
+  font-family: var(--font-display);
+  min-width: 2ch;
+}
+
+.manual {
+  max-width: 78ch;
+  line-height: 1.6;
+}
+
+.manual h2 {
+  margin: var(--space-2) 0 var(--space-3);
+  scroll-margin-top: var(--space-4);
+}
+
+.manual h3,
+.manual h4 {
+  margin: var(--space-5) 0 var(--space-2);
+  scroll-margin-top: var(--space-4);
+}
+
+.manual-eyebrow {
+  margin: var(--space-6) 0 0;
+  color: var(--color-accent);
+  font-family: var(--font-display);
+  font-size: 0.78rem;
+  letter-spacing: 0.18em;
+}
+
+.help-top .manual-eyebrow {
+  margin-top: 0;
+}
+
+.manual-bullets {
+  list-style: none;
+  padding-left: var(--space-5);
+}
+
+.manual-bullets li {
+  position: relative;
+  margin: var(--space-1) 0;
+}
+
+.manual-bullets li::before {
+  content: "";
+  position: absolute;
+  left: calc(-1 * var(--space-4));
+  top: 0.65em;
+  width: 6px;
+  height: 6px;
+  background: var(--color-accent);
+}
+
+.manual-callout {
+  margin: var(--space-4) 0;
+  padding: var(--space-3) var(--space-4);
+  border-left: 3px solid var(--color-accent);
+  background: var(--color-surface-elevated);
+}
+
+.manual-table {
+  overflow-x: auto;
+  margin: var(--space-3) 0;
+}
+
+.manual-table th,
+.manual-table td {
+  text-align: left;
+  vertical-align: top;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.manual-code {
+  overflow-x: auto;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-elevated);
+  font-size: 0.82rem;
+}
+
+@media (max-width: 760px) {
+  .help-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .help-toc {
+    position: static;
+    max-height: none;
+    border-right: 0;
+    border-bottom: 1px solid var(--color-border);
+    padding: 0 0 var(--space-3);
+  }
+}
+
+/* Print: the manual alone, dark on the page. The screen's light-on-dark is inverted, and the
+   dashboard's chrome, the contents list and the buttons are left out. */
+@media print {
+  .app-header,
+  .app-nav,
+  .timer-banner,
+  .help-toc,
+  .help-actions,
+  .screw {
+    display: none !important;
+  }
+
+  .app-shell,
+  .app-body,
+  .app-main,
+  .crt-screen,
+  .crt-content {
+    display: block;
+    height: auto;
+    overflow: visible;
+  }
+
+  .help {
+    filter: invert(1) hue-rotate(180deg);
+  }
+
+  .help-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .manual {
+    max-width: none;
+  }
+
+  .manual h2 {
+    break-after: avoid;
+  }
+
+  .manual-table tr,
+  .manual-callout,
+  .manual-code {
+    break-inside: avoid;
+  }
+}
+
 /* Reduced motion: no flicker, pulse or transition for anyone who asks the system for less. */
 
 @media (prefers-reduced-motion: reduce) {

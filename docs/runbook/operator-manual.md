@@ -188,6 +188,8 @@ The answer is `{"pulled": <n>, "inserted": <n>, "updated": <n>, "skipped": <n>}`
 
 > **Before the first deploy with Comms:** the first sweep follows every public and private channel the bot account is already a member of, not only the seed, and every signed-in user can read them. Check the bot's memberships in Mattermost first, and take it out of any channel Holly should not read; after the first sweep, switch off any channel named as new that you do not want.
 
+**The manuals in Holly.** **Help**, in the header beside **Sign out**, shows the analyst training manual to every signed-in user and this operator manual to operators and admins alone; the server refuses it to anyone else (`GET /api/v1/manuals/operator` answers 403). Each is the Markdown file under `docs/` that the release carries, copied into the image, so updating the file and uploading a new release updates what Holly shows. A release built without one answers 503 with `This release does not carry the manual.` **Print or save as PDF** prints the manual alone, dark on white.
+
 **SECTION 07**
 
 ## Inspecting ingest history

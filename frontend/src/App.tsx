@@ -5,6 +5,7 @@ import Layout from "./components/Layout";
 import AuditLog from "./pages/AuditLog";
 import ChangePassword from "./pages/ChangePassword";
 import Dashboard from "./pages/Dashboard";
+import Help from "./pages/Help";
 import Login from "./pages/Login";
 import Maneuvers from "./pages/Maneuvers";
 import Mattermost from "./pages/Mattermost";
@@ -37,6 +38,7 @@ export default function App() {
             <Route path="/audit" element={<AuditLog />} />
             <Route path="/users" element={<Users />} />
             <Route path="/password" element={<ChangePassword />} />
+            <Route path="/help" element={<Help />} />
           </Route>
         </Routes>
       </BrowserRouter>

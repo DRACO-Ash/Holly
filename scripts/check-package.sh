@@ -57,7 +57,7 @@ trap 'exit 143' TERM
 # defeated by the size and date columns of a plain `unzip -l` listing.
 names="$(unzip -Z1 "$ZIP")"
 for required in requirements.txt pyproject.toml package.json package-lock.json Dockerfile \
-  requirements-runtime.txt; do
+  requirements-runtime.txt docs/user-handbook/training-manual.md docs/runbook/operator-manual.md; do
   printf '%s\n' "$names" | grep -qx "$required" || { echo "package is missing $required"; exit 1; }
 done
 

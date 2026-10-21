@@ -66,7 +66,7 @@ You stay signed in while you use Holly: your 30-minute access renews itself in t
 
 ## Finding your way around
 
-● **The header** shows Holly, two screen effects, your username and **Sign out**. **Scanlines** gives the screen the fine horizontal lines of an old cathode ray tube (CRT) monitor: behind the text, and across the page titles and the dashboard's counts. **CRT flicker** makes the screen flicker faintly. Scanlines start on and flicker starts off; each choice is kept in your browser only. If your computer is set to reduce motion, flicker stays off and its box is greyed out.
+● **The header** shows Holly, two screen effects, your username, **Help** and **Sign out**. **Help** opens this manual in Holly, with its contents beside it: type in **Find a section** to narrow them, select a section to jump to it, and select **Print or save as PDF** for a paper or PDF copy, which your browser's print dialogue saves. Operators and administrators can switch to the operator manual there too. **Scanlines** gives the screen the fine horizontal lines of an old cathode ray tube (CRT) monitor: behind the text, and across the page titles and the dashboard's counts. **CRT flicker** makes the screen flicker faintly. Scanlines start on and flicker starts off; each choice is kept in your browser only. If your computer is set to reduce motion, flicker stays off and its box is greyed out.
 ● **The timer banner**, under the header, appears on every page while an event timer is firing, and when sound alerts are not yet enabled.
 ● **The side navigation** lists **Dashboard**, **Notifications**, **Maneuvers**, **Comms**, **Procedures**, **Shift log** and **Password**. Operators and administrators also see **Audit log**, and administrators **Users**.
 

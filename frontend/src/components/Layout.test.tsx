@@ -24,6 +24,7 @@ async function shell(route = "/") {
           <Route element={<Layout />}>
             <Route path="/" element={<p>Dashboard content</p>} />
             <Route path="/notifications" element={<p>Notifications content</p>} />
+            <Route path="/help" element={<p>Help content</p>} />
           </Route>
         </Routes>
       </MemoryRouter>
@@ -91,6 +92,7 @@ describe("the dashboard's frame", () => {
       signedInAs(aUser({ role: "admin", must_change_password: true }));
       await shell();
       await waitFor(() => expect(links()).toEqual(["Password"]));
+      expect(screen.queryByRole("link", { name: "Help" })).toBeNull();
       // Nothing polls the timers meanwhile, past a whole poll interval: Holly would refuse it.
       vi.mocked(listEventTimers).mockClear();
       await act(() => vi.advanceTimersByTimeAsync(11_000));
@@ -98,6 +100,17 @@ describe("the dashboard's frame", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("offers Help beside Sign out, marked while it is the page shown", async () => {
+    signedInAs(aUser());
+    await shell("/help");
+    const help = await screen.findByRole("link", { name: "Help" });
+    expect(help.getAttribute("href")).toBe("/help");
+    expect(help.closest(".app-header-right")).toBe(
+      screen.getByRole("button", { name: "Sign out" }).closest(".app-header-right"),
+    );
+    expect(help.getAttribute("aria-current")).toBe("page");
   });
 
   it("holds the audit log back until it knows who signed in", async () => {

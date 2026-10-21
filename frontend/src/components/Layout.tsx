@@ -72,6 +72,15 @@ export default function Layout() {
           <div className="app-header-right">
             <DisplayToggles prefs={display} onChange={changeDisplay} />
             {user && <span className="app-user">{user.username}</span>}
+            {!changeDue && (
+              <Link
+                to="/help"
+                className="help-link"
+                aria-current={pathname === "/help" ? "page" : undefined}
+              >
+                Help
+              </Link>
+            )}
             <button type="button" className="logout-btn" onClick={logout}>
               Sign out
             </button>

@@ -318,6 +318,8 @@ def test_route_inventory_is_exactly_the_reviewed_set() -> None:
         "/api/v1/users": ["GET", "POST"],
         "/api/v1/users/{user_id}/password": ["POST"],
         "/api/v1/users/{user_id}": ["PATCH"],
+        "/api/v1/manuals": ["GET"],
+        "/api/v1/manuals/{slug}": ["GET"],
     }
 
 

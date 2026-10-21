@@ -1,7 +1,7 @@
 # An allowlist (packaging): the image needs only the locked runtime requirements
-# (requirements-runtime.txt; requirements.txt adds the test runner), the source and the dashboard's
-# source.
-# Everything else stays out of the build context: tests, tooling, docs, .git, .claude, the
+# (requirements-runtime.txt; requirements.txt adds the test runner), the source, the dashboard's
+# source and the two manuals its Help page shows.
+# Everything else stays out of the build context: tests, tooling, the other docs, .git, .claude, the
 # virtualenv, coverage output and any .env file. The upload allowlist is a separate contract,
 # kept in scripts/package-appstore.sh, and scripts/smoke-container.sh builds from that upload
 # artefact rather than the working tree, so untracked files never reach a release image.
@@ -9,6 +9,8 @@
 !requirements-runtime.txt
 !src/
 !frontend/
+!docs/user-handbook/training-manual.md
+!docs/runbook/operator-manual.md
 # `!src/` and `!frontend/` re-admit whole subtrees, so these are excluded again inside them,
 # including any environment file (.env, .env.*, .env-*, .envrc, *.env), and the dashboard's
 # local dependencies, build output and coverage, which the image rebuilds from the lockfile.

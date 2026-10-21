@@ -107,6 +107,7 @@ trap 'exit 143' TERM
 PATHS="Dockerfile .dockerignore .python-version pyproject.toml README.md alembic.ini
   package.json package-lock.json requirements-runtime.in requirements-runtime.txt
   requirements.in requirements.txt requirements-dev.in requirements-dev.txt
+  docs/user-handbook/training-manual.md docs/runbook/operator-manual.md
   sonar-project.properties src tests frontend"
 
 # The record counts the verdicts committed at or before the commit packaged, so an upload comes

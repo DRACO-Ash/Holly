@@ -63,6 +63,10 @@ RUN (apt-get update --error-on=any && DEBIAN_FRONTEND=noninteractive apt-get -y 
     rm -rf /var/lib/apt/lists/*
 COPY --from=build /opt/venv /opt/venv
 COPY src /app/src
+# The two manuals the Help page shows (services/manuals.py), at the same place relative to the
+# source as in the repository, so there is one copy of each to keep up to date.
+COPY docs/user-handbook/training-manual.md /app/docs/user-handbook/training-manual.md
+COPY docs/runbook/operator-manual.md /app/docs/runbook/operator-manual.md
 COPY --from=dashboard /frontend/dist /app/src/app/static
 # Mandatory and fail-closed: remove pip from the venv and the base (and the bundled pip wheels),
 # add the numeric non-root user with a matching group and no home directory, make the code
