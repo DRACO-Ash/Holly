@@ -54,6 +54,17 @@ export default function Login() {
         <button type="submit" disabled={submitting}>
           {submitting ? "Signing in..." : "Sign in"}
         </button>
+        <details className="login-help">
+          <summary>Forgotten your password?</summary>
+          <ul>
+            <li>
+              Ask an administrator to reset it on the Users page. They give you a temporary
+              password.
+            </li>
+            <li>Sign in with it, and Holly asks you to choose your own before anything else.</li>
+            <li>To change a password you know, sign in and open Password in the navigation.</li>
+          </ul>
+        </details>
       </form>
     </div>
   );

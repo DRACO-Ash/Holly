@@ -76,7 +76,7 @@ Leave `STORAGE_MOUNT_PATH` to the FILE_STORAGE add-on, which injects it; do not 
 
 **Starting, stopping and restarting** the app are platform operations: `TBC, re-verify` how. Rate-limit counters and the daily assistant token count start again from zero at every restart. **Withdrawing** the app is removing it from the App Store (the app owner, 19 October 2026); whether removal also deletes the add-ons' database and files is `TBC, re-verify`, so take what must be kept first.
 
-**Rollback** is a resubmission of the previous package; the platform has no separate rollback (platform reference above). Migrations only move forward at start, so a package older than the database's newest migration stops at boot with Alembic's `Can't locate revision identified by '<revision>'`. Rolling back across a migration therefore needs the database restored to match the older package, or a fixed package that carries the newer migration. From V0.10 to V0.9 there are two ways, both rehearsed by V0.10's deploy gate on a database V0.10 had used (ADR-014). V0.9 checks no token version, so every session V0.10 ended with a password change, a reset or a deactivation would work again under V0.9 until it expired, up to 7 days for a refresh token: each way rotates `APP_SECRET_KEY`.
+**Rollback** is a resubmission of the previous package; the platform has no separate rollback (platform reference above). Migrations only move forward at start, so a package older than the database's newest migration stops at boot with an Alembic error naming the newer revision: observed as `No such revision or branch '<revision>'` when V0.11 met a database at 0019 (the V0.12 deploy gate's rehearsal), and possibly `Can't locate revision identified by '<revision>'` in other Alembic versions. Rolling back across a migration therefore needs the database restored to match the older package, or a fixed package that carries the newer migration. From V0.10 to V0.9 there are two ways, both rehearsed by V0.10's deploy gate on a database V0.10 had used (ADR-014). V0.9 checks no token version, so every session V0.10 ended with a password change, a reset or a deactivation would work again under V0.9 until it expired, up to 7 days for a refresh token: each way rotates `APP_SECRET_KEY`.
 
 **With a shell in the container** (whether the platform offers one is `TBC, re-verify`):
 
@@ -94,7 +94,7 @@ python -c "from alembic import command; from app.migrate import alembic_config; 
 
 **Rolling forward to V0.10 or later after the downgrade** applies 0018 again, with every token version at 0 and no change due: rotate `APP_SECRET_KEY` again with that upload, and give each account noted in step 1, and any changed meanwhile, a new temporary password with **Reset password**.
 
-From V0.12 to V0.11, migration 0019 is undone the same way, in the V0.12 container, immediately before V0.11 is deployed:
+From any release from V0.12 on back to V0.11, migration 0019 is undone the same way, in the running container of the release being rolled back, immediately before V0.11 is deployed:
 
 ```sh
 python -c "from alembic import command; from app.migrate import alembic_config; command.downgrade(alembic_config(), '0018_user_password_state')"
@@ -268,7 +268,7 @@ Read the start of its log (section 04). The causes Holly names itself:
 ● `Error: the database could not be reached within about 60 seconds (last error: <type>)`: check the POSTGRESQL add-on and the `database_wait` lines before it; `gaierror` means the host name did not resolve, `ConnectionRefusedError` that nothing listened on the port, `TimeoutError` that the host never answered.
 ● `Error: the database refused the connection (SQLSTATE <code>, <driver error>)`: the database answered and refused, which waiting will not change. `28P01` (`InvalidPasswordError`) is a wrong password and `28000` a role that may not connect: check the add-on's `DATABASE_URL`. `3D000` (`InvalidCatalogNameError`) is a database that does not exist.
 ● `Error: Holly cannot start: ...`: a setting failed validation. Fix each setting the line names; it never repeats a value. A missing or short `APP_SECRET_KEY`, missing database settings, a `DATABASE_URL` that does not read as a postgres URL with a host (an unencoded `@` in the password does this: write it as `%40`), a `*` origin, an http UDL or Mattermost URL, `UDL_VERIFY_SSL=false` or a relative procedure path each stops the start.
-● An Alembic error: a migration failed. If it reads `Can't locate revision identified by ...`, the package is older than the database (section 03). Escalate any other migration failure to engineering.
+● An Alembic error: a migration failed. If it reads `No such revision or branch ...` or `Can't locate revision identified by ...`, the package is older than the database (section 03). Escalate any other migration failure to engineering.
 ● `Error: ADMIN_... `: the first-admin bootstrap refused a variable while no account exists (section 08). Fix the variable the line names, or remove `ADMIN_USERNAME`, `ADMIN_PASSWORD` and `ADMIN_EMAIL` to start without an admin.
 ● `"storage_writable": false`: the procedure store refused a write. The `errno` and `error` say why; check the FILE_STORAGE add-on and `PROCEDURE_STORAGE_PATH`.
 

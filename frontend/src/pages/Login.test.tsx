@@ -88,4 +88,16 @@ describe("the sign-in page", () => {
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
     expect(await screen.findByText("Sign in failed.")).toBeTruthy();
   });
+
+  it("tells a user who has forgotten their password to ask an administrator", () => {
+    shown();
+    const help = screen.getByText("Forgotten your password?").closest("details");
+    expect(help).not.toBeNull();
+    expect(help?.open).toBe(false);
+    fireEvent.click(screen.getByText("Forgotten your password?"));
+    expect(help?.textContent).toContain("Ask an administrator to reset it on the Users page");
+    expect(help?.textContent).toContain("open Password in the navigation");
+    // It offers no way round the sign-in: no link, no form, nothing sent.
+    expect(help?.querySelector("a, input, button, form")).toBeNull();
+  });
 });

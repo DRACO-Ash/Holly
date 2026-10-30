@@ -1,6 +1,6 @@
 {
   "name": "holly",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "private": true,
   "description": "The App Store's node job runs npm ci at the upload's root, then (TBC, re-verify) the node template's test and build commands: this installs the dashboard in frontend/ from its own lockfile, install scripts off, and runs its tests and build there.",
   "scripts": {

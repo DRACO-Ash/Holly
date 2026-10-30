@@ -828,6 +828,23 @@ button:disabled {
   text-align: center;
 }
 
+/* What to do about a forgotten password: an admin resets it, as there is no email. */
+.login-help {
+  margin-top: var(--space-2);
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+
+.login-help summary {
+  cursor: pointer;
+  color: var(--color-accent);
+}
+
+.login-help ul {
+  margin: var(--space-2) 0 0;
+  padding-left: var(--space-5);
+}
+
 /* Brand ---------------------------------------------------------- */
 
 .brand-plate {

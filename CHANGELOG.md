@@ -9,6 +9,20 @@
 
 All notable changes to Holly are recorded here, newest first. Holly V0.2 is the Daily Operations Dashboard fused into the Holly App Store project and renamed; the sections after it are the Daily Operations Dashboard's own record, kept as written. Holly's releases are numbered V<major>.<minor>, and each has a row in `docs/AUDIT-LOG.md` with the checks that ran.
 
+## Holly V0.14 (2026-10-30)
+
+### Added
+
+● **Forgotten your password?** on the sign-in page. It says what to do: ask an administrator to reset the password on the Users page, then choose your own at the next sign-in. Holly sends no email, so there is no self-service reset; the help offers no link, form or request of its own.
+
+### Fixed
+
+● The operator manual's rollback steps name no single release's container, and quote the Alembic error a too-old package actually gives, `No such revision or branch '<revision>'`, beside the older wording (from V0.12's and V0.13's deploy gates).
+
+### Security
+
+● **Two advisories in test tooling closed:** undici 8.11.2 to 8.12.2 under jsdom (8 advisories, among them GHSA-2m5v-pch6-74hx) and zod 4.6.5 to 4.6.7 under eslint-plugin-react-hooks (GHSA-mrhx-c7xc-m3w5). Both are test or lint tooling, never in the image (inference from the dependency tree); both versions are past the 15-day cooldown. And filelock 4.1.1 to 4.2.1 in the development lock only (17 advisories, among them CVE-2026-112906), a dependency of the audit tool's own cache; 4.2.1, released 17 October 2026, is taken inside the cooldown as the only fixed version.
+
 ## Holly V0.13 (2026-10-21)
 
 A fix for V0.12's failed upload: the App Store's Code Quality stage found 8 new SonarQube code smells in the dashboard.
