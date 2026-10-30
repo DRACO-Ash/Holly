@@ -21,7 +21,7 @@ All notable changes to Holly are recorded here, newest first. Holly V0.2 is the 
 
 ### Security
 
-● **Two advisories in test tooling closed:** undici 8.11.2 to 8.12.2 under jsdom (8 advisories, among them GHSA-2m5v-pch6-74hx) and zod 4.6.5 to 4.6.7 under eslint-plugin-react-hooks (GHSA-mrhx-c7xc-m3w5). Both are test or lint tooling, never in the image (inference from the dependency tree); both versions are past the 15-day cooldown. And filelock 4.1.1 to 4.2.1 in the development lock only (17 advisories, among them CVE-2026-112906), a dependency of the audit tool's own cache; 4.2.1, released 17 October 2026, is taken inside the cooldown as the only fixed version.
+● **Advisories in test and development tooling closed:** undici 8.11.2 to 8.12.2 under jsdom (8 advisories, among them GHSA-2m5v-pch6-74hx) and zod 4.6.5 to 4.6.7 under eslint-plugin-react-hooks (GHSA-mrhx-c7xc-m3w5). Both are test or lint tooling, never in the image (inference from the dependency tree); both versions are past the 15-day cooldown. And filelock 4.1.1 to 4.2.1 in the development lock only (17 advisories, among them CVE-2026-112906), a dependency of the audit tool's own cache; 4.2.1, released 17 October 2026, is taken inside the cooldown as the oldest fixed version.
 
 ## Holly V0.13 (2026-10-21)
 
