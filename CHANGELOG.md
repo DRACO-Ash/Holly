@@ -9,6 +9,12 @@
 
 All notable changes to Holly are recorded here, newest first. Holly V0.2 is the Daily Operations Dashboard fused into the Holly App Store project and renamed; the sections after it are the Daily Operations Dashboard's own record, kept as written. Holly's releases are numbered V<major>.<minor>, and each has a row in `docs/AUDIT-LOG.md` with the checks that ran.
 
+## Holly V0.15 (2026-11-02)
+
+### Security
+
+● **Python 3.12.15 to 3.12.16 in the image.** The App Store's container scan lists CPython 3.12.15 findings, among them CVE-2026-115557 and CVE-2026-114583, with 3.12.16 as the fixed version. The image's base moves to the python:3.12-slim digest carrying 3.12.16 on Debian trixie, which also brings that rebuild's ca-certificates, liblzma5 and tzdata updates. The base was built on 28 October 2026, so it is taken inside the 15-day cooldown as the only image carrying the fix. The scan's other findings are Debian packages that the new base leaves unchanged; they clear when Debian publishes fixes and the image is rebuilt.
+
 ## Holly V0.14 (2026-10-30)
 
 ### Added
