@@ -1,3 +1,35 @@
+// What the stored UDL record says beyond the typed columns, read on the server with the UDL
+// Maneuver schema's keys. Each name carries the unit that schema states (TBC, re-verify).
+export interface ManeuverFacts {
+  status: string | null;
+  characterization: string | null;
+  event_id: string | null;
+  orig_object_id: string | null;
+  event_end_time: string | null;
+  report_time: string | null;
+  delta_vel_kms: number | null;
+  delta_pos_km: number | null;
+  delta_mass_kg: number | null;
+  total_burn_time_s: number | null;
+  pre_geo_longitude_deg: number | null;
+  post_geo_longitude_deg: number | null;
+  pre_drift_rate_deg_day: number | null;
+  post_drift_rate_deg_day: number | null;
+  pre_apogee_km: number | null;
+  post_apogee_km: number | null;
+  pre_perigee_km: number | null;
+  post_perigee_km: number | null;
+  pre_inclination_deg: number | null;
+  post_inclination_deg: number | null;
+  pre_period_min: number | null;
+  post_period_min: number | null;
+  pre_semi_major_axis_km: number | null;
+  post_semi_major_axis_km: number | null;
+  pre_eccentricity: number | null;
+  post_eccentricity: number | null;
+  uct: boolean | null;
+}
+
 export interface Maneuver {
   id: string;
   udl_id: string | null;
@@ -21,6 +53,7 @@ export interface Maneuver {
   responsible_nation: string | null;
   created_at: string;
   updated_at: string;
+  facts: ManeuverFacts;
 }
 
 export interface ManeuverDetail extends Maneuver {

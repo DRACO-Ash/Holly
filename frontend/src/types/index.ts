@@ -9,3 +9,4 @@ export * from "./mattermost";
 export * from "./audit";
 export * from "./sort";
 export * from "./manual";
+export * from "./activity";
