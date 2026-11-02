@@ -36,6 +36,7 @@ from app.services.claude import (
     extract_json_object,
 )
 from app.services.disclosure import NOT_CLEARED, cleared_markings, is_cleared
+from app.services.maneuver_facts import maneuver_facts
 from app.services.procedure_storage import read_preview
 
 logger = logging.getLogger(__name__)
@@ -138,6 +139,17 @@ _MANEUVER_FIELDS = (
     ("deltaV", "delta_v"),
     ("source", "source"),
 )
+# (label, fact) for what the stored UDL record says beyond the typed columns
+# (services/maneuver_facts.py); each label carries the unit the UDL schema states (TBC).
+_MANEUVER_FACTS = (
+    ("status", "status"),
+    ("characterization", "characterization"),
+    ("end", "event_end_time"),
+    ("deltaVel_km_s", "delta_vel_kms"),
+    ("deltaPos_km", "delta_pos_km"),
+    ("postGeoLongitude_deg", "post_geo_longitude_deg"),
+    ("postDriftRate_deg_day", "post_drift_rate_deg_day"),
+)
 
 
 class NotificationNotFoundError(LookupError):
@@ -188,6 +200,12 @@ def _format_maneuver(m: Maneuver) -> str:
     for label, attribute in _MANEUVER_FIELDS:
         value = getattr(m, attribute)
         if _shown(value):
+            parts.append(f"{label}={display_value(value)}")
+    facts = maneuver_facts(m.raw)
+    for label, name in _MANEUVER_FACTS:
+        value = facts[name]
+        # The typed status wins: the record's own is shown only when the column is empty.
+        if _shown(value) and not (label == "status" and _shown(m.maneuver_status)):
             parts.append(f"{label}={display_value(value)}")
     head = " | ".join(parts)
     if m.description:

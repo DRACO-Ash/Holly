@@ -85,7 +85,7 @@ def make_notification(**fields: Any) -> Notification:
 
 
 def make_maneuver(**fields: Any) -> Maneuver:
-    return Maneuver(id=synthetic_id(), raw={}, **fields)
+    return Maneuver(**({"id": synthetic_id(), "raw": {}} | fields))
 
 
 def chat_message(posted_at: datetime, text: str, **fields: Any) -> MattermostMessage:
@@ -505,6 +505,34 @@ class TestThePrompt:
             " | status=COMPLETED | deltaV=0.0 | source=test-source\n"
             "    Example burn, no change to the approach.\n"
             "  - Sat 99999 | stop=2026-06-03T09:00:00+00:00\n\n"
+        ) in prompt
+
+    async def test_a_maneuver_line_adds_what_its_udl_record_says(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        notification = make_notification(notso_identifier="TEST-NOTSO-1", sat_no=99999)
+        maneuvers = [
+            make_maneuver(
+                sat_no=99999,
+                maneuver_status="COMPLETED",
+                raw={
+                    "status": "POSSIBLE",
+                    "characterization": "Example station keeping",
+                    "eventEndTime": "2026-06-04T08:30:00Z",
+                    "deltaVel": 0.0015,
+                    "postGeoLongitude": 110.5,
+                    "deltaPos": float("nan"),
+                },
+            ),
+            make_maneuver(sat_no=99999, raw={"status": "CANDIDATE"}),
+        ]
+        session = evaluation_session(notification, maneuvers=maneuvers)
+        prompt = await prompt_for(monkeypatch, session, notification)
+        assert (
+            "  - Sat 99999 | status=COMPLETED | characterization=Example station keeping"
+            " | end=2026-06-04T08:30:00+00:00 | deltaVel_km_s=0.0015"
+            " | postGeoLongitude_deg=110.5\n"
+            "  - Sat 99999 | status=CANDIDATE\n"
         ) in prompt
 
     async def test_team_chat_reads_oldest_first_with_names_falling_back_to_ids(
