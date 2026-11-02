@@ -19,6 +19,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 
 from app import __version__
 from app.api.v1.routes import (
+    activity,
     assistant,
     audit,
     auth,
@@ -261,6 +262,7 @@ def create_app(static_dir: Path = STATIC_DIR) -> FastAPI:
         audit,
         users,
         manuals,
+        activity,
     ):
         app.include_router(module.router, prefix="/api/v1")
     _mount_dashboard(app, static_dir)

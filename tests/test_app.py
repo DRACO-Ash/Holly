@@ -293,6 +293,7 @@ def test_route_inventory_is_exactly_the_reviewed_set() -> None:
         "/api/v1/notifications/refresh": ["POST"],
         "/api/v1/maneuvers": ["GET"],
         "/api/v1/maneuvers/{maneuver_id}": ["GET"],
+        "/api/v1/activity": ["GET"],
         "/api/v1/mattermost/messages": ["GET"],
         "/api/v1/mattermost/channels": ["GET"],
         "/api/v1/mattermost/channels/{channel_id}": ["PATCH"],

@@ -4,7 +4,6 @@ An evaluation calls Claude, so it counts against the caller's assistant limit; t
 for the same notification at once share one run (services/assistant.py).
 """
 
-from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any
 from uuid import UUID
@@ -33,43 +32,10 @@ from app.services.assistant import (
 )
 from app.services.disclosure import is_cleared
 from app.services.event_summary import compute_event_key
+from app.services.feed_rollup import UNRANKED, URGENCY_RANK, latest_by_notification, rollup_urgency
 from app.services.notification_query import aliased_deduped_notifications
 
 router = APIRouter(prefix="/assistant", tags=["assistant"])
-
-_URGENCY_RANK = {"high": 3, "medium": 2, "low": 1, "none": 0, "pending": -1}
-_UNRANKED = -2
-
-
-def _rollup_urgency(evaluation: AssistantEvaluation | None) -> tuple[str, str | None]:
-    """(urgency, top action) for the dashboard: the most urgent next action, if any."""
-    if evaluation is None or evaluation.error:
-        return "pending", None
-    actions = [
-        a for a in (evaluation.structured or {}).get("next_actions") or [] if isinstance(a, dict)
-    ]
-    if not actions:
-        return "none", None
-    best_rank, best, top_action = _UNRANKED, "none", None
-    for action in actions:
-        urgency = str(action.get("urgency", "")).lower() or "low"
-        rank = _URGENCY_RANK.get(urgency, 0)
-        if rank > best_rank:
-            best_rank, best = rank, urgency
-            text = action.get("action")
-            top_action = text if isinstance(text, str) else None
-    return best, top_action
-
-
-def _latest_by_notification(
-    rows: Iterable[AssistantEvaluation],
-) -> dict[UUID, AssistantEvaluation]:
-    latest: dict[UUID, AssistantEvaluation] = {}
-    for row in rows:
-        existing = latest.get(row.notification_id)
-        if existing is None or row.evaluated_at > existing.evaluated_at:
-            latest[row.notification_id] = row
-    return latest
 
 
 def _feed_item(
@@ -78,7 +44,7 @@ def _feed_item(
     event_key: str,
     summary: EventSummary | None,
 ) -> AssistantFeedItem:
-    urgency, top_action = _rollup_urgency(evaluation)
+    urgency, top_action = rollup_urgency(evaluation)
     return AssistantFeedItem(
         notification=NotificationRead.model_validate(notification),
         evaluation=AssistantEvaluationRead.model_validate(evaluation) if evaluation else None,
@@ -93,7 +59,7 @@ def _feed_item(
 
 def _feed_order(item: AssistantFeedItem) -> tuple[int, datetime]:
     created = item.notification.udl_created_at or datetime.min.replace(tzinfo=UTC)
-    return _URGENCY_RANK.get(item.urgency, _UNRANKED), created
+    return URGENCY_RANK.get(item.urgency, UNRANKED), created
 
 
 @router.get("/feed")
@@ -116,7 +82,7 @@ async def feed(
     eval_stmt = select(AssistantEvaluation).where(
         AssistantEvaluation.notification_id.in_([n.id for n in notifications])
     )
-    latest = _latest_by_notification((await db.execute(eval_stmt)).scalars().all())
+    latest = latest_by_notification((await db.execute(eval_stmt)).scalars().all())
     event_keys = {n.id: compute_event_key(n) for n in notifications}
     summary_stmt = select(EventSummary).where(EventSummary.event_key.in_(set(event_keys.values())))
     summaries = {row.event_key: row for row in (await db.execute(summary_stmt)).scalars().all()}
