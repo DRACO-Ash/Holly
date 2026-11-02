@@ -1,159 +1,122 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { getNotification } from "../api/notifications";
 import AssistantPanel from "../components/AssistantPanel";
+import NoticeDetails from "../components/notice/NoticeDetails";
+import NoticeHero from "../components/notice/NoticeHero";
+import SatelliteCards from "../components/notice/SatelliteCards";
+import { useActivity } from "../components/ops/useActivity";
+import { useNow } from "../components/ops/useNow";
 import type { NotificationDetail as NotificationDetailType } from "../types";
-import { NEW_TAB_REL, safeHttpUrl } from "../utils/links";
+import { NEW_TAB_REL } from "../utils/links";
 import { parseArtefacts } from "../utils/notso";
+import { parseEventClass, satelliteDirectory } from "../utils/ops";
 
-function formatField(value: unknown): string {
-  if (value === null || value === undefined) return "n/a";
-  if (typeof value === "number") return String(value);
-  if (typeof value === "string") return value;
-  return JSON.stringify(value);
+function loadFailure(err: unknown): string {
+  const status =
+    err && typeof err === "object" && "response" in err
+      ? (err as { response?: { status?: number } }).response?.status
+      : undefined;
+  return status === 404 ? "Notification not found." : "Failed to load notification.";
 }
 
-function formatDateTime(value: string | null | undefined): string {
-  if (!value) return "n/a";
-  return new Date(value).toISOString().replace("T", " ").slice(0, 19);
+function satIdsOf(item: NotificationDetailType): string[] {
+  if (item.sat_ids && item.sat_ids.length > 0) return item.sat_ids;
+  return item.sat_no === null ? [] : [String(item.sat_no)];
 }
 
-function statusClass(status: string | null): string {
-  if (!status) return "status-pill";
-  return `status-pill status-${status.toLowerCase()}`;
+function Artefacts({ item }: Readonly<{ item: NotificationDetailType }>) {
+  const images = parseArtefacts(item.raw);
+  if (images.length === 0) return null;
+  return (
+    <section className="card">
+      <h2>Source artefacts ({images.length})</h2>
+      <ul className="image-list">
+        {images.map((img, idx) => (
+          <li key={img.id ?? `${img.url ?? "artefact"}-${idx}`}>
+            {img.href ? (
+              <a href={img.href} target="_blank" rel={NEW_TAB_REL}>
+                {img.filename ?? img.url}
+              </a>
+            ) : (
+              <span>{img.filename ?? "(unnamed artefact)"}</span>
+            )}
+            {img.caption && <span className="image-caption"> &middot; {img.caption}</span>}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
 }
 
+// A notice's page: the event first, the assistant's reading, the satellites it names with their
+// orbits and activity in the window, then the notice's own text, artefacts and every field.
 export default function NotificationDetailPage() {
   const { id } = useParams<{ id: string }>();
   const [item, setItem] = useState<NotificationDetailType | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const activity = useActivity();
+  const now = useNow();
 
   useEffect(() => {
     if (!id) return;
     let cancelled = false;
-    async function load() {
-      setLoading(true);
-      setError(null);
-      try {
-        const data = await getNotification(id!);
+    setLoading(true);
+    setError(null);
+    getNotification(id)
+      .then((data) => {
         if (!cancelled) setItem(data);
-      } catch (err) {
-        if (!cancelled) {
-          if (err && typeof err === "object" && "response" in err) {
-            const status = (err as { response?: { status?: number } }).response?.status;
-            if (status === 404) {
-              setError("Notification not found.");
-            } else {
-              setError("Failed to load notification.");
-            }
-          } else {
-            setError("Failed to load notification.");
-          }
-        }
-      } finally {
+      })
+      .catch((err: unknown) => {
+        if (!cancelled) setError(loadFailure(err));
+      })
+      .finally(() => {
         if (!cancelled) setLoading(false);
-      }
-    }
-    load();
+      });
     return () => {
       cancelled = true;
     };
   }, [id]);
 
+  const data = activity.data;
+  const directory = useMemo(
+    () => (data ? satelliteDirectory(data.notices, data.maneuvers, data.elsets) : new Map()),
+    [data],
+  );
+
   if (loading) return <div>Loading...</div>;
   if (error) return <div className="form-error">{error}</div>;
   if (!item) return null;
 
-  const images = parseArtefacts(item.raw);
-  const satIds = item.sat_ids && item.sat_ids.length > 0 ? item.sat_ids.join(", ") : null;
-  const notsoLink = safeHttpUrl(item.notso_link);
+  const parsed = parseEventClass(item.event_class);
+  const satIds = satIdsOf(item);
+  const first = parsed?.objects.find((o) => o.id)?.id ?? satIds[0];
 
   return (
     <div>
       <Link to="/notifications" className="back-link">
         &larr; Back to notifications
       </Link>
-      <h1 className="record-value">{item.notso_identifier ?? item.notice_id ?? "Notification"}</h1>
-      {item.event_class && <p className="detail-subtitle">{item.event_class}</p>}
+      <NoticeHero
+        item={item}
+        parsed={parsed}
+        entry={data?.notices.find((n) => n.id === item.id)}
+        first={first ? directory.get(first) : undefined}
+        now={now}
+      />
 
       <AssistantPanel notificationId={item.id} />
 
-      <section className="card">
-        <h2>Status</h2>
-        <dl className="detail-grid">
-          <dt>Status</dt>
-          <dd>
-            {item.status ? <span className={statusClass(item.status)}>{item.status}</span> : "n/a"}
-          </dd>
-          <dt>Event type</dt>
-          <dd>{formatField(item.event_type)}</dd>
-          <dt>Message type</dt>
-          <dd>{formatField(item.msg_type)}</dd>
-          <dt>Classification</dt>
-          <dd>{formatField(item.classification_marking)}</dd>
-          <dt>Data mode</dt>
-          <dd>{formatField(item.data_mode)}</dd>
-        </dl>
-      </section>
-
-      <section className="card">
-        <h2>Identification</h2>
-        <dl className="detail-grid">
-          <dt>Notice</dt>
-          <dd>{formatField(item.notso_identifier ?? item.notice_id)}</dd>
-          <dt>Event ID</dt>
-          <dd>{formatField(item.event_id)}</dd>
-          <dt>UDL ID</dt>
-          <dd>{formatField(item.udl_id)}</dd>
-          <dt>Source</dt>
-          <dd>{formatField(item.source)}</dd>
-          <dt>Origin network</dt>
-          <dd>{formatField(item.orig_network)}</dd>
-          <dt>Created by</dt>
-          <dd>{formatField(item.created_by)}</dd>
-          <dt>Author</dt>
-          <dd>{formatField(item.company_name)}</dd>
-          {item.notso_link && (
-            <>
-              <dt>Source link</dt>
-              <dd>
-                {notsoLink ? (
-                  <a href={notsoLink} target="_blank" rel={NEW_TAB_REL}>
-                    {item.notso_link}
-                  </a>
-                ) : (
-                  <span>{item.notso_link}</span>
-                )}
-              </dd>
-            </>
-          )}
-        </dl>
-      </section>
-
-      <section className="card">
-        <h2>Timing</h2>
-        <dl className="detail-grid">
-          <dt>UDL created</dt>
-          <dd>{formatDateTime(item.udl_created_at)}</dd>
-          <dt>Published</dt>
-          <dd>{formatDateTime(item.publish_date)}</dd>
-          <dt>Effective from</dt>
-          <dd>{formatDateTime(item.effective_from)}</dd>
-          <dt>Effective until</dt>
-          <dd>{formatDateTime(item.effective_until)}</dd>
-        </dl>
-      </section>
-
-      <section className="card">
-        <h2>Associated objects</h2>
-        <dl className="detail-grid">
-          <dt>Satellite numbers</dt>
-          <dd>{satIds ?? (item.sat_no !== null ? String(item.sat_no) : "n/a")}</dd>
-          <dt>Region</dt>
-          <dd>{formatField(item.region)}</dd>
-        </dl>
-      </section>
+      <SatelliteCards
+        satIds={satIds}
+        noticeId={item.id}
+        data={data}
+        directory={directory}
+        loading={activity.loading}
+        error={activity.error}
+        now={now}
+      />
 
       {item.description && (
         <section className="card">
@@ -162,29 +125,15 @@ export default function NotificationDetailPage() {
         </section>
       )}
 
-      {images.length > 0 && (
-        <section className="card">
-          <h2>Source artefacts ({images.length})</h2>
-          <ul className="image-list">
-            {images.map((img, idx) => (
-              <li key={img.id ?? idx}>
-                {img.href ? (
-                  <a href={img.href} target="_blank" rel={NEW_TAB_REL}>
-                    {img.filename ?? img.url}
-                  </a>
-                ) : (
-                  <span>{img.filename ?? "(unnamed artefact)"}</span>
-                )}
-                {img.caption && <span className="image-caption"> &middot; {img.caption}</span>}
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+      <Artefacts item={item} />
+
+      <NoticeDetails item={item} />
 
       <section className="card">
-        <h2>Raw UDL payload</h2>
-        <pre className="raw-json">{JSON.stringify(item.raw, null, 2)}</pre>
+        <details className="raw-disclosure">
+          <summary>Raw UDL payload</summary>
+          <pre className="raw-json">{JSON.stringify(item.raw, null, 2)}</pre>
+        </details>
       </section>
     </div>
   );

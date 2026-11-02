@@ -2,13 +2,16 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useNavigate } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { getActivity } from "../api/activity";
 import { getEvaluation } from "../api/assistant";
 import { getNotification } from "../api/notifications";
+import { aManeuverOf, anElset, anOverview, aNotice } from "../test/activity";
 import { aNotification } from "../test/fixtures";
 import { renderAt } from "../test/render";
 import type { NotificationDetail } from "../types";
 import NotificationDetailPage from "./NotificationDetail";
 
+vi.mock("../api/activity");
 vi.mock("../api/assistant");
 vi.mock("../api/notifications");
 
@@ -66,6 +69,7 @@ function pending<T>() {
 beforeEach(() => {
   vi.mocked(getNotification).mockReset().mockResolvedValue(aNotification());
   vi.mocked(getEvaluation).mockReset().mockResolvedValue(null);
+  vi.mocked(getActivity).mockReset().mockResolvedValue(anOverview());
 });
 
 describe("a notice's page", () => {
@@ -279,5 +283,111 @@ describe("a notice's page", () => {
     await act(async () => late.reject({ response: { status: 404 } }));
     expect(screen.queryByText("Notification not found.")).toBeNull();
     expect(screen.getByRole("heading", { level: 1, name: "NOTSO-TEST-2" })).toBeTruthy();
+  });
+});
+
+describe("the event and its satellites", () => {
+  const rpo = "RPO / TEST-A (90001) vs TEST-B (90002) / GEO";
+
+  // The satellites section, once the activity overview has answered.
+  async function satellites() {
+    await shown();
+    const heading = await screen.findByRole("heading", { name: "Satellites in this notice" });
+    return heading.parentElement as HTMLElement;
+  }
+
+  it("reads the event class into the kind, the objects and their numbers, and the regime", async () => {
+    vi.mocked(getNotification).mockResolvedValue(
+      aNotification({ event_class: rpo, sat_ids: ["90001", "90002"] }),
+    );
+    vi.mocked(getActivity).mockResolvedValue(
+      anOverview({ notices: [aNotice({ id: "n-1", event_class: rpo, urgency: "high" })] }),
+    );
+    await shown();
+    const title = screen.getByRole("heading", { level: 1 });
+    expect(title.textContent).toBe("TEST-A #90001vs TEST-B #90002");
+    const hero = title.parentElement as HTMLElement;
+    expect(hero.className).toBe("notice-hero kind-rpo");
+    expect(within(hero).getByText("RPO")).toBeTruthy();
+    expect(within(hero).getByText("GEO")).toBeTruthy();
+    expect(await within(hero).findByText("High")).toBeTruthy();
+    expect(within(hero).getByText("By Test author")).toBeTruthy();
+    expect(within(hero).getByText("Published 02 Jan 03:00Z")).toBeTruthy();
+    expect(within(hero).getByText("Effective from 02 Jan 04:00Z")).toBeTruthy();
+    expect(within(hero).queryByText(/Effective until/)).toBeNull();
+  });
+
+  it("gives each satellite its element set, its activity strip and its maneuvers", async () => {
+    vi.mocked(getNotification).mockResolvedValue(
+      aNotification({ event_class: "Maneuver / TEST-SAT (90001) / GEO", sat_ids: ["90001"] }),
+    );
+    const burn = aManeuverOf({
+      sat_no: 90001,
+      source: "TEST-PROVIDER",
+      event_start_time: "2026-11-02T17:00:00Z",
+      facts: { delta_vel_kms: 0.0015 },
+    });
+    vi.mocked(getActivity).mockResolvedValue(
+      anOverview({
+        notices: [aNotice({ id: "n-1", sat_ids: ["90001"] })],
+        maneuvers: [burn, { ...burn, id: "copy" }, aManeuverOf({ sat_no: 90009 })],
+        elsets: [anElset(90001, { period: 1436.1 })],
+      }),
+    );
+    const section = await satellites();
+    const card = section.querySelector(".satellite-card") as HTMLElement;
+    expect(within(card).getByText("TEST-SAT")).toBeTruthy();
+    expect(within(card).getByText("Period").nextElementSibling?.textContent).toBe("1,436.1 min");
+    expect(within(card).getByText("Eccentricity").nextElementSibling?.textContent).toBe("0.0003");
+    expect(within(card).getByText("Δv 1.5 m/s")).toBeTruthy();
+    expect(within(card).getByText("×2 records")).toBeTruthy();
+    expect(within(card).getByText("02 Nov 17:00Z")).toBeTruthy();
+    expect(
+      within(card).getByRole("img", { name: "#90001: 1 maneuvers and 1 notices in the window" }),
+    ).toBeTruthy();
+    expect(within(card).getByRole("link", { name: "Open in Maneuvers" }).getAttribute("href")).toBe(
+      "/maneuvers",
+    );
+    expect(card.querySelector(".mark-emphasis")).toBeTruthy();
+  });
+
+  it("says when a satellite has no element set and no maneuver in the window", async () => {
+    vi.mocked(getNotification).mockResolvedValue(aNotification({ sat_ids: ["90001", "90002"] }));
+    const section = await satellites();
+    expect(within(section).getAllByText("No element set held for this satellite.")).toHaveLength(2);
+    expect(
+      within(section).getAllByText("No maneuver on this satellite in the window."),
+    ).toHaveLength(2);
+    expect(within(section).getByText("#90002")).toBeTruthy();
+  });
+
+  it("still lists the satellites when the activity cannot be loaded", async () => {
+    vi.mocked(getNotification).mockResolvedValue(aNotification({ sat_ids: ["90001", "90002"] }));
+    vi.mocked(getActivity).mockRejectedValue(new Error("offline"));
+    const section = await satellites();
+    expect(await within(section).findByText("Their activity could not be loaded.")).toBeTruthy();
+    expect(within(section).getByText("#90001, #90002")).toBeTruthy();
+  });
+
+  it("says the activity is loading until it arrives", async () => {
+    vi.mocked(getActivity).mockReturnValue(new Promise(() => undefined));
+    const section = await satellites();
+    expect(within(section).getByText("Loading their activity...")).toBeTruthy();
+  });
+
+  it("leaves the section out when the notice names no satellite", async () => {
+    vi.mocked(getNotification).mockResolvedValue(aNotification({ sat_no: null, sat_ids: null }));
+    await shown();
+    expect(screen.queryByRole("heading", { name: "Satellites in this notice" })).toBeNull();
+  });
+
+  it("keeps the raw payload folded away until asked for", async () => {
+    await shown();
+    const summary = screen.getByText("Raw UDL payload");
+    const details = summary.parentElement as HTMLDetailsElement;
+    expect(details.tagName).toBe("DETAILS");
+    expect(details.open).toBe(false);
+    fireEvent.click(summary);
+    expect(details.open).toBe(true);
   });
 });

@@ -4150,6 +4150,14 @@ button.event-row {
   flex-wrap: wrap;
 }
 
+.mono {
+  font-family: var(--font-mono);
+}
+
+.satellite-strip {
+  margin: var(--space-1) 0;
+}
+
 .raw-disclosure summary {
   cursor: pointer;
   color: var(--color-text-muted);
