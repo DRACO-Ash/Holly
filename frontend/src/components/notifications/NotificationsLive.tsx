@@ -176,7 +176,7 @@ function LiveConsole({ data, now }: Readonly<{ data: ActivityOverview; now: numb
       </div>
       <div className="console-filters">
         <label className="console-search">
-          Search notices
+          <span>Search notices</span>
           <input
             type="search"
             value={filters.text}

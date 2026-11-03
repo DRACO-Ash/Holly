@@ -41,6 +41,18 @@ export default tseslint.config(
             "CallExpression[callee.type='Identifier'][callee.name=/^(Array|ArrayBuffer|DataView|Date|Error|EvalError|RangeError|ReferenceError|SyntaxError|TypeError|URIError|AggregateError|Function|Map|WeakMap|Set|WeakSet|Promise|RegExp|Proxy|WeakRef|FinalizationRegistry|SharedArrayBuffer|(Ui|I)nt(8|16|32)Array|Uint8ClampedArray|Float(32|64)Array|Big(Ui|I)nt64Array)$/]",
           message: "Call a built-in constructor with new (SonarQube S7723).",
         },
+        {
+          // Text and an element on separate lines meet with no space between them in the
+          // page, though the source shows one: say which is meant.
+          selector: "JSXText[value=/\\S[^\\S\\n]*\\n\\s*$/] + JSXElement",
+          message:
+            'Text followed by an element on the next line: wrap the text, or add {" "} if a space is meant (SonarQube S6772).',
+        },
+        {
+          selector: "JSXElement + JSXText[value=/^[^\\S\\n]*\\n\\s*\\S/]",
+          message:
+            'An element followed by text on the next line: wrap the text, or add {" "} if a space is meant (SonarQube S6772).',
+        },
       ],
       "@typescript-eslint/prefer-for-of": "error",
     },

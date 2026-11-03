@@ -274,7 +274,7 @@ function Console({
       )}
       <div className="console-filters">
         <label className="console-search">
-          Search maneuvers
+          <span>Search maneuvers</span>
           <input
             type="search"
             value={choices.text}

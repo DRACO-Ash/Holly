@@ -211,7 +211,7 @@ export default function CommsFeed({
                     className={`hue-dot channel-hue-${channelHue(id, hues)}`}
                     aria-hidden="true"
                   />
-                  #{nameOf(id)}
+                  <span>#{nameOf(id)}</span>
                   <span className="chip-x" aria-hidden="true">
                     x
                   </span>

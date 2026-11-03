@@ -74,7 +74,7 @@ export default function MessageList({
                       className={`hue-dot channel-hue-${channelHue(m.channel_id, hues)}`}
                       aria-hidden="true"
                     />
-                    #{label}
+                    <span>#{label}</span>
                   </span>
                 )}
                 <span className="comms-author">@{m.user_display_name ?? m.user_id}</span>

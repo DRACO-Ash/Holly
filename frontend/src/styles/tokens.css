@@ -3895,12 +3895,12 @@ button.event-row:hover {
   color: var(--color-text-muted);
 }
 
-.event-meta .console-belt {
-  margin-bottom: var(--space-5);
+.event-meta .mono {
+  font-family: var(--font-mono);
 }
 
-.mono {
-  font-family: var(--font-mono);
+.console-belt {
+  margin-bottom: var(--space-5);
 }
 
 .event-action {

@@ -9,6 +9,19 @@
 
 All notable changes to Holly are recorded here, newest first. Holly V0.2 is the Daily Operations Dashboard fused into the Holly App Store project and renamed; the sections after it are the Daily Operations Dashboard's own record, kept as written. Holly's releases are numbered V<major>.<minor>, and each has a row in `docs/AUDIT-LOG.md` with the checks that ran.
 
+## Holly V0.17 (2026-11-03)
+
+A fix for V0.16's failed upload: the App Store's Code Quality stage found 3 new code smells.
+
+### Fixed
+
+● The search labels on Notifications and Maneuvers no longer leave their text and the field to meet without a space (S6772); the two Comms labels written the same way are fixed too.
+● The stylesheet writes `.mono` once (css:S4666). The duplicate came from an edit that also broke the GEO belt's bottom margin, which applied only inside notice rows; it applies again.
+
+### Changed
+
+● The dashboard's lint now refuses S6772's text-beside-an-element on separate lines, and the verification loop refuses a selector written twice in one scope of the stylesheet, so both fail before an upload. Each reproduced the platform's findings on V0.16.
+
 ## Holly V0.16 (2026-11-03)
 
 The Dashboard, Notifications, a notice's page and Maneuvers rebuilt as console views, at the app owner's request that the data be brought to life (their choices: the ops console direction, the real maneuver fields read on the server, the Dashboard included, gated straight through).
