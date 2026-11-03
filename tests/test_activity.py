@@ -243,7 +243,7 @@ async def test_more_satellites_than_the_cap_are_reported(
 
 @pytest.mark.parametrize("hours", [0, 337, "many"])
 async def test_a_window_out_of_range_is_refused(
-    api: httpx2.AsyncClient, use_session: UseSession, sign_in: SignIn, hours: object
+    api: httpx2.AsyncClient, use_session: UseSession, sign_in: SignIn, hours: int | str
 ) -> None:
     analyst(sign_in)
     session = use_session(FakeSession())
