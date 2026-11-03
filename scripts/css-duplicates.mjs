@@ -51,8 +51,8 @@ function blanked(text) {
 // quoted string, and a character after a backslash. Not normalised, so a duplicate written either
 // way is missed: the order or spacing inside a pseudo-class's brackets (:not(.a, .b) and
 // :not(.b,.a)) and the spacing of an attribute's operator ([x~="y"] and [x ~= "y"]). And an
-// escaped space followed by a space (.a\\  .b) is read as one, so it can be reported as a
-// duplicate of .a\\ .b: a false alarm, never a miss.
+// escaped space followed by a space (.a\  .b) is read as one, so it can be reported as a
+// duplicate of .a\ .b: a false alarm, never a miss.
 export function selectorKey(list) {
   const parts = [];
   let depth = 0;

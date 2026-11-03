@@ -14,6 +14,11 @@ const cases = [
   ['a list spaced differently', '.a,.b {}\n.a, .b {}', ['.a, .b']],
   ['a list in another order', '.a, .b {}\n.b, .a {}', ['.b, .a']],
   ['a combinator spaced differently', '.a>.b {}\n.a > .b {}', ['.a > .b']],
+  ['a + spaced differently', '.a+.b {}\n.a + .b {}', ['.a + .b']],
+  ['a ~ spaced differently', '.a~.b {}\n.a ~ .b {}', ['.a ~ .b']],
+  ['a statement before a rule', '@import "x.css";\n.a {}\n.a {}', ['.a']],
+  ['an escaped quote inside a string', '[x="\\"{"] {}\n.a {}\n.a {}', ['.a']],
+  ['an unclosed string ends at its line', '[x="{\n.b {}\n.a {}\n.a {}', ['.a']],
   ['a comma inside :is() is not the list', ':is(.a, .b) {}\n.a, .b {}', []],
   ['a combinator inside an attribute value', '[data-x="a>b"] {}\n[data-x="a > b"] {}', []],
   [
@@ -33,6 +38,13 @@ const cases = [
   ['an escaped combinator is not spaced', '.a\\>b {}\n.a\\ > b {}', []],
 ];
 let failed = 0;
+// A selector written three times is reported twice, each time against its first use.
+{
+  const got = duplicates('.a {}\n.b {}\n.a {}\n.a {}').map((d) => [d.line, d.first]);
+  const ok = JSON.stringify(got) === JSON.stringify([[3, 1], [4, 1]]);
+  if (!ok) failed += 1;
+  console.log(`${ok ? 'ok' : 'FAIL'}: a third copy is reported against the first${ok ? '' : ` (got ${JSON.stringify(got)})`}`);
+}
 for (const [name, css, expected] of cases) {
   const got = duplicates(css).map((d) => d.selector);
   const ok = JSON.stringify(got) === JSON.stringify(expected);
