@@ -3882,7 +3882,11 @@ button.event-row:hover {
   color: var(--color-text-muted);
 }
 
-.event-meta .mono {
+.event-meta .console-belt {
+  margin-bottom: var(--space-4);
+}
+
+.mono {
   font-family: var(--font-mono);
 }
 
