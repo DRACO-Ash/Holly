@@ -26,6 +26,9 @@ const cases = [
   ['an attribute operator is not spaced as a combinator', '[x~=y] {}\n[x ~=y] {}', []],
   ['a bracket in a quoted value', '[x="["] .a, .b {}\n.b, [x="["] .a {}', ['.b, [x="["] .a']],
   ['a parenthesis in a quoted value', '[x="("], .c {}\n.c, [x="("] {}', ['.c, [x="("]']],
+  ['a bracket in a single-quoted value', "[x='['] .a, .b {}\n.b, [x='['] .a {}", [".b, [x='['] .a"]],
+  ['a quote of the other kind in a value', '[x="\'["] .a, .b {}\n.b, [x="\'["] .a {}', ['.b, [x="\'["] .a']],
+  ['an escaped quote does not start a string', '.a\\"b, .c {}\n.c, .a\\"b {}', ['.c, .a\\"b']],
   ['an escaped comma is not the list', '.a\\,b {}\nb, .a\\ {}', []],
   ['an escaped combinator is not spaced', '.a\\>b {}\n.a\\ > b {}', []],
 ];

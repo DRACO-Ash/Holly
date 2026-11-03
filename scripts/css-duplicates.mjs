@@ -28,6 +28,10 @@ function blanked(text) {
       const stop = end === -1 ? text.length : end + 2;
       out += text.slice(i, stop).replace(/[^\n]/g, ' ');
       i = stop;
+    } else if (text[i] === '\\') {
+      // An escaped character, a quote among them, is the character itself, not a string's start.
+      out += text.slice(i, i + 2);
+      i += 2;
     } else if (text[i] === '"' || text[i] === "'") {
       const quote = text[i];
       let j = i + 1;
@@ -46,7 +50,9 @@ function blanked(text) {
 // (an attribute value, :is(a, b)) are part of their selector, not the list's; so is anything in a
 // quoted string, and a character after a backslash. Not normalised, so a duplicate written either
 // way is missed: the order or spacing inside a pseudo-class's brackets (:not(.a, .b) and
-// :not(.b,.a)) and the spacing of an attribute's operator ([x~="y"] and [x ~= "y"]).
+// :not(.b,.a)) and the spacing of an attribute's operator ([x~="y"] and [x ~= "y"]). And an
+// escaped space followed by a space (.a\\  .b) is read as one, so it can be reported as a
+// duplicate of .a\\ .b: a false alarm, never a miss.
 export function selectorKey(list) {
   const parts = [];
   let depth = 0;
