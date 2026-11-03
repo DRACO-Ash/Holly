@@ -43,18 +43,32 @@ function blanked(text) {
 }
 
 // The key a selector list is compared by. Commas and combinators inside brackets or parentheses
-// (an attribute value, :is(a, b)) are part of their selector, not the list's.
+// (an attribute value, :is(a, b)) are part of their selector, not the list's; so is anything in a
+// quoted string, and a character after a backslash. Not normalised, so a duplicate written either
+// way is missed: the order or spacing inside a pseudo-class's brackets (:not(.a, .b) and
+// :not(.b,.a)) and the spacing of an attribute's operator ([x~="y"] and [x ~= "y"]).
 export function selectorKey(list) {
   const parts = [];
   let depth = 0;
+  let quote = null;
   let part = '';
-  for (const char of list) {
-    if (char === '(' || char === '[') depth += 1;
-    if (char === ')' || char === ']') depth = Math.max(0, depth - 1);
-    if (char === ',' && depth === 0) {
+  for (let i = 0; i < list.length; i += 1) {
+    const char = list[i];
+    if (char === '\\') {
+      part += list.slice(i, i + 2);
+      i += 1;
+    } else if (quote) {
+      part += char;
+      if (char === quote) quote = null;
+    } else if (char === '"' || char === "'") {
+      quote = char;
+      part += char;
+    } else if (char === ',' && depth === 0) {
       parts.push(part);
       part = '';
     } else {
+      if (char === '(' || char === '[') depth += 1;
+      if (char === ')' || char === ']') depth = Math.max(0, depth - 1);
       part += depth === 0 && '>+~'.includes(char) ? ` ${char} ` : char;
     }
   }

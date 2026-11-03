@@ -16,6 +16,18 @@ const cases = [
   ['a combinator spaced differently', '.a>.b {}\n.a > .b {}', ['.a > .b']],
   ['a comma inside :is() is not the list', ':is(.a, .b) {}\n.a, .b {}', []],
   ['a combinator inside an attribute value', '[data-x="a>b"] {}\n[data-x="a > b"] {}', []],
+  [
+    'commas inside :is() keep two different lists apart',
+    ':is(.x, .y) .p, :is(.z, .w) .q {}\n:is(.x, .w) .q, :is(.z, .y) .p {}',
+    [],
+  ],
+  ['a list after a closed :is() is still split', ':is(.a) .b, .c {}\n.c, :is(.a) .b {}', ['.c, :is(.a) .b']],
+  // Inside brackets a ~ is an operator, not a combinator, and is left as written (see the header).
+  ['an attribute operator is not spaced as a combinator', '[x~=y] {}\n[x ~=y] {}', []],
+  ['a bracket in a quoted value', '[x="["] .a, .b {}\n.b, [x="["] .a {}', ['.b, [x="["] .a']],
+  ['a parenthesis in a quoted value', '[x="("], .c {}\n.c, [x="("] {}', ['.c, [x="("]']],
+  ['an escaped comma is not the list', '.a\\,b {}\nb, .a\\ {}', []],
+  ['an escaped combinator is not spaced', '.a\\>b {}\n.a\\ > b {}', []],
 ];
 let failed = 0;
 for (const [name, css, expected] of cases) {
