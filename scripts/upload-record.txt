@@ -63,3 +63,10 @@ review engineering-reviewer PASS 842b273083c96a115cde1f6de3af39d7ff486aa6 # V0.1
 review security-reviewer PASS 842b273083c96a115cde1f6de3af39d7ff486aa6 # V0.16, round 3
 review engineering-reviewer PASS 71b4fcbc4c405e60d1814fbbab5f516226841661 # V0.16, round 4 (GEO belt tick fix)
 review security-reviewer PASS 71b4fcbc4c405e60d1814fbbab5f516226841661 # V0.16, round 4 (GEO belt tick fix)
+review engineering-reviewer FAIL e6ac1a743c10a7b9836c62ceccb7ac45a5ca8c02 # V0.17, round 1: the duplicate check missed spacing and order variants
+review security-reviewer PASS e6ac1a743c10a7b9836c62ceccb7ac45a5ca8c02 # V0.17, round 1
+review engineering-reviewer FAIL 2c5000aaf43883074ecbee8daf9363c3d3b890a6 # V0.17, round 2: the check's paren tracking untested
+review security-reviewer PASS 2c5000aaf43883074ecbee8daf9363c3d3b890a6 # V0.17, round 2
+review engineering-reviewer FAIL c8bbe3c3f3d8f70b8ddc59edc047c56a3791a856 # V0.17, round 3: single quotes untested (scripts only)
+review engineering-reviewer FAIL 601c1e5a6e7a8c91d334c9d052e1dff75f49c874 # V0.17, round 4: + and ~ spacing and the statement reset untested (scripts only)
+review engineering-reviewer PASS 8adac50f6613c1a78245ea088a956da3821e745a # V0.17, round 5 (scripts only; upload as at 2c5000a)
