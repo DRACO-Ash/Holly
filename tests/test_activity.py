@@ -352,6 +352,11 @@ class TestManeuverFacts:
             "POSSIBLE NOTIFICATION: Status: x"
         )
 
+    def test_format_characters_are_dropped_and_a_cut_ends_on_a_character(self) -> None:
+        assert fact_text("A\u202eB\u200bC\u2066D") == "ABCD"
+        assert fact_text("\u202e") is None
+        assert fact_text("ab cd", 3) == "ab"
+
     def test_a_time_without_an_offset_is_read_as_utc(self) -> None:
         facts = maneuver_facts({"eventEndTime": "2026-06-05T11:00:00"})
         assert facts["event_end_time"] == datetime(2026, 6, 5, 11, 0, tzinfo=UTC)

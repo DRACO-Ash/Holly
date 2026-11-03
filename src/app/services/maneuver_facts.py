@@ -13,6 +13,7 @@ a number only when it is finite and of a plausible size; a time only when it par
 """
 
 import math
+import unicodedata
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any
@@ -73,11 +74,14 @@ FACT_NAMES: tuple[str, ...] = (
 
 def fact_text(value: Any, cap: int = TEXT_CAP) -> str | None:
     """Storable text on one line: every run of whitespace, line breaks among them, becomes one
-    space, so a value can never start a line of its own wherever it is shown or quoted."""
+    space, so a value can never start a line of its own wherever it is shown or quoted. Format
+    characters (Unicode category Cf: bidirectional overrides, zero-width spaces and the like)
+    are dropped, so text cannot show in another order than it is."""
     if not isinstance(value, str) or not storable_text(value):
         return None
-    text = " ".join(value.split())
-    return text[:cap] or None
+    visible = "".join(char for char in value if unicodedata.category(char) != "Cf")
+    text = " ".join(visible.split())
+    return text[:cap].rstrip() or None
 
 
 def fact_number(value: Any) -> float | None:
