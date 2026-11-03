@@ -89,7 +89,7 @@ describe("ManeuverRow", () => {
     expect(screen.getByText("UCT")).toBeTruthy();
     expect(screen.getByText("×3 records")).toBeTruthy();
     expect(screen.getByTitle("GEO, as the notice states")).toBeTruthy();
-    expect(button.querySelector(".fact-list")?.textContent).toBe("Δpos2 km");
+    expect(button.querySelector(".fact-list")?.textContent).toBe("Δpos 2 km");
   });
 
   it("falls back to the typed status and type, and names an unidentified object", () => {

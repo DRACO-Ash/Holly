@@ -3157,6 +3157,16 @@ fieldset.segmented {
   background: color-mix(in srgb, var(--color-accent) 8%, transparent);
 }
 
+/* A pressed filter says so by a mark as well as by its colour. */
+.stat-toggle[aria-pressed="true"]::after {
+  content: "✓";
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-3);
+  font-size: 0.9rem;
+  color: var(--color-accent);
+}
+
 .stat-count {
   font-family: var(--font-display);
   font-size: 2.2rem;
@@ -3302,7 +3312,8 @@ fieldset.segmented {
   display: block;
   width: 100%;
   height: auto;
-  touch-action: none;
+  /* A sideways drag picks a range; an upward or downward swipe still scrolls the page. */
+  touch-action: pan-y;
   user-select: none;
 }
 
@@ -3885,7 +3896,7 @@ button.event-row:hover {
 }
 
 .event-meta .console-belt {
-  margin-bottom: var(--space-4);
+  margin-bottom: var(--space-5);
 }
 
 .mono {
@@ -3958,6 +3969,34 @@ a.link-chip:hover {
   color: var(--color-text-faint);
 }
 
+.fact-list .fact {
+  display: inline-flex;
+  flex-direction: column;
+}
+
+.fact-list .fact-label {
+  font-family: var(--font-display);
+  font-size: 0.66rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-text-faint);
+}
+
+.fact-list .fact-value {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--color-text);
+}
+
+.belt-legend {
+  display: flex;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  margin: 0 0 var(--space-2);
+  padding: 0;
+  list-style: none;
+}
+
 .fact-list dd {
   margin: 0;
   font-family: var(--font-mono);
@@ -3979,8 +4018,8 @@ a.link-chip:hover {
   text-align: center;
 }
 
-.view-tabs {
-  margin-bottom: var(--space-4);
+fieldset.segmented.view-tabs {
+  margin-bottom: var(--space-3);
 }
 
 /* A maneuver opened in place */
@@ -4167,6 +4206,7 @@ button.event-row {
 
 .satellite-strip {
   margin: var(--space-1) 0;
+  touch-action: auto;
 }
 
 .raw-disclosure summary {

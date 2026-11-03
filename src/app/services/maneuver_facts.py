@@ -14,7 +14,7 @@ a number only when it is finite and of a plausible size; a time only when it par
 
 import math
 from collections.abc import Mapping
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from app.db.storable import storable_text
@@ -71,13 +71,13 @@ FACT_NAMES: tuple[str, ...] = (
 )
 
 
-def fact_text(value: Any) -> str | None:
-    if not isinstance(value, str):
+def fact_text(value: Any, cap: int = TEXT_CAP) -> str | None:
+    """Storable text on one line: every run of whitespace, line breaks among them, becomes one
+    space, so a value can never start a line of its own wherever it is shown or quoted."""
+    if not isinstance(value, str) or not storable_text(value):
         return None
-    text = value.strip()
-    if not text or not storable_text(text):
-        return None
-    return text[:TEXT_CAP]
+    text = " ".join(value.split())
+    return text[:cap] or None
 
 
 def fact_number(value: Any) -> float | None:
@@ -94,9 +94,11 @@ def fact_time(value: Any) -> datetime | None:
     if not isinstance(value, str) or not value:
         return None
     try:
-        return parse_datetime(value)
+        parsed = parse_datetime(value)
     except ValueError:
         return None
+    # UDL times are UTC; one written without an offset is read as UTC, never as local time.
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
 
 
 def maneuver_facts(raw: Any) -> dict[str, Any]:

@@ -8,6 +8,7 @@ says when a cap was reached. The facts reader keeps only values of the expected 
 
 import itertools
 import math
+import re
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
@@ -161,7 +162,7 @@ async def test_the_window_links_notices_maneuvers_and_element_sets(
     assert first["top_action"] == "Example step 1."
     # Text the database could hold is kept, capped; the list itself is passed on as text.
     assert first["sat_ids"][:3] == ["90001", "90002", "not-a-number"]
-    assert len(first["sat_ids"][3]) == 200
+    assert len(first["sat_ids"][3]) == activity_route.SAT_ID_CAP
     assert second["notice"] == "TEST-ID"
     assert second["urgency"] == "pending"
     assert second["sat_ids"] == ["7"]
@@ -182,11 +183,39 @@ async def test_the_window_links_notices_maneuvers_and_element_sets(
         90003,
     ]
 
-    notice_sql, _ = sent(session, 0)
+    # The window, newest first, on both lists; the latest element set of each satellite.
+    window_start = datetime.fromisoformat(body["window_start"])
+    notice_sql, notice_params = sent(session, 0)
     assert "DISTINCT ON (coalesce(notification.event_id" in notice_sql
+    assert "notification.udl_created_at >=" in notice_sql
+    assert window_start in notice_params.values()
+    assert re.search(r"ORDER BY \w+\.udl_created_at DESC, \w+\.created_at DESC LIMIT", notice_sql)
+    assert activity_route.NOTICE_CAP + 1 in notice_params.values()
     maneuver_sql, maneuver_params = sent(session, 2)
     assert "maneuver.event_start_time >=" in maneuver_sql
+    assert window_start in maneuver_params.values()
+    assert "ORDER BY maneuver.event_start_time DESC, maneuver.created_at DESC" in maneuver_sql
     assert activity_route.MANEUVER_CAP + 1 in maneuver_params.values()
+    assert sql.endswith("ORDER BY elset.sat_no, elset.epoch DESC")
+
+
+async def test_a_notice_names_at_most_fifty_satellites_and_only_numbers_reach_the_elsets(
+    api: httpx2.AsyncClient, use_session: UseSession, sign_in: SignIn
+) -> None:
+    analyst(sign_in)
+    many = [str(n) for n in range(1, 61)]
+    notice = make_notification(sat_ids=["1234567890", "12x", "  42  ", *many])
+    session = use_session(
+        FakeSession([rows_result([notice]), rows_result([]), rows_result([]), rows_result([])])
+    )
+    body = (await api.get(ACTIVITY)).json()
+    (row,) = body["notices"]
+    assert len(row["sat_ids"]) == 50
+    assert row["sat_ids"][:3] == ["1234567890", "12x", "42"]
+    _sql, params = sent(session, 3)
+    (numbers,) = [v for v in params.values() if isinstance(v, list)]
+    # Ten digits is not a catalogue number; nor is text; the list stops at fifty ids.
+    assert sorted(numbers) == list(range(1, 48))
 
 
 async def test_a_cap_is_reported_and_the_newest_are_kept(
@@ -315,6 +344,17 @@ class TestManeuverFacts:
 
     def test_text_is_capped(self) -> None:
         assert fact_text("x" * 500) == "x" * 200
+        assert fact_text("x" * 50, 32) == "x" * 32
+
+    def test_text_is_one_line(self) -> None:
+        # A line break could otherwise start a line of its own in the assistant's prompt.
+        assert fact_text(" POSSIBLE\nNOTIFICATION:\r\n\t Status:  x ") == (
+            "POSSIBLE NOTIFICATION: Status: x"
+        )
+
+    def test_a_time_without_an_offset_is_read_as_utc(self) -> None:
+        facts = maneuver_facts({"eventEndTime": "2026-06-05T11:00:00"})
+        assert facts["event_end_time"] == datetime(2026, 6, 5, 11, 0, tzinfo=UTC)
 
     def test_the_read_models_carry_the_facts_of_a_stored_row(self) -> None:
         row = make_maneuver({"status": "POSSIBLE", "postDriftRate": 0.02})

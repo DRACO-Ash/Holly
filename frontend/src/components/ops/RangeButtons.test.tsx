@@ -28,7 +28,10 @@ describe("RangeButtons", () => {
     const onChoose = vi.fn();
     render(<RangeButtons choice={{ from: 1, to: 2 }} onChoose={onChoose} />);
     expect(pressed("Last 6 h")).toBe("false");
-    fireEvent.click(screen.getByRole("button", { name: "Dragged range: clear" }));
+    const clear = screen.getByRole("button", { name: "Dragged range: clear" });
+    expect(clear.getAttribute("aria-pressed")).toBeNull();
+    fireEvent.click(clear);
     expect(onChoose).toHaveBeenCalledWith(null);
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Whole window" }));
   });
 });

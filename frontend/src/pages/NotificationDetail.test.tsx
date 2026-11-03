@@ -354,7 +354,11 @@ describe("the event and its satellites", () => {
   it("says when a satellite has no element set and no maneuver in the window", async () => {
     vi.mocked(getNotification).mockResolvedValue(aNotification({ sat_ids: ["90001", "90002"] }));
     const section = await satellites();
-    expect(within(section).getAllByText("No element set held for this satellite.")).toHaveLength(2);
+    expect(
+      within(section).getAllByText(
+        "No element set for this satellite in the current window's overview.",
+      ),
+    ).toHaveLength(2);
     expect(
       within(section).getAllByText("No maneuver on this satellite in the window."),
     ).toHaveLength(2);

@@ -39,11 +39,13 @@ MANEUVER_CAP = 2000
 ELSET_CAP = 2000
 # A NORAD catalogue number, as a notice's satellite list carries it: digits only, nine at most.
 _SAT_ID_DIGITS = 9
+# A satellite id is a catalogue number or a short designation; nothing longer is one.
+SAT_ID_CAP = 32
 
 
 def _sat_ids(notification: Any) -> list[str]:
     ids = notification.sat_ids if isinstance(notification.sat_ids, list) else []
-    kept = [text for text in (fact_text(value) for value in ids) if text is not None]
+    kept = [text for text in (fact_text(value, SAT_ID_CAP) for value in ids) if text is not None]
     if not kept and notification.sat_no is not None:
         kept = [str(notification.sat_no)]
     return kept[:50]

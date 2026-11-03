@@ -16,6 +16,19 @@ describe("Truncation", () => {
         data={anOverview({ truncated: { notices: true, maneuvers: false, elsets: true } })}
       />,
     );
-    expect(screen.getByText(/more notices and element sets than this view carries/)).toBeTruthy();
+    expect(
+      screen.getByText(/more notices than this view carries: it shows the newest/),
+    ).toBeTruthy();
+    expect(screen.getByText(/lowest catalogue numbers have one/)).toBeTruthy();
+  });
+
+  it("names both lists when both were cut, and says nothing of element sets when they were not", () => {
+    render(
+      <Truncation
+        data={anOverview({ truncated: { notices: true, maneuvers: true, elsets: false } })}
+      />,
+    );
+    expect(screen.getByText(/more notices and maneuvers than this view carries/)).toBeTruthy();
+    expect(screen.queryByText(/catalogue numbers/)).toBeNull();
   });
 });

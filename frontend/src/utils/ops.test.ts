@@ -90,6 +90,14 @@ describe("regimeFromElset", () => {
     [{ period: 720 }, "MEO"],
     [{ period: 1436 }, "GEO"],
     [{ period: 2000 }, "XGEO"],
+    [{ period: 127.9 }, "LEO"],
+    [{ period: 128 }, "MEO"],
+    [{ period: 1399.9 }, "MEO"],
+    [{ period: 1400 }, "GEO"],
+    [{ period: 1480 }, "GEO"],
+    [{ period: 1480.1 }, "XGEO"],
+    [{ period: 95, eccentricity: 0.25 }, "HEO"],
+    [{ period: 95, eccentricity: 0.249 }, "LEO"],
     [{ period: 720, eccentricity: 0.7 }, "HEO"],
     [{ period: null, mean_motion: 1.0027 }, "GEO"],
   ])("reads %o as %s", (fields, regime) => {
@@ -194,6 +202,10 @@ describe("times", () => {
     expect(duration(12 * 60_000)).toBe("12 min");
     expect(duration(3 * 3_600_000 + 5 * 60_000)).toBe("3 h 05 min");
     expect(duration(-5)).toBe("0 s");
+    // Rounding never gives 60 of a unit: it carries into the next.
+    expect(duration(59_600)).toBe("1 min");
+    expect(duration(59 * 60_000 + 40_000)).toBe("1 h 00 min");
+    expect(duration(3_600_000 + 59 * 60_000 + 45_000)).toBe("2 h 00 min");
   });
 });
 

@@ -30,8 +30,9 @@ export function RegimeBadge({
     <span className={`regime-badge regime-${regime.toLowerCase()}`} title={title}>
       {regime}
       {from === "elset" && (
-        <span className="regime-derived" aria-label="derived from the element set">
-          *
+        <span className="regime-derived">
+          <span aria-hidden="true">*</span>
+          <span className="visually-hidden">, derived from the element set</span>
         </span>
       )}
     </span>

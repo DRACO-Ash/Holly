@@ -10,8 +10,24 @@ import { type Fact, maneuverFacts } from "./maneuverFacts";
 import { RegimeBadge, SourceBadge } from "./Badges";
 import { Stamp } from "./Stamp";
 
-export function FactList({ facts }: Readonly<{ facts: readonly Fact[] }>) {
+// The facts as a description list, or, inside a button, where a list may not go, as text.
+export function FactList({
+  facts,
+  inline = false,
+}: Readonly<{ facts: readonly Fact[]; inline?: boolean }>) {
   if (facts.length === 0) return null;
+  if (inline) {
+    return (
+      <span className="fact-list">
+        {facts.map((fact) => (
+          <span key={fact.label} className="fact" title={fact.title}>
+            <span className="fact-label">{fact.label}</span>{" "}
+            <span className="fact-value">{fact.value}</span>
+          </span>
+        ))}
+      </span>
+    );
+  }
   return (
     <dl className="fact-list">
       {facts.map((fact) => (
@@ -78,7 +94,7 @@ export default function ManeuverRow({
             {satellite?.name && <span className="norad">#{m.sat_no}</span>}
             {label && <span className="event-vs">{label}</span>}
           </span>
-          <FactList facts={maneuverFacts(group)} />
+          <FactList facts={maneuverFacts(group)} inline />
           {notices.length > 0 && (
             <span className="event-links">
               Named in

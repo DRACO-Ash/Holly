@@ -8,31 +8,17 @@ import {
   startOfDayUtc,
   timeOf,
 } from "../../utils/ops";
+import { Mark } from "../ops/ActivityTimeline";
+import { KIND_SHAPES } from "../ops/lanes";
 
 const WIDTH = 300;
 const HEIGHT = 56;
-const LEFT = 8;
+// Room on the left for the two lanes' names.
+const LEFT = 76;
 const RIGHT = 8;
 const AXIS = 14;
 const ROW = 20;
 const DAY = 86_400_000;
-
-function Diamond({
-  x,
-  y,
-  size,
-  className,
-  label,
-}: Readonly<{ x: number; y: number; size: number; className: string; label: string }>) {
-  return (
-    <polygon
-      className={className}
-      points={`${x},${y - size} ${x + size},${y} ${x},${y + size} ${x - size},${y}`}
-    >
-      <title>{label}</title>
-    </polygon>
-  );
-}
 
 // One satellite's activity across the window: its maneuvers on the upper row, the notices that
 // name it on the lower, this notice marked out. Decoration beside a list that says the same.
@@ -83,6 +69,12 @@ export default function SatelliteStrip({
         width={plot}
         height={ROW - 4}
       />
+      <text className="timeline-lane-label" x={4} y={upper + 4}>
+        Maneuvers
+      </text>
+      <text className="timeline-lane-label" x={4} y={lower + 4}>
+        Notices
+      </text>
       {maneuvers.map((group) => {
         const time = maneuverStart(group.maneuver);
         if (time === null) return null;
@@ -104,17 +96,19 @@ export default function SatelliteStrip({
         const kind = parseEventClass(notice.event_class)?.kind ?? "other";
         const self = notice.id === noticeId;
         const label = `${self ? "This notice" : (notice.notice ?? "A notice")}, ${stampUtc(time)}`;
-        // Cancelled has a ring's hue only; its diamond here takes the neutral hue.
-        const tone = kind === "cancelled" ? "other" : kind;
-        const className = `timeline-mark mark-diamond tone-${tone}${self ? " mark-emphasis" : ""}`;
         return (
-          <Diamond
+          <Mark
             key={notice.id}
+            mark={{
+              id: notice.id,
+              time,
+              tone: kind,
+              shape: KIND_SHAPES[kind],
+              label,
+              emphasis: self,
+            }}
             x={xOf(time)}
             y={lower}
-            size={self ? 6 : 4}
-            className={className}
-            label={label}
           />
         );
       })}

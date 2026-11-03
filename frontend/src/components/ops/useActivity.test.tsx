@@ -83,4 +83,26 @@ describe("useActivity", () => {
     expect(second.result.current.error).toBeNull();
     expect(vi.getTimerCount()).toBe(0);
   });
+
+  it("never lets an older answer overwrite a newer one", async () => {
+    const older = anOverview({ window_hours: 1 });
+    const newer = anOverview({ window_hours: 2 });
+    let answerOlder: (overview: typeof older) => void = () => undefined;
+    vi.mocked(getActivity)
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            answerOlder = resolve;
+          }),
+      )
+      .mockResolvedValueOnce(newer);
+    const { result } = renderHook(() => useActivity());
+    act(() => result.current.reload());
+    await waitFor(() => expect(result.current.data).toBe(newer));
+    await act(async () => {
+      answerOlder(older);
+      await Promise.resolve();
+    });
+    expect(result.current.data).toBe(newer);
+  });
 });

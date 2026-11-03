@@ -44,6 +44,7 @@ function beltMarks(model: LiveModel, groups: readonly ManeuverGroup[]): BeltMark
       longitude,
       drift: group.maneuver.facts.post_drift_rate_deg_day,
       slot: model.slots.get(sourceOf(group)) ?? 4,
+      source: sourceOf(group),
       label: `${nameOf(model, group.maneuver.sat_no)}, ${sourceOf(group)}, ${longitude.toFixed(2)}°`,
     });
   }
@@ -264,8 +265,9 @@ function Console({
           <h2 id="geo-belt-title">GEO belt</h2>
           <GeoBelt marks={belt} />
           <p className="console-hint">
-            Longitude after the burn, from each record&apos;s postGeoLongitude (UDL field, TBC); the
-            line shows the direction and rough size of the drift.
+            Longitude after the burn, from each record&apos;s postGeoLongitude (UDL field, TBC). The
+            line shows the direction of the drift and its rough size; drifts above 0.2° a day are
+            drawn at the same length. Marks close together are stacked.
           </p>
         </section>
       )}

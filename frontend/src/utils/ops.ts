@@ -393,10 +393,12 @@ export function maneuverEnd(maneuver: ActivityManeuver): number | null {
 
 // "42 s", "12 min", "3 h 05 min": a burn's length.
 export function duration(ms: number): string {
-  if (ms < MINUTE) return `${Math.max(0, Math.round(ms / 1000))} s`;
-  if (ms < HOUR) return `${Math.round(ms / MINUTE)} min`;
-  const hours = Math.floor(ms / HOUR);
-  return `${hours} h ${pad(Math.round((ms - hours * HOUR) / MINUTE))} min`;
+  const seconds = Math.max(0, Math.round(ms / 1000));
+  if (seconds < 60) return `${seconds} s`;
+  // Rounded to the minute first, then split, so 59.6 s is "1 min" and 1 h 59 min 45 s "2 h 00 min".
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} min`;
+  return `${Math.floor(minutes / 60)} h ${pad(minutes % 60)} min`;
 }
 
 // A notice's or maneuver's text, lower-cased, for the search box.

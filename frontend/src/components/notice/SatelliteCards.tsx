@@ -72,7 +72,11 @@ function SatelliteCard({
         <RegimeBadge regime={satellite?.regime ?? null} from={satellite?.regimeFrom} />
       </div>
       <FactList facts={elsetFacts(satellite, now)} />
-      {!satellite?.elset && <p className="muted">No element set held for this satellite.</p>}
+      {!satellite?.elset && (
+        <p className="muted">
+          No element set for this satellite in the current window&apos;s overview.
+        </p>
+      )}
       <SatelliteStrip
         satId={satId}
         noticeId={noticeId}

@@ -1,4 +1,11 @@
-import { type PointerEvent, useRef, useState } from "react";
+import {
+  type PointerEvent,
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { dayUtc, histogram, startOfDayUtc } from "../../utils/ops";
 
 export type MarkShape = "dot" | "diamond" | "ring" | "triangle" | "square" | "bar";
@@ -23,76 +30,142 @@ export interface TimelineLane {
 
 export type TimeRange = readonly [number, number];
 
+// The view is drawn at the width it is shown, so its text and marks keep their size on a phone;
+// before it is measured, and where it cannot be, it is 1000 units wide.
 const WIDTH = 1000;
-const GUTTER = 200;
+const NARROW = 600;
 const RIGHT = 16;
 const AXIS = 26;
 const LANE = 30;
 const BINS = 60;
-const PLOT = WIDTH - GUTTER - RIGHT;
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 // A drag shorter than this many view units is a click, which clears the range.
 const MIN_DRAG = 6;
 
-function Mark({
+// A lane with more marks than this draws them smaller, so its density shows between them.
+const DENSE = 80;
+
+function markClass(mark: TimelineMark, pickable: boolean): string {
+  const classes = ["timeline-mark", `mark-${mark.shape}`, `tone-${mark.tone}`];
+  if (mark.emphasis) classes.push("mark-emphasis");
+  if (pickable) classes.push("mark-pickable");
+  return classes.join(" ");
+}
+
+// The glyph for each shape at (x, y), `size` from its centre to its edge.
+function Glyph({
+  shape,
+  x,
+  y,
+  size,
+  children,
+  ...handlers
+}: Readonly<{
+  shape: MarkShape;
+  x: number;
+  y: number;
+  size: number;
+  children: ReactNode;
+  className: string;
+  onPointerDown?: (event: PointerEvent) => void;
+  onClick?: () => void;
+}>) {
+  switch (shape) {
+    case "diamond":
+      return (
+        <polygon
+          {...handlers}
+          points={`${x},${y - size} ${x + size},${y} ${x},${y + size} ${x - size},${y}`}
+        >
+          {children}
+        </polygon>
+      );
+    case "triangle":
+      return (
+        <polygon
+          {...handlers}
+          points={`${x},${y - size} ${x + size},${y + size} ${x - size},${y + size}`}
+        >
+          {children}
+        </polygon>
+      );
+    case "bar":
+      return (
+        <rect {...handlers} x={x - size} y={y - size / 2} width={2 * size} height={size}>
+          {children}
+        </rect>
+      );
+    case "square":
+      return (
+        <rect
+          {...handlers}
+          x={x - size + 1}
+          y={y - size + 1}
+          width={2 * size - 2}
+          height={2 * size - 2}
+        >
+          {children}
+        </rect>
+      );
+    default:
+      return (
+        <circle {...handlers} cx={x} cy={y} r={size}>
+          {children}
+        </circle>
+      );
+  }
+}
+
+export function Mark({
   mark,
   x,
   y,
   onPick,
-}: Readonly<{ mark: TimelineMark; x: number; y: number; onPick?: (id: string) => void }>) {
-  const size = mark.emphasis ? 7 : 5;
-  const common = {
-    className: `timeline-mark mark-${mark.shape} tone-${mark.tone}${mark.emphasis ? " mark-emphasis" : ""}${onPick ? " mark-pickable" : ""}`,
-    onPointerDown: (event: PointerEvent) => event.stopPropagation(),
-    onClick: onPick ? () => onPick(mark.id) : undefined,
-  };
-  const title = <title>{mark.label}</title>;
-  if (mark.shape === "diamond") {
-    return (
-      <polygon
-        {...common}
-        points={`${x},${y - size} ${x + size},${y} ${x},${y + size} ${x - size},${y}`}
-      >
-        {title}
-      </polygon>
-    );
-  }
-  if (mark.shape === "triangle") {
-    return (
-      <polygon
-        {...common}
-        points={`${x},${y - size} ${x + size},${y + size} ${x - size},${y + size}`}
-      >
-        {title}
-      </polygon>
-    );
-  }
-  if (mark.shape === "bar") {
-    return (
-      <rect {...common} x={x - size} y={y - size / 2} width={2 * size} height={size}>
-        {title}
-      </rect>
-    );
-  }
-  if (mark.shape === "square") {
-    return (
-      <rect
-        {...common}
-        x={x - size + 1}
-        y={y - size + 1}
-        width={2 * size - 2}
-        height={2 * size - 2}
-      >
-        {title}
-      </rect>
-    );
-  }
+  dense = false,
+}: Readonly<{
+  mark: TimelineMark;
+  x: number;
+  y: number;
+  onPick?: (id: string) => void;
+  dense?: boolean;
+}>) {
+  const base = dense ? 3 : 5;
   return (
-    <circle {...common} cx={x} cy={y} r={size}>
-      {title}
-    </circle>
+    <Glyph
+      shape={mark.shape}
+      x={x}
+      y={y}
+      size={mark.emphasis ? base + 2 : base}
+      className={markClass(mark, onPick !== undefined)}
+      // A pickable mark takes its own pointer; any other lets a drag start on it.
+      onPointerDown={onPick ? (event) => event.stopPropagation() : undefined}
+      onClick={onPick ? () => onPick(mark.id) : undefined}
+    >
+      <title>{mark.label}</title>
+    </Glyph>
   );
+}
+
+function useViewWidth(ref: RefObject<SVGSVGElement | null>): number {
+  const [width, setWidth] = useState(WIDTH);
+  useEffect(() => {
+    const element = ref.current?.parentElement;
+    if (!element || typeof ResizeObserver === "undefined") return undefined;
+    const observer = new ResizeObserver(([entry]) => {
+      const measured = Math.round(entry.contentRect.width);
+      if (measured > 0) setWidth(measured);
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [ref]);
+  return width;
+}
+
+// A lane's label cut to fit the gutter, its whole text kept for the tooltip.
+function fitted(label: string, gutter: number): string {
+  const room = Math.max(4, Math.floor((gutter - 44) / 7.6));
+  return label.length <= room ? label : `${label.slice(0, room - 1)}…`;
 }
 
 function dayTicks(start: number, end: number): number[] {
@@ -126,17 +199,20 @@ export default function ActivityTimeline({
 }>) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [drag, setDrag] = useState<readonly [number, number] | null>(null);
+  const width = useViewWidth(svgRef);
+  const gutter = width < NARROW ? 110 : 200;
+  const plot = Math.max(1, width - gutter - RIGHT);
   const height = AXIS + lanes.length * LANE + 8;
   const span = Math.max(1, end - start);
   const xOf = (time: number) =>
-    GUTTER + ((Math.min(end, Math.max(start, time)) - start) / span) * PLOT;
+    gutter + ((Math.min(end, Math.max(start, time)) - start) / span) * plot;
   const timeOf = (x: number) =>
-    start + ((Math.min(GUTTER + PLOT, Math.max(GUTTER, x)) - GUTTER) / PLOT) * span;
+    start + ((Math.min(gutter + plot, Math.max(gutter, x)) - gutter) / plot) * span;
 
   const viewX = (event: PointerEvent) => {
     const box = svgRef.current?.getBoundingClientRect();
-    if (!box || box.width === 0) return GUTTER;
-    return ((event.clientX - box.left) / box.width) * WIDTH;
+    if (!box || box.width === 0) return gutter;
+    return ((event.clientX - box.left) / box.width) * width;
   };
   const onDown = (event: PointerEvent<SVGRectElement>) => {
     try {
@@ -170,7 +246,7 @@ export default function ActivityTimeline({
     <svg
       ref={svgRef}
       className="activity-timeline"
-      viewBox={`0 0 ${WIDTH} ${height}`}
+      viewBox={`0 0 ${width} ${height}`}
       role="img"
       aria-label={summary}
       focusable="false"
@@ -196,27 +272,30 @@ export default function ActivityTimeline({
           <g key={lane.key} className={`timeline-lane tone-${lane.tone}`}>
             <rect
               className="timeline-lane-bg"
-              x={GUTTER}
+              x={gutter}
               y={top + 2}
-              width={PLOT}
+              width={plot}
               height={LANE - 4}
             />
             {counts.map((count, bin) =>
               count === 0 ? null : (
                 <rect
-                  key={`${lane.key}-${bin * (PLOT / BINS)}`}
+                  key={`${lane.key}-${bin * (plot / BINS)}`}
                   className="timeline-density"
-                  x={GUTTER + (bin * PLOT) / BINS}
-                  width={PLOT / BINS}
+                  x={gutter + (bin * plot) / BINS}
+                  width={plot / BINS}
                   y={top + 2 + (LANE - 4) * (1 - count / peak)}
                   height={(LANE - 4) * (count / peak)}
                 />
               ),
             )}
-            <text className="timeline-lane-label" x={8} y={top + LANE / 2 + 4}>
-              {lane.label}
-            </text>
-            <text className="timeline-lane-count" x={GUTTER - 10} y={top + LANE / 2 + 4}>
+            <g>
+              {fitted(lane.label, gutter) !== lane.label && <title>{lane.label}</title>}
+              <text className="timeline-lane-label" x={8} y={top + LANE / 2 + 4}>
+                {fitted(lane.label, gutter)}
+              </text>
+            </g>
+            <text className="timeline-lane-count" x={gutter - 10} y={top + LANE / 2 + 4}>
               {lane.marks.length}
             </text>
           </g>
@@ -233,9 +312,9 @@ export default function ActivityTimeline({
       )}
       <rect
         className="timeline-brush"
-        x={GUTTER}
+        x={gutter}
         y={AXIS - 4}
-        width={PLOT}
+        width={plot}
         height={height - AXIS}
         onPointerDown={onDown}
         onPointerMove={onMove}
@@ -247,7 +326,14 @@ export default function ActivityTimeline({
         return (
           <g key={`${lane.key}-marks`}>
             {lane.marks.map((mark) => (
-              <Mark key={mark.id} mark={mark} x={xOf(mark.time)} y={y} onPick={onPick} />
+              <Mark
+                key={mark.id}
+                mark={mark}
+                x={xOf(mark.time)}
+                y={y}
+                onPick={onPick}
+                dense={lane.marks.length > DENSE}
+              />
             ))}
           </g>
         );

@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import type { RangeChoice } from "./consoleFilters";
 
 const PRESETS = [6, 24, 72] as const;
@@ -13,10 +14,16 @@ export default function RangeButtons({
   onChoose,
 }: Readonly<{ choice: RangeChoice; onChoose: (choice: RangeChoice) => void }>) {
   const hours = choice !== null && "hours" in choice ? choice.hours : null;
+  const whole = useRef<HTMLButtonElement>(null);
   return (
     <fieldset className="segmented range-buttons">
       <legend className="visually-hidden">Time range</legend>
-      <button type="button" aria-pressed={choice === null} onClick={() => onChoose(null)}>
+      <button
+        ref={whole}
+        type="button"
+        aria-pressed={choice === null}
+        onClick={() => onChoose(null)}
+      >
         Whole window
       </button>
       {PRESETS.map((preset) => (
@@ -30,7 +37,14 @@ export default function RangeButtons({
         </button>
       ))}
       {choice !== null && "from" in choice && (
-        <button type="button" aria-pressed="true" onClick={() => onChoose(null)}>
+        <button
+          type="button"
+          onClick={() => {
+            onChoose(null);
+            // The button leaves with the range: the focus moves to the range now in force.
+            whole.current?.focus();
+          }}
+        >
           Dragged range: clear
         </button>
       )}

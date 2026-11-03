@@ -81,7 +81,7 @@ Times are shown in UTC unless a field says otherwise.
 The Dashboard answers one question: what needs your attention. It covers the TACREP_NOTSO notices from the last 5 days (your operator can change the window), the latest publication of each and at most the 100 most recent, each evaluated by the assistant against your uploaded procedures when its classification marking is cleared for it.
 
 ● **The header** says the view is live and how long ago it last loaded. The page refreshes itself every 60 seconds; **Refresh** reloads it at once.
-● **The counts** show how many notices sit at **High**, **Medium** and **Low** urgency, how many are **Awaiting analysis**, and how many are **Info only**. Each count is also a filter: select it to show only those notices, and again to show them all. Beside them, **Notices in 24 h**, **Maneuvers in 24 h** and **Satellites active** count the last day's activity.
+● **The counts** show how many notices sit at **High**, **Medium** and **Low** urgency, how many are **Awaiting analysis**, and how many are **Info only**. Each count is also a filter: select it to show only those notices, and again to show them all. Beside them, **Notices in 24 h** and **Maneuvers in 24 h** count the last day's activity, and **Satellites active** counts the satellites the whole window names.
 ● **The timeline** draws the window, one lane per urgency and one for maneuvers, a mark per event at its time. Each kind of event has its own shape as well as its colour: a dot for a maneuver, a square for a photometric change, a diamond for an RPO, a triangle for a launch, a ring for a cancellation and a bar for anything else. Hover over a mark to see what it is; select a notice's mark to open it. **Whole window**, **Last 6 h**, **Last 24 h** and **Last 3 days** narrow the feed to that time, and so does dragging across the timeline; a click on the timeline clears a dragged range.
 ● **Most active satellites** ranks the satellites with the most notices and maneuvers in the window, with a small chart of when. Select one to show only its notices; select it again to clear.
 ● **The feed** groups notices by urgency, most urgent first and newest first within each group. A notice's urgency is the most urgent of the actions the assistant recommends. **Informational** means the assistant recommended no action. **Awaiting analysis** means there is no evaluation yet, or the last one failed. A notice marked `Not sent to the assistant: its classification marking is not cleared.` stays there: Holly does not send it to the assistant.
@@ -98,7 +98,7 @@ Two views: **Live window**, which opens first, and **Full archive**.
 
 ### The live window
 
-The notices of the last 5 days, one per notice, showing its latest publication.
+The notices of the last 5 days (your operator can change the window), one per notice, showing its latest publication.
 
 ● **The counts**: notices in the window and how many arrived in the last 24 hours; **High urgency** and **Medium urgency**; one count per kind of event present (maneuver, photometric change, RPO, launch, cancelled, other); and one per orbital regime present (LEO, MEO, HEO, GEO, XGEO). Every count but the first is a filter.
 ● **The timeline**: one lane per kind, with the same range buttons and dragging as on the Dashboard. Select a mark to open the notice.
@@ -106,7 +106,7 @@ The notices of the last 5 days, one per notice, showing its latest publication.
 ● **Search notices** matches a notice identifier, a satellite name or number, or any words of the event class.
 ● **The list** groups notices by UTC day, newest first. Each shows its kind, regime, urgency (when it has one), the objects it is about, any other satellites it names, the assistant's **Next:** action, the maneuvers in the window on its satellites, and when it arrived. Select a notice to open it.
 
-Holly reads a notice's kind, objects and regime from its event class, for example `Maneuver / NAME (12345) / GEO`. An event class that does not follow that pattern is shown as written. A regime with an asterisk is Holly's reading of the satellite's latest element set (its period and eccentricity), not the notice's own words; hover over it to see which.
+Holly reads a notice's kind, objects and regime from its event class, for example `Maneuver / NAME (12345) / GEO`. An event class that does not follow that pattern is shown as written. A notice's page shows each satellite's latest element set only when the satellite is named in the current window, so a notice opened from the archive may show none. A regime with an asterisk is Holly's reading of the satellite's latest element set (its period and eccentricity), not the notice's own words; hover over it to see which.
 
 ### The full archive
 
@@ -148,7 +148,7 @@ UDL maneuver records from fusion providers, pulled in the background every 10 mi
 ● **The counts:** maneuvers, satellites, the last 24 hours, **Named in a notice** (a filter: only maneuvers on satellites a notice in the window names), and one count per provider, each a filter.
 ● **The timeline:** one lane per provider. Select a mark to open that maneuver in the list. The range buttons and dragging work as on the Dashboard.
 ● **Most manoeuvring satellites:** select one to show only its maneuvers.
-● **GEO belt:** shown only when records carry a longitude. Each maneuver sits at its longitude after the burn, in its provider's colour, with a short line for the direction and rough size of its drift.
+● **GEO belt:** shown only when records carry a longitude. Each maneuver sits at its longitude after the burn, in its provider's colour (the providers are named above it), with a short line for the direction and rough size of its drift; drifts above 0.2° a day are drawn at the same length, and marks close together are stacked.
 ● **Search maneuvers** matches a satellite number or name, a provider, a status or a characterisation.
 ● **The list** groups maneuvers by UTC day. Each shows the provider, the regime, the status, the satellite (with its name when a notice in the window gives one), what the record says (delta-v, change in position, duration, longitude, drift, change in mass, whichever it carries) and the notices that name the satellite. Select a maneuver to open it in place: every value the record carries, with its unit, the notices naming the satellite as links, and the raw UDL record.
 

@@ -48,7 +48,7 @@ describe("RegimeBadge", () => {
     expect(screen.getByTitle("GEO, as the notice states").textContent).toBe("GEO");
     const leo = screen.getByTitle("LEO, from the latest element set's period and eccentricity");
     expect(leo.className).toBe("regime-badge regime-leo");
-    expect(screen.getByLabelText("derived from the element set").textContent).toBe("*");
+    expect(screen.getByText(", derived from the element set").className).toBe("visually-hidden");
     expect(screen.getByTitle("MEO").textContent).toBe("MEO");
   });
 });
