@@ -1,67 +1,110 @@
-import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { getFeed } from "../api/assistant";
-import type { AssistantFeedItem } from "../types";
+import DashboardBand, { type ActivityCounts } from "../components/dashboard/DashboardBand";
+import DashboardTimeline from "../components/dashboard/DashboardTimeline";
+import FeedItem from "../components/dashboard/FeedItem";
+import { feedBuckets, formatWindow, keepItem } from "../components/dashboard/feed";
+import ConsoleHeader from "../components/ops/ConsoleHeader";
+import { type RangeChoice, resolveRange, toggled } from "../components/ops/consoleFilters";
+import FilterChips, { type ActiveFilter } from "../components/ops/FilterChips";
+import ObjectBoard from "../components/ops/ObjectBoard";
+import Truncation from "../components/ops/Truncation";
+import { useActivity } from "../components/ops/useActivity";
+import { useNow } from "../components/ops/useNow";
+import type { ActivityOverview, AssistantFeedItem } from "../types";
 import { extractErrorMessage } from "../utils/errors";
+import {
+  type ManeuverGroup,
+  URGENCY_LABELS,
+  URGENCY_ORDER,
+  type Urgency,
+  bySatellite,
+  foldDuplicates,
+  maneuverSatIds,
+  maneuverStart,
+  mostActive,
+  satelliteDirectory,
+  timeOf,
+} from "../utils/ops";
 
 const REFRESH_INTERVAL_MS = 60_000;
+const DAY = 86_400_000;
+const BOARD_SIZE = 8;
 
-function formatDateTime(value: string | null | undefined): string {
-  if (!value) return "n/a";
-  return new Date(value).toISOString().replace("T", " ").slice(0, 19);
+// The feed's groups, most urgent first, with the notices still awaiting analysis before those
+// the assistant found nothing to do about.
+const BUCKET_ORDER: readonly Urgency[] = ["high", "medium", "low", "pending", "none"];
+
+const BUCKET_TITLES: Readonly<Record<Urgency, string>> = {
+  ...URGENCY_LABELS,
+  none: "Informational",
+};
+
+function urgencyClass(urgency: Urgency): string {
+  return urgency === "none" ? "urgency-pill" : `urgency-pill urgency-${urgency}`;
 }
 
-function formatWindow(hours: number): string {
-  if (hours > 0 && hours % 24 === 0) {
-    const days = hours / 24;
-    return days === 1 ? "1 day" : `${days} days`;
+function activityCounts(
+  data: ActivityOverview,
+  groups: readonly ManeuverGroup[],
+  satellites: number,
+  now: number,
+): ActivityCounts {
+  const since = now - DAY;
+  const recent = (time: number | null) => time !== null && time >= since;
+  return {
+    notices24h: data.notices.filter((n) => recent(timeOf(n.udl_created_at))).length,
+    maneuvers24h: groups.filter((g) => recent(maneuverStart(g.maneuver))).length,
+    satellites,
+  };
+}
+
+// The filters in force, each with what removes it.
+function activeFilters(state: {
+  urgencies: ReadonlySet<Urgency>;
+  rangeChoice: RangeChoice;
+  satellite: string | null;
+  satelliteName: string | null;
+  setUrgencies: (update: (set: ReadonlySet<Urgency>) => ReadonlySet<Urgency>) => void;
+  setRangeChoice: (choice: RangeChoice) => void;
+  setSatellite: (id: string | null) => void;
+}): ActiveFilter[] {
+  const filters: ActiveFilter[] = [...state.urgencies].map((u) => ({
+    key: `urgency-${u}`,
+    label: URGENCY_LABELS[u],
+    onRemove: () => state.setUrgencies((set) => toggled(set, u)),
+  }));
+  if (state.rangeChoice !== null) {
+    filters.push({ key: "range", label: "Time range", onRemove: () => state.setRangeChoice(null) });
   }
-  return hours === 1 ? "1 hour" : `${hours} hours`;
-}
-
-function urgencyClass(urgency: string): string {
-  const lower = urgency.toLowerCase();
-  if (lower === "high") return "urgency-pill urgency-high";
-  if (lower === "medium") return "urgency-pill urgency-medium";
-  if (lower === "low") return "urgency-pill urgency-low";
-  if (lower === "pending") return "urgency-pill urgency-pending";
-  return "urgency-pill";
-}
-
-function urgencyLabel(urgency: string): string {
-  if (urgency === "pending") return "Awaiting analysis";
-  if (urgency === "none") return "Informational";
-  return urgency.charAt(0).toUpperCase() + urgency.slice(1);
-}
-
-function feedBucketsByUrgency(items: AssistantFeedItem[]): Map<string, AssistantFeedItem[]> {
-  const order = new Set(["high", "medium", "low", "none", "pending"]);
-  const map = new Map<string, AssistantFeedItem[]>();
-  for (const k of order) map.set(k, []);
-  for (const item of items) {
-    const key = order.has(item.urgency) ? item.urgency : "none";
-    map.get(key)!.push(item);
+  if (state.satellite !== null) {
+    filters.push({
+      key: "satellite",
+      label: state.satelliteName ?? `#${state.satellite}`,
+      onRemove: () => state.setSatellite(null),
+    });
   }
-  return map;
+  return filters;
 }
 
-export default function Dashboard() {
+// The assistant feed, loaded now and every minute, and on request.
+function useFeed() {
   const [items, setItems] = useState<AssistantFeedItem[]>([]);
   const [windowHours, setWindowHours] = useState(120);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [lastLoadedAt, setLastLoadedAt] = useState<Date | null>(null);
+  const [loadedAt, setLoadedAt] = useState<number | null>(null);
 
-  const load = useCallback(async (signalLoading: boolean) => {
-    if (signalLoading) setLoading(true);
+  const load = useCallback(async (first: boolean) => {
+    if (first) setLoading(true);
     else setRefreshing(true);
     setError(null);
     try {
       const data = await getFeed();
       setItems(data.items);
       setWindowHours(data.window_hours);
-      setLastLoadedAt(new Date());
+      setLoadedAt(Date.now());
     } catch (err) {
       setError(extractErrorMessage(err, "Failed to load the assistant feed."));
     } finally {
@@ -75,22 +118,31 @@ export default function Dashboard() {
   }, [load]);
 
   useEffect(() => {
-    const id = window.setInterval(() => {
-      load(false);
-    }, REFRESH_INTERVAL_MS);
+    const id = window.setInterval(() => load(false), REFRESH_INTERVAL_MS);
     return () => window.clearInterval(id);
   }, [load]);
 
-  const buckets = feedBucketsByUrgency(items);
-  const counts = {
-    high: buckets.get("high")!.length,
-    medium: buckets.get("medium")!.length,
-    low: buckets.get("low")!.length,
-    pending: buckets.get("pending")!.length,
-    info: buckets.get("none")!.length,
-  };
+  return { items, windowHours, loading, refreshing, error, loadedAt, load };
+}
 
-  if (loading) {
+export default function Dashboard() {
+  const feed = useFeed();
+  const activity = useActivity();
+  const now = useNow();
+  const [urgencies, setUrgencies] = useState<ReadonlySet<Urgency>>(new Set());
+  const [rangeChoice, setRangeChoice] = useState<RangeChoice>(null);
+  const [satellite, setSatellite] = useState<string | null>(null);
+
+  const data = activity.data;
+  const groups = useMemo(() => foldDuplicates(data?.maneuvers ?? []), [data]);
+  const directory = useMemo(
+    () => satelliteDirectory(data?.notices ?? [], data?.maneuvers ?? [], data?.elsets ?? []),
+    [data],
+  );
+  const maneuversBySat = useMemo(() => bySatellite(data?.maneuvers ?? [], maneuverSatIds), [data]);
+  const board = useMemo(() => mostActive(data?.notices ?? [], groups, BOARD_SIZE), [data, groups]);
+
+  if (feed.loading) {
     return (
       <div>
         <h1>Dashboard</h1>
@@ -99,115 +151,126 @@ export default function Dashboard() {
     );
   }
 
+  const range = resolveRange(rangeChoice, now);
+  const shown = feed.items.filter((item) => keepItem(item, { urgencies, range, satellite }));
+  const allBuckets = feedBuckets(feed.items);
+  const counts = new Map(URGENCY_ORDER.map((u) => [u, allBuckets.get(u)?.length ?? 0]));
+  const buckets = feedBuckets(shown);
+  const windowText = formatWindow(feed.windowHours);
+
+  const filters = activeFilters({
+    urgencies,
+    rangeChoice,
+    satellite,
+    satelliteName: satellite === null ? null : (directory.get(satellite)?.name ?? null),
+    setUrgencies,
+    setRangeChoice,
+    setSatellite,
+  });
+  const clearAll = () => {
+    setUrgencies(new Set());
+    setRangeChoice(null);
+    setSatellite(null);
+  };
+  const refresh = () => {
+    feed.load(false);
+    activity.reload();
+  };
+
   return (
     <div>
-      <div className="dashboard-header">
-        <div>
-          <h1>What needs your attention</h1>
-          <p className="muted-paragraph">
-            Last {formatWindow(windowHours)} of TACREP_NOTSOs, evaluated against your uploaded
-            procedures. Most urgent first.
-            {lastLoadedAt && (
-              <>
-                {" "}
-                Last refreshed {formatDateTime(lastLoadedAt.toISOString())}
-                {refreshing && " (refreshing...)"}
-              </>
-            )}
-          </p>
-        </div>
-        <div>
-          <button type="button" onClick={() => load(false)} disabled={refreshing}>
-            {refreshing ? "Refreshing..." : "Refresh"}
+      <ConsoleHeader
+        eyebrow="Watch floor"
+        title="What needs your attention"
+        loadedAt={feed.loadedAt}
+        refreshing={feed.refreshing}
+        now={now}
+        actions={
+          <button type="button" onClick={refresh} disabled={feed.refreshing}>
+            {feed.refreshing ? "Refreshing..." : "Refresh"}
           </button>
+        }
+      >
+        Last {windowText} of TACREP_NOTSOs, evaluated against your uploaded procedures. Most urgent
+        first.
+      </ConsoleHeader>
+
+      {feed.error && <div className="form-error">{feed.error}</div>}
+      {activity.error && (
+        <p className="console-truncated">
+          The activity overview could not be loaded, so the timeline and the satellites are missing:{" "}
+          {activity.error}
+        </p>
+      )}
+      {data && <Truncation data={data} />}
+
+      <DashboardBand
+        counts={counts}
+        activity={data ? activityCounts(data, groups, directory.size, now) : null}
+        selected={urgencies}
+        onToggle={(u) => setUrgencies((set) => toggled(set, u))}
+      />
+
+      {data && (
+        <div className="console-grid">
+          <DashboardTimeline
+            data={data}
+            groups={groups}
+            now={now}
+            choice={rangeChoice}
+            onChoose={setRangeChoice}
+          />
+          <div className="console-panel">
+            <ObjectBoard
+              title="Most active satellites"
+              entries={board}
+              directory={directory}
+              start={Date.parse(data.window_start)}
+              end={Math.max(now, Date.parse(data.generated_at))}
+              selected={satellite}
+              onSelect={setSatellite}
+            />
+          </div>
         </div>
+      )}
+
+      <div className="console-filters">
+        <FilterChips filters={filters} onClear={clearAll} />
       </div>
 
-      {error && <div className="form-error">{error}</div>}
-
-      <div className="dashboard-rollup">
-        <div className="rollup-stat urgency-high">
-          <span className="rollup-count">{counts.high}</span>
-          <span className="rollup-label">High</span>
-        </div>
-        <div className="rollup-stat urgency-medium">
-          <span className="rollup-count">{counts.medium}</span>
-          <span className="rollup-label">Medium</span>
-        </div>
-        <div className="rollup-stat urgency-low">
-          <span className="rollup-count">{counts.low}</span>
-          <span className="rollup-label">Low</span>
-        </div>
-        <div className="rollup-stat urgency-pending">
-          <span className="rollup-count">{counts.pending}</span>
-          <span className="rollup-label">Pending</span>
-        </div>
-        <div className="rollup-stat">
-          <span className="rollup-count">{counts.info}</span>
-          <span className="rollup-label">Info only</span>
-        </div>
-      </div>
-
-      {items.length === 0 ? (
+      {feed.items.length === 0 && (
         <section className="card">
           <p>
-            No NOTSOs in the last {formatWindow(windowHours)}. When new ones arrive they'll appear
-            here automatically.
+            No NOTSOs in the last {windowText}. When new ones arrive they'll appear here
+            automatically.
           </p>
         </section>
-      ) : (
-        <section className="card">
-          {(["high", "medium", "low", "pending", "none"] as const).map((bucket) => {
-            const rows = buckets.get(bucket)!;
+      )}
+      {feed.items.length > 0 && shown.length === 0 && (
+        <p className="console-empty">No notice in the feed matches these filters.</p>
+      )}
+      {shown.length > 0 && (
+        <section className="card" aria-label="Assistant feed">
+          {BUCKET_ORDER.map((bucket) => {
+            const rows = buckets.get(bucket) ?? [];
             if (rows.length === 0) return null;
             return (
               <div key={bucket} className="dashboard-bucket">
                 <h2>
-                  <span className={urgencyClass(bucket)}>{urgencyLabel(bucket)}</span>
+                  <span className={urgencyClass(bucket)}>{BUCKET_TITLES[bucket]}</span>
                   <span className="bucket-count">{rows.length}</span>
                 </h2>
-                <ul className="action-feed">
-                  {rows.map((it) => {
-                    const n = it.notification;
-                    const summary = it.evaluation?.summary;
-                    return (
-                      <li key={n.id}>
-                        <Link className="action-feed-item" to={`/notifications/${n.id}`}>
-                          <div className="action-feed-head">
-                            <strong>{n.notso_identifier ?? n.notice_id ?? "Notification"}</strong>
-                            <span className="muted">{formatDateTime(n.udl_created_at)}</span>
-                          </div>
-                          {n.event_class && (
-                            <div className="action-feed-class">{n.event_class}</div>
-                          )}
-                          {it.event_summary && (
-                            <p className="action-feed-evolution">
-                              <span className="evolution-label">
-                                Event evolution
-                                {it.event_publication_count && it.event_publication_count > 1 && (
-                                  <> &middot; {it.event_publication_count} publications</>
-                                )}
-                              </span>
-                              {it.event_summary}
-                            </p>
-                          )}
-                          {summary && <p className="action-feed-summary">{summary}</p>}
-                          {it.top_action && (
-                            <div className="action-feed-action">
-                              <strong>Next:</strong> {it.top_action}
-                            </div>
-                          )}
-                          {bucket === "pending" && (
-                            <div className="muted">
-                              {it.assistant_cleared
-                                ? "Awaiting assistant analysis..."
-                                : "Not sent to the assistant: its classification marking is not cleared."}
-                            </div>
-                          )}
-                        </Link>
-                      </li>
-                    );
-                  })}
+                <ul className="event-list">
+                  {rows.map((item) => (
+                    <FeedItem
+                      key={item.notification.id}
+                      item={item}
+                      bucket={bucket}
+                      directory={directory}
+                      maneuversBySat={maneuversBySat}
+                      now={now}
+                    />
+                  ))}
                 </ul>
               </div>
             );

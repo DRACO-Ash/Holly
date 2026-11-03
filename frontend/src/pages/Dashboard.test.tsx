@@ -1,13 +1,16 @@
 // @vitest-environment jsdom
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { getActivity } from "../api/activity";
 import { getFeed } from "../api/assistant";
+import { aManeuverOf, aNotice, anElset, anOverview } from "../test/activity";
 import { aFeedItem, aNotification, anEvaluation } from "../test/fixtures";
 import { landedAt, renderAt } from "../test/render";
 import type { AssistantFeed, AssistantFeedItem } from "../types";
 import Dashboard from "./Dashboard";
 
 vi.mock("../api/assistant");
+vi.mock("../api/activity");
 
 function feed(items: AssistantFeedItem[], window_hours = 120): AssistantFeed {
   return { items, window_hours };
@@ -26,14 +29,22 @@ async function shown() {
   await screen.findByRole("heading", { name: "What needs your attention" });
 }
 
-// The figure beside a label in the roll-up across the top.
+function band() {
+  return document.querySelector<HTMLElement>(".console-band")!;
+}
+
+// The figure beside a label in the band across the top.
 function count(label: string) {
-  const rollup = document.querySelector<HTMLElement>(".dashboard-rollup")!;
-  return within(rollup).getByText(label).previousElementSibling?.textContent;
+  return within(band()).getByText(label).previousElementSibling?.textContent;
+}
+
+function theFeed() {
+  return screen.getByRole("region", { name: "Assistant feed" });
 }
 
 beforeEach(() => {
   vi.mocked(getFeed).mockReset().mockResolvedValue(feed([]));
+  vi.mocked(getActivity).mockReset().mockResolvedValue(anOverview());
 });
 
 afterEach(() => {
@@ -53,7 +64,8 @@ describe("the dashboard", () => {
     expect(getFeed).toHaveBeenCalledWith();
     answer(feed([]));
     expect(await screen.findByText(/No NOTSOs in the last 5 days/)).toBeTruthy();
-    expect(screen.getByText(/Last refreshed \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/)).toBeTruthy();
+    expect(screen.getByText(/Live · updated just now/)).toBeTruthy();
+    expect(screen.getByText("Watch floor")).toBeTruthy();
   });
 
   it("names the window in days or hours", async () => {
@@ -88,7 +100,7 @@ describe("the dashboard", () => {
     expect(count("High")).toBe("2");
     expect(count("Medium")).toBe("1");
     expect(count("Low")).toBe("1");
-    expect(count("Pending")).toBe("1");
+    expect(count("Awaiting analysis")).toBe("1");
     expect(count("Info only")).toBe("2");
   });
 
@@ -103,7 +115,7 @@ describe("the dashboard", () => {
       ]),
     );
     await shown();
-    const groups = screen.getAllByRole("heading", { level: 2 });
+    const groups = within(theFeed()).getAllByRole("heading", { level: 2 });
     expect(groups.map((g) => g.firstElementChild?.textContent)).toEqual([
       "High",
       "Medium",
@@ -141,7 +153,7 @@ describe("the dashboard", () => {
     expect(within(first).getByText("Synthetic evaluation summary")).toBeTruthy();
     expect(within(first).getByText("Synthetic next step")).toBeTruthy();
     expect(within(first).getByText("Test event class")).toBeTruthy();
-    expect(within(first).getByText("2026-01-02 03:04:05")).toBeTruthy();
+    expect(first.querySelector("time")?.getAttribute("title")).toBe("2026-01-02 03:04:05Z");
     const second = screen.getByText("NOTSO-h2").closest("li")!;
     expect(within(second).queryByText(/publications/)).toBeNull();
     const third = screen.getByText("NOTSO-h3").closest("li")!;
@@ -176,10 +188,30 @@ describe("the dashboard", () => {
     await shown();
     expect(screen.getByText("NOTICE-ONLY")).toBeTruthy();
     const bare = screen.getByText("Notification").closest("li")!;
-    expect(within(bare).getByText("n/a")).toBeTruthy();
-    expect(bare.querySelector(".action-feed-class")).toBeNull();
+    expect(within(bare).getByText("time unknown")).toBeTruthy();
+    expect(bare.querySelector(".kind-badge")).toBeNull();
     expect(bare.querySelector(".action-feed-summary")).toBeNull();
     expect(bare.querySelector(".action-feed-action")).toBeNull();
+  });
+
+  it("titles a notice by the objects its event class names, with kind and regime", async () => {
+    vi.mocked(getFeed).mockResolvedValue(
+      feed([
+        item("r1", "low", {
+          notification: aNotification({
+            id: "r1",
+            event_class: "RPO / TEST-A (90001) vs TEST-B (90002) / LEO",
+          }),
+        }),
+      ]),
+    );
+    await shown();
+    const row = within(theFeed()).getByRole("link");
+    expect(row.className).toContain("kind-rpo");
+    expect(within(row).getByText("TEST-A")).toBeTruthy();
+    expect(within(row).getByText("#90001")).toBeTruthy();
+    expect(within(row).getByText("TEST-B")).toBeTruthy();
+    expect(within(row).getByText("LEO").getAttribute("title")).toBe("LEO, as the notice states");
   });
 
   it("says why a pending notice has no analysis yet", async () => {
@@ -196,8 +228,9 @@ describe("the dashboard", () => {
     ).toBeTruthy();
   });
 
-  it("refreshes on request, saying so meanwhile, and shows why a refresh failed", async () => {
+  it("refreshes the feed and the activity on request, and shows why a refresh failed", async () => {
     await shown();
+    await waitFor(() => expect(getActivity).toHaveBeenCalledTimes(1));
     let fail: (reason: unknown) => void = () => undefined;
     vi.mocked(getFeed).mockReturnValueOnce(
       new Promise((_, reject) => {
@@ -209,7 +242,8 @@ describe("the dashboard", () => {
       name: "Refreshing...",
     })) as HTMLButtonElement;
     expect(busy.disabled).toBe(true);
-    expect(screen.getByText(/\(refreshing\.\.\.\)/)).toBeTruthy();
+    expect(screen.getByText(/· refreshing/)).toBeTruthy();
+    await waitFor(() => expect(getActivity).toHaveBeenCalledTimes(2));
     fail({ response: { data: { detail: "Feed unavailable" } } });
     expect(await screen.findByText("Feed unavailable")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Refresh" })).toBeTruthy();
@@ -247,5 +281,160 @@ describe("the dashboard's refresh", () => {
     await screen.findByRole("button", { name: "Refreshing..." });
     expect(screen.getByText("NOTSO-h1")).toBeTruthy();
     await waitFor(() => expect(getFeed).toHaveBeenCalledTimes(2));
+  });
+});
+
+describe("the dashboard's console", () => {
+  const recent = new Date(Date.now() - 2 * 3_600_000).toISOString();
+  const old = new Date(Date.now() - 50 * 3_600_000).toISOString();
+
+  function withActivity() {
+    vi.mocked(getActivity).mockResolvedValue(
+      anOverview({
+        window_start: new Date(Date.now() - 120 * 3_600_000).toISOString(),
+        generated_at: new Date().toISOString(),
+        notices: [
+          aNotice({
+            id: "h1",
+            urgency: "high",
+            udl_created_at: recent,
+            sat_ids: ["90001", "90002"],
+            event_class: "Maneuver / TEST-SAT (90001) / GEO",
+          }),
+          aNotice({ id: "l1", urgency: "low", udl_created_at: old, sat_ids: ["90003"] }),
+        ],
+        maneuvers: [
+          aManeuverOf({ id: "m1", sat_no: 90002, event_start_time: recent }),
+          aManeuverOf({ id: "m1b", sat_no: 90002, event_start_time: recent }),
+          aManeuverOf({ id: "m2", sat_no: 90001, event_start_time: old }),
+        ],
+        elsets: [anElset(90002, { period: 95 })],
+      }),
+    );
+    vi.mocked(getFeed).mockResolvedValue(
+      feed([
+        item("h1", "high", {
+          notification: aNotification({
+            id: "h1",
+            notso_identifier: "NOTSO-h1",
+            udl_created_at: recent,
+            sat_ids: ["90001", "90002"],
+            event_class: "Maneuver / TEST-SAT (90001) / GEO",
+          }),
+        }),
+        item("l1", "low", {
+          notification: aNotification({
+            id: "l1",
+            notso_identifier: "NOTSO-l1",
+            udl_created_at: old,
+            sat_ids: null,
+            sat_no: 90003,
+          }),
+        }),
+      ]),
+    );
+  }
+
+  it("counts the last day's notices, folded maneuvers and the satellites active", async () => {
+    withActivity();
+    await shown();
+    await screen.findByText("Notices in 24 h");
+    expect(count("Notices in 24 h")).toBe("1");
+    expect(count("Maneuvers in 24 h")).toBe("1");
+    expect(count("Satellites active")).toBe("3");
+  });
+
+  it("draws the window's notices by urgency and its maneuvers on a timeline", async () => {
+    withActivity();
+    await shown();
+    const timeline = await screen.findByRole("img", { name: /^Last 5 days: / });
+    expect(timeline.getAttribute("aria-label")).toBe(
+      "Last 5 days: 4 events in 3 lanes, High 1, Low 1, Maneuvers 2.",
+    );
+    const maneuver = [...timeline.querySelectorAll("title")].find((t) =>
+      t.textContent?.startsWith("Maneuver: #90002"),
+    );
+    fireEvent.click(maneuver!.parentElement!);
+    expect(landedAt()).toBe("/maneuvers");
+  });
+
+  it("opens a notice from its mark on the timeline", async () => {
+    withActivity();
+    await shown();
+    const timeline = await screen.findByRole("img", { name: /^Last 5 days: / });
+    fireEvent.click(timeline.querySelector(".mark-emphasis")!);
+    expect(landedAt()).toBe("/notifications/h1");
+  });
+
+  it("filters the feed by urgency from the band, and clears it from its chip", async () => {
+    withActivity();
+    await shown();
+    fireEvent.click(within(band()).getByRole("button", { name: /Low/ }));
+    expect(within(theFeed()).queryByText("NOTSO-h1")).toBeNull();
+    expect(within(theFeed()).getByText("NOTSO-l1")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Low: remove this filter/ }));
+    expect(within(theFeed()).getByText("NOTSO-h1")).toBeTruthy();
+  });
+
+  it("filters the feed to the last hours, and says when nothing matches", async () => {
+    withActivity();
+    await shown();
+    await screen.findByRole("img", { name: /^Last 5 days: / });
+    fireEvent.click(screen.getByRole("button", { name: "Last 24 h" }));
+    expect(within(theFeed()).getByText("NOTSO-h1")).toBeTruthy();
+    expect(within(theFeed()).queryByText("NOTSO-l1")).toBeNull();
+    fireEvent.click(within(band()).getByRole("button", { name: /Low/ }));
+    expect(screen.getByText("No notice in the feed matches these filters.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Clear all" }));
+    expect(within(theFeed()).getByText("NOTSO-l1")).toBeTruthy();
+  });
+
+  it("filters the feed to a satellite chosen on the board", async () => {
+    withActivity();
+    await shown();
+    const board = await screen.findByRole("region", { name: "Most active satellites" });
+    const rows = within(board).getAllByRole("button");
+    expect(rows[0].textContent).toContain("TEST-SAT");
+    expect(rows[0].textContent).toContain("1 notice");
+    expect(rows[0].textContent).toContain("1 maneuver");
+    fireEvent.click(within(board).getByRole("button", { name: /#90003/ }));
+    expect(within(theFeed()).queryByText("NOTSO-h1")).toBeNull();
+    expect(within(theFeed()).getByText("NOTSO-l1")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /#90003: remove this filter/ }));
+    expect(within(theFeed()).getByText("NOTSO-h1")).toBeTruthy();
+    fireEvent.click(within(board).getByRole("button", { name: /TEST-SAT/ }));
+    expect(screen.getByRole("button", { name: /TEST-SAT: remove this filter/ })).toBeTruthy();
+  });
+
+  it("says how many maneuvers are on the satellites a notice names", async () => {
+    withActivity();
+    await shown();
+    const first = await waitFor(() => {
+      const row = within(theFeed()).getByText("NOTSO-h1").closest("li")!;
+      expect(within(row).getByText("3 maneuvers on these satellites")).toBeTruthy();
+      return row;
+    });
+    expect(within(first).getByText("GEO")).toBeTruthy();
+    const second = within(theFeed()).getByText("NOTSO-l1").closest("li")!;
+    expect(within(second).queryByText(/on these satellites/)).toBeNull();
+  });
+
+  it("keeps the feed when the activity overview fails, and says so", async () => {
+    vi.mocked(getActivity).mockRejectedValue({ response: { data: { detail: "Overview down" } } });
+    vi.mocked(getFeed).mockResolvedValue(feed([item("h1", "high")]));
+    await shown();
+    expect(await screen.findByText(/The activity overview could not be loaded/)).toBeTruthy();
+    expect(screen.getByText(/Overview down/)).toBeTruthy();
+    expect(screen.getByText("NOTSO-h1")).toBeTruthy();
+    expect(screen.queryByText("Notices in 24 h")).toBeNull();
+    expect(screen.queryByRole("img", { name: /Last 5 days/ })).toBeNull();
+  });
+
+  it("says when the overview carries only the newest part of the window", async () => {
+    vi.mocked(getActivity).mockResolvedValue(
+      anOverview({ truncated: { notices: true, maneuvers: false, elsets: false } }),
+    );
+    await shown();
+    expect(await screen.findByText(/holds more notices than this view carries/)).toBeTruthy();
   });
 });
