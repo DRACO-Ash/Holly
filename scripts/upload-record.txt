@@ -55,3 +55,9 @@ review engineering-reviewer PASS 763d4436cc2244c1c7e5a369ed58ee07419da408 # V0.1
 review security-reviewer PASS 763d4436cc2244c1c7e5a369ed58ee07419da408 # V0.15, round 1
 review engineering-reviewer PASS 498059b71e83b856832100be423528aebee6aa0e # V0.15, round 2
 review security-reviewer PASS 498059b71e83b856832100be423528aebee6aa0e # V0.15, round 2
+review engineering-reviewer FAIL 82054abe63975674a96edb1ae0c53f268342fcc8 # V0.16, round 1: 3 majors (activity SQL untested, superseded response untested, element-set copy)
+review security-reviewer PASS 82054abe63975674a96edb1ae0c53f268342fcc8 # V0.16, round 1
+review engineering-reviewer FAIL 5568eeabee9799fdd1e4fde9416721e7b0cf67cc # V0.16, round 2: 1 major (measured-width timeline untested)
+review security-reviewer PASS 5568eeabee9799fdd1e4fde9416721e7b0cf67cc # V0.16, round 2
+review engineering-reviewer PASS 842b273083c96a115cde1f6de3af39d7ff486aa6 # V0.16, round 3
+review security-reviewer PASS 842b273083c96a115cde1f6de3af39d7ff486aa6 # V0.16, round 3
