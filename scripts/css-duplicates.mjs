@@ -5,7 +5,9 @@
 //
 // A scope is the top level of the sheet or the inside of one at-rule block (@media, @supports and
 // the like); the same selector in two different @media blocks is not a duplicate, as in Sonar.
-// A selector list is compared whole, its whitespace collapsed. Comments and strings are read so
+// A selector list is compared as stylelint's no-duplicate-selectors (the base of css:S4666)
+// compares it: split on its top-level commas, each part with its whitespace collapsed and its
+// combinators (>, +, ~) spaced alike, the parts in any order. Comments and strings are read so
 // that a brace inside either is not taken for a block. A @keyframes block's steps (0%, 50%) are
 // not selectors and are skipped. It fails closed: a sheet it cannot read, or whose braces do not
 // balance, fails.
@@ -40,6 +42,29 @@ function blanked(text) {
   return out;
 }
 
+// The key a selector list is compared by. Commas and combinators inside brackets or parentheses
+// (an attribute value, :is(a, b)) are part of their selector, not the list's.
+export function selectorKey(list) {
+  const parts = [];
+  let depth = 0;
+  let part = '';
+  for (const char of list) {
+    if (char === '(' || char === '[') depth += 1;
+    if (char === ')' || char === ']') depth = Math.max(0, depth - 1);
+    if (char === ',' && depth === 0) {
+      parts.push(part);
+      part = '';
+    } else {
+      part += depth === 0 && '>+~'.includes(char) ? ` ${char} ` : char;
+    }
+  }
+  parts.push(part);
+  return parts
+    .map((p) => p.replace(/\s+/g, ' ').trim())
+    .sort()
+    .join(', ');
+}
+
 export function duplicates(css) {
   const text = blanked(css);
   const found = [];
@@ -63,8 +88,9 @@ export function duplicates(css) {
       } else {
         if (parent.kind === 'scope') {
           const line = lineOf(text, start + (text.slice(start, i).search(/\S/) || 0));
-          const first = parent.seen.get(head);
-          if (first === undefined) parent.seen.set(head, line);
+          const key = selectorKey(head);
+          const first = parent.seen.get(key);
+          if (first === undefined) parent.seen.set(key, line);
           else found.push({ selector: head, line, first });
         }
         stack.push({ kind: 'rule' });

@@ -20,7 +20,7 @@ A fix for V0.16's failed upload: the App Store's Code Quality stage found 3 new 
 
 ### Changed
 
-● The dashboard's lint now refuses S6772's text-beside-an-element on separate lines, and the verification loop refuses a selector written twice in one scope of the stylesheet, so both fail before an upload. Each reproduced the platform's findings on V0.16.
+● The dashboard's lint now refuses S6772's text-beside-an-element on separate lines, and the verification loop refuses a selector list written twice in one scope of the stylesheet, however it is spaced or ordered, so both fail before an upload. Each reproduced the platform's findings on V0.16.
 
 ## Holly V0.16 (2026-11-03)
 

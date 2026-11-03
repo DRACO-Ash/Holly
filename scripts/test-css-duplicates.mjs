@@ -11,6 +11,11 @@ const cases = [
   ['keyframe steps are not selectors', '@keyframes k { 0% {} 50% {} 0% {} }', []],
   ['a brace in a comment or a string', '/* .a { */ .a { content: "}"; }\n.b {}', []],
   ['different selector lists', '.a, .b {}\n.a {}', []],
+  ['a list spaced differently', '.a,.b {}\n.a, .b {}', ['.a, .b']],
+  ['a list in another order', '.a, .b {}\n.b, .a {}', ['.b, .a']],
+  ['a combinator spaced differently', '.a>.b {}\n.a > .b {}', ['.a > .b']],
+  ['a comma inside :is() is not the list', ':is(.a, .b) {}\n.a, .b {}', []],
+  ['a combinator inside an attribute value', '[data-x="a>b"] {}\n[data-x="a > b"] {}', []],
 ];
 let failed = 0;
 for (const [name, css, expected] of cases) {

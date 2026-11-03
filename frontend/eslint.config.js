@@ -44,12 +44,12 @@ export default tseslint.config(
         {
           // Text and an element on separate lines meet with no space between them in the
           // page, though the source shows one: say which is meant.
-          selector: "JSXText[value=/\\S[^\\S\\n]*\\n\\s*$/] + JSXElement",
+          selector: "JSXText[value=/\\S[^\\S\\n]*\\n\\s*$/] + :matches(JSXElement, JSXFragment)",
           message:
             'Text followed by an element on the next line: wrap the text, or add {" "} if a space is meant (SonarQube S6772).',
         },
         {
-          selector: "JSXElement + JSXText[value=/^[^\\S\\n]*\\n\\s*\\S/]",
+          selector: ":matches(JSXElement, JSXFragment) + JSXText[value=/^[^\\S\\n]*\\n\\s*\\S/]",
           message:
             'An element followed by text on the next line: wrap the text, or add {" "} if a space is meant (SonarQube S6772).',
         },
