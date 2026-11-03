@@ -9,6 +9,18 @@
 
 All notable changes to Holly are recorded here, newest first. Holly V0.2 is the Daily Operations Dashboard fused into the Holly App Store project and renamed; the sections after it are the Daily Operations Dashboard's own record, kept as written. Holly's releases are numbered V<major>.<minor>, and each has a row in `docs/AUDIT-LOG.md` with the checks that ran.
 
+## Holly V0.18 (2026-11-03)
+
+A fix for V0.17's failed upload: the Code Quality stage found 2 new code smells in the dashboard's lint configuration.
+
+### Fixed
+
+● The two lint selectors V0.17 added for S6772 are written with `String.raw` rather than escaped backslashes (S7780).
+
+### Changed
+
+● The dashboard's lint now covers its own configuration file, which is in the upload and which the Code Quality stage reads, and refuses an escaped backslash there.
+
 ## Holly V0.17 (2026-11-03)
 
 A fix for V0.16's failed upload: the App Store's Code Quality stage found 3 new code smells.

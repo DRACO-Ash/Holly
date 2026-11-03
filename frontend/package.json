@@ -1,12 +1,12 @@
 {
   "name": "holly-dashboard",
-  "version": "0.17.0",
+  "version": "0.18.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "lint": "eslint src",
+    "lint": "eslint src eslint.config.js",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "format": "prettier --write \"src/**/*.{ts,tsx,css,json}\"",

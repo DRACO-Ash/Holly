@@ -10,6 +10,21 @@ import tseslint from "typescript-eslint";
 export default tseslint.config(
   { ignores: ["dist", "coverage"] },
   {
+    // This file is in the upload too, and the Code Quality stage reads it (S7780 on V0.17).
+    files: ["eslint.config.js"],
+    extends: [js.configs.recommended],
+    languageOptions: { ecmaVersion: 2022, sourceType: "module", globals: globals.node },
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: String.raw`Literal[raw=/\\/]`,
+          message: "Write a string holding a backslash as String.raw`...` (SonarQube S7780).",
+        },
+      ],
+    },
+  },
+  {
     files: ["**/*.{ts,tsx}"],
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     languageOptions: {
@@ -44,12 +59,12 @@ export default tseslint.config(
         {
           // Text and an element on separate lines meet with no space between them in the
           // page, though the source shows one: say which is meant.
-          selector: "JSXText[value=/\\S[^\\S\\n]*\\n\\s*$/] + :matches(JSXElement, JSXFragment)",
+          selector: String.raw`JSXText[value=/\S[^\S\n]*\n\s*$/] + :matches(JSXElement, JSXFragment)`,
           message:
             'Text followed by an element on the next line: wrap the text, or add {" "} if a space is meant (SonarQube S6772).',
         },
         {
-          selector: ":matches(JSXElement, JSXFragment) + JSXText[value=/^[^\\S\\n]*\\n\\s*\\S/]",
+          selector: String.raw`:matches(JSXElement, JSXFragment) + JSXText[value=/^[^\S\n]*\n\s*\S/]`,
           message:
             'An element followed by text on the next line: wrap the text, or add {" "} if a space is meant (SonarQube S6772).',
         },
