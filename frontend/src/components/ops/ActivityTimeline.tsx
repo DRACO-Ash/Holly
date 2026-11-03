@@ -24,7 +24,7 @@ export interface TimelineLane {
 export type TimeRange = readonly [number, number];
 
 const WIDTH = 1000;
-const GUTTER = 128;
+const GUTTER = 200;
 const RIGHT = 16;
 const AXIS = 26;
 const LANE = 30;

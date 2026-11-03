@@ -212,6 +212,14 @@ SELECT timestamp, user_id, ip_address, detail
 
 **SECTION 08**
 
+## The activity overview
+
+The Dashboard, Notifications, a notice's page and Maneuvers draw from one read-only route, `GET /api/v1/activity` (signed-in users only). It answers one window, by default `BACKGROUND_NOTIFICATION_WINDOW_HOURS` (120), or `?hours=` from 1 to 336: the latest publication of each notice with its urgency, the maneuvers that started in the window, and the latest element set of each satellite either names. It reads only what the background pulls stored; it calls neither UDL nor the assistant.
+
+Each list is capped, newest first: 1,000 notices, 2,000 maneuvers and element sets for 2,000 satellites. When a cap is reached the answer says so and the views say they show only the newest. Each open console view asks for it once a minute, so its database load grows with the number of open browsers (inference: a few queries over indexed columns each time; measured load `TBC, re-verify`).
+
+Maneuver values beyond the typed columns (status, characterisation, end time, delta-v and position, orbit before and after) are read from each stored record's raw UDL payload with the UDL maneuver schema's field names, at read time, so no migration is needed. Those names and their units are `TBC, re-verify` against a KBR or NorthStar record: open a maneuver on the Maneuvers page and compare its values with its raw record.
+
 ## Accounts
 
 ### The first admin

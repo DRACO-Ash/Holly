@@ -80,20 +80,37 @@ Times are shown in UTC unless a field says otherwise.
 
 The Dashboard answers one question: what needs your attention. It covers the TACREP_NOTSO notices from the last 5 days (your operator can change the window), the latest publication of each and at most the 100 most recent, each evaluated by the assistant against your uploaded procedures when its classification marking is cleared for it.
 
-● **The counts** across the top show how many notices sit at **High**, **Medium** and **Low** urgency, how many are **Pending**, and how many are **Info only**.
+● **The header** says the view is live and how long ago it last loaded. The page refreshes itself every 60 seconds; **Refresh** reloads it at once.
+● **The counts** show how many notices sit at **High**, **Medium** and **Low** urgency, how many are **Awaiting analysis**, and how many are **Info only**. Each count is also a filter: select it to show only those notices, and again to show them all. Beside them, **Notices in 24 h**, **Maneuvers in 24 h** and **Satellites active** count the last day's activity.
+● **The timeline** draws the window, one lane per urgency and one for maneuvers, a mark per event at its time. Each kind of event has its own shape as well as its colour: a dot for a maneuver, a square for a photometric change, a diamond for an RPO, a triangle for a launch, a ring for a cancellation and a bar for anything else. Hover over a mark to see what it is; select a notice's mark to open it. **Whole window**, **Last 6 h**, **Last 24 h** and **Last 3 days** narrow the feed to that time, and so does dragging across the timeline; a click on the timeline clears a dragged range.
+● **Most active satellites** ranks the satellites with the most notices and maneuvers in the window, with a small chart of when. Select one to show only its notices; select it again to clear.
 ● **The feed** groups notices by urgency, most urgent first and newest first within each group. A notice's urgency is the most urgent of the actions the assistant recommends. **Informational** means the assistant recommended no action. **Awaiting analysis** means there is no evaluation yet, or the last one failed. A notice marked `Not sent to the assistant: its classification marking is not cleared.` stays there: Holly does not send it to the assistant.
-● **Each notice** shows its identifier, its UDL creation time, its event class, the **Event evolution** narrative (with the number of publications when there is more than one), the assistant's summary and its top action, marked **Next:**. The narrative is written only from publications whose marking is cleared for the assistant, so it can lag a notice whose newest publication is not cleared.
+● **Each notice** shows its kind, its orbital regime, the objects it is about with their catalogue numbers, its UDL creation time, the **Event evolution** narrative (with the number of publications when there is more than one), the assistant's summary and its top action, marked **Next:**, and how many maneuvers the window holds on its satellites. The narrative is written only from publications whose marking is cleared for the assistant, so it can lag a notice whose newest publication is not cleared.
 ● **Select a notice** to open its detail page.
 
-The page refreshes itself every 60 seconds; **Refresh** reloads it at once. New notices arrive with the hourly pull, or sooner when someone selects **Pull from UDL** on the Notifications page.
+Every filter in force shows as a chip above the feed; select a chip to remove it, or **Clear all**. New notices arrive with the hourly pull, or sooner when someone selects **Pull from UDL** on the Notifications page. If the activity overview cannot be loaded, the feed still works and a note says so.
 
 **SECTION 06**
 
 ## The Notifications page
 
-The list of every stored notice, one row per notice, showing its latest publication.
+Two views: **Live window**, which opens first, and **Full archive**.
 
-### Filtering, sorting and paging
+### The live window
+
+The notices of the last 5 days, one per notice, showing its latest publication.
+
+● **The counts**: notices in the window and how many arrived in the last 24 hours; **High urgency** and **Medium urgency**; one count per kind of event present (maneuver, photometric change, RPO, launch, cancelled, other); and one per orbital regime present (LEO, MEO, HEO, GEO, XGEO). Every count but the first is a filter.
+● **The timeline**: one lane per kind, with the same range buttons and dragging as on the Dashboard. Select a mark to open the notice.
+● **Most active satellites**, as on the Dashboard: select one to show only its notices.
+● **Search notices** matches a notice identifier, a satellite name or number, or any words of the event class.
+● **The list** groups notices by UTC day, newest first. Each shows its kind, regime, urgency (when it has one), the objects it is about, any other satellites it names, the assistant's **Next:** action, the maneuvers in the window on its satellites, and when it arrived. Select a notice to open it.
+
+Holly reads a notice's kind, objects and regime from its event class, for example `Maneuver / NAME (12345) / GEO`. An event class that does not follow that pattern is shown as written. A regime with an asterisk is Holly's reading of the satellite's latest element set (its period and eccentricity), not the notice's own words; hover over it to see which.
+
+### The full archive
+
+Every stored notice, one row per notice, as before.
 
 ● **Event type** narrows the list to one type, for example `other`, `maneuver` or `launch`; type it and select **Apply**.
 ● **Status** narrows it to `OPEN` or `CLOSED`.
@@ -104,16 +121,16 @@ The list of every stored notice, one row per notice, showing its latest publicat
 
 ### Pulling fresh data
 
-Holly pulls notices from UDL every hour on its own. **Pull from UDL** runs the whole cycle at once: the pull, the assistant's evaluation of new notices, and the event narratives. It can take a while; the button reads **Pulling...** until the cycle finishes and the list reloads. If a pull is already running, yours joins it. Each pull counts towards your assistant allowance of 30 requests in any 10 minutes.
+Holly pulls notices from UDL every hour on its own. **Pull from UDL** runs the whole cycle at once: the pull, the assistant's evaluation of new notices, and the event narratives. It can take a while; the button reads **Pulling...** until the cycle finishes and the view reloads. If a pull is already running, yours joins it. Each pull counts towards your assistant allowance of 30 requests in any 10 minutes.
 
 ### A notice's detail page
 
+● **The header** names the kind, the regime, the urgency and the status, then the objects in large type with their catalogue numbers, then the notice identifier, when UDL created it, its publication and effective times, and its author.
 ● **Assistant:** the latest evaluation, with the model and the time it ran. It holds a summary; **Next actions**, each with an urgency, an optional deadline and the rationale; **Applicable procedures**, with why each applies; and **Open questions** the assistant could not answer. **Run assistant** evaluates a notice that has none; **Re-evaluate** runs it again, for example after a new procedure is uploaded. If the assistant could not produce a usable evaluation, the panel says why. For a notice whose classification marking is not cleared, running the assistant sends nothing: the panel says the notice was not sent to the assistant.
-● **Status:** status, event type, message type, classification and data mode.
-● **Identification:** the notice identifier, event id, UDL id, source, origin network, creator, author and, when the notice has one, a link to the source page, which opens in a new tab.
-● **Timing:** UDL creation, publication, and the effective-from and effective-until times.
-● **Associated objects:** the satellite numbers and the region.
-● **Event description**, **Source artefacts** (links to the files the notice lists) and the **Raw UDL payload**, verbatim.
+● **Satellites in this notice:** a card per satellite, with its name, regime, latest element set (period, inclination, apogee, perigee, eccentricity and how old it is), a strip of its maneuvers and notices across the window with this notice emphasised, and its maneuvers in the window, each with its time, provider and delta-v when the record carries one. **Open in Maneuvers** goes to the Maneuvers page.
+● **Event description** and **Source artefacts** (links to the files the notice lists).
+● **Details:** status, event type, message type, classification, data mode, the notice identifier, event id, UDL id, source, origin network, creator, author, a link to the source page when the notice has one (it opens in a new tab), and the UDL creation, publication and effective times.
+● **Raw UDL payload**, verbatim, folded away until you open it.
 
 > **TRAINER NOTE**
 >
@@ -123,11 +140,23 @@ Holly pulls notices from UDL every hour on its own. **Pull from UDL** runs the w
 
 ## The Maneuvers page
 
-UDL manoeuvre records from fusion providers, pulled in the background every 10 minutes. The assistant reads the records for a notice's satellites, from the last 30 days, when it evaluates the notice.
+UDL maneuver records from fusion providers, pulled in the background every 10 minutes. The assistant reads the records for a notice's satellites, from the last 30 days, when it evaluates the notice. Two views: **Live window**, which opens first, and **Full archive**.
 
-● **Satellite number** and **Maneuver type** (for example `ESPMV`) filter the list; **Apply**, **Clear** and **Refresh** work as on the Notifications page.
-● **Sat No**, **Start**, **Stop** and **Type** sort; **Delta-V (m/s)** and **Source** are shown. The default is start time, newest first.
-● Pages hold 50 rows. There is no detail page for a manoeuvre record.
+### The live window
+
+● **Duplicates folded:** a provider sometimes publishes the same maneuver more than once. Records for the same satellite, start time and provider are shown as one maneuver marked **×2 records** (or more); the first count says how many duplicate records were folded.
+● **The counts:** maneuvers, satellites, the last 24 hours, **Named in a notice** (a filter: only maneuvers on satellites a notice in the window names), and one count per provider, each a filter.
+● **The timeline:** one lane per provider. Select a mark to open that maneuver in the list. The range buttons and dragging work as on the Dashboard.
+● **Most manoeuvring satellites:** select one to show only its maneuvers.
+● **GEO belt:** shown only when records carry a longitude. Each maneuver sits at its longitude after the burn, in its provider's colour, with a short line for the direction and rough size of its drift.
+● **Search maneuvers** matches a satellite number or name, a provider, a status or a characterisation.
+● **The list** groups maneuvers by UTC day. Each shows the provider, the regime, the status, the satellite (with its name when a notice in the window gives one), what the record says (delta-v, change in position, duration, longitude, drift, change in mass, whichever it carries) and the notices that name the satellite. Select a maneuver to open it in place: every value the record carries, with its unit, the notices naming the satellite as links, and the raw UDL record.
+
+Holly reads these values from each record with the field names of the UDL maneuver schema (for example `status`, `deltaVel`, `eventEndTime`, `postGeoLongitude`). Those names and their units are `TBC, re-verify` against the providers' records. Delta-v is shown in m/s, converted from the km/s UDL states for `deltaVel`. The raw record is always there to check a value against.
+
+### The full archive
+
+Every stored record, 50 to a page: **Sat No**, **Start**, **End**, **Status**, **Δv (m/s)** and **Source**. **Satellite number** filters it; **Sat No**, **Start** and **End** sort it, by start time, newest first, by default. **End** sorts by the record's typed stop time, which the providers' records have so far left empty.
 
 **SECTION 08**
 

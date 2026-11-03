@@ -162,15 +162,17 @@ function LiveConsole({ data, now }: Readonly<{ data: ActivityOverview; now: numb
           />
           <p className="console-hint">Drag across the timeline to filter to a time range.</p>
         </section>
-        <ObjectBoard
-          title="Most active satellites"
-          entries={board}
-          directory={directory}
-          start={start}
-          end={end}
-          selected={filters.satellite}
-          onSelect={(satellite) => set({ satellite })}
-        />
+        <div className="console-panel">
+          <ObjectBoard
+            title="Most active satellites"
+            entries={board}
+            directory={directory}
+            start={start}
+            end={end}
+            selected={filters.satellite}
+            onSelect={(satellite) => set({ satellite })}
+          />
+        </div>
       </div>
       <div className="console-filters">
         <label className="console-search">

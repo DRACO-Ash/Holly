@@ -9,6 +9,22 @@
 
 All notable changes to Holly are recorded here, newest first. Holly V0.2 is the Daily Operations Dashboard fused into the Holly App Store project and renamed; the sections after it are the Daily Operations Dashboard's own record, kept as written. Holly's releases are numbered V<major>.<minor>, and each has a row in `docs/AUDIT-LOG.md` with the checks that ran.
 
+## Holly V0.16 (2026-11-03)
+
+The Dashboard, Notifications, a notice's page and Maneuvers rebuilt as console views, at the app owner's request that the data be brought to life (their choices: the ops console direction, the real maneuver fields read on the server, the Dashboard included, gated straight through).
+
+### Added
+
+● **Console views.** Each has a live header, a band of counts that double as filters, a swimlane timeline of the window that a dragged range or the range buttons narrow, the most active satellites, search, filter chips, and a list grouped by UTC day. Event kinds are told apart by colour and by glyph shape together, and named in words.
+● **Notifications** reads each notice's kind, objects with their catalogue numbers, and regime from its event class, shows the maneuvers in the window on its satellites, and keeps the paged table as **Full archive**.
+● **A notice's page** leads with the event, then a card per satellite: its latest element set, an activity strip across the window, and its maneuvers.
+● **Maneuvers** folds a provider's duplicate records into one maneuver and says how many, opens a maneuver in place with every value its record carries and the raw record, and draws a GEO belt when records carry a longitude. Its archive drops the columns no record fills.
+● **`GET /api/v1/activity`**, signed-in only and read-only: one window of notices with urgency, maneuvers and the latest element set per satellite, each list capped, newest first, with the cap reported.
+
+### Fixed
+
+● **Maneuver values.** Holly read `mnvrType`, `deltaV` and `eventStopTime`, which the providers' records do not carry, so every row showed n/a (fact, from the app owner's Maneuvers page). Holly now also reads the UDL maneuver schema's fields (`status`, `characterization`, `eventEndTime`, `deltaVel`, `deltaPos`, pre- and post-burn orbit, `uct`) from each stored record, at read time, so the records already stored benefit with no migration. Those names and units are `TBC, re-verify` against a provider's record. The assistant's maneuver context carries the same values.
+
 ## Holly V0.15 (2026-11-02)
 
 ### Security
