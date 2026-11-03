@@ -6,7 +6,7 @@ export default function StatTile({
   label,
   detail,
   tone = "neutral",
-  pressed,
+  pressed = false,
   onToggle,
 }: Readonly<{
   count: number | string;
@@ -28,7 +28,7 @@ export default function StatTile({
     <button
       type="button"
       className={`stat-tile stat-toggle tone-${tone}`}
-      aria-pressed={pressed ?? false}
+      aria-pressed={pressed}
       onClick={onToggle}
     >
       {body}

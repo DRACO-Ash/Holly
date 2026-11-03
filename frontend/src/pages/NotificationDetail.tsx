@@ -60,7 +60,7 @@ export default function NotificationDetailPage() {
   const now = useNow();
 
   useEffect(() => {
-    if (!id) return;
+    if (!id) return undefined;
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -68,8 +68,8 @@ export default function NotificationDetailPage() {
       .then((data) => {
         if (!cancelled) setItem(data);
       })
-      .catch((err: unknown) => {
-        if (!cancelled) setError(loadFailure(err));
+      .catch((error_: unknown) => {
+        if (!cancelled) setError(loadFailure(error_));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);

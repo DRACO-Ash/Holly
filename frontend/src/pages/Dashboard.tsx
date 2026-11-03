@@ -105,8 +105,8 @@ function useFeed() {
       setItems(data.items);
       setWindowHours(data.window_hours);
       setLoadedAt(Date.now());
-    } catch (err) {
-      setError(extractErrorMessage(err, "Failed to load the assistant feed."));
+    } catch (error_) {
+      setError(extractErrorMessage(error_, "Failed to load the assistant feed."));
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -114,12 +114,12 @@ function useFeed() {
   }, []);
 
   useEffect(() => {
-    load(true);
+    void load(true);
   }, [load]);
 
   useEffect(() => {
-    const id = window.setInterval(() => load(false), REFRESH_INTERVAL_MS);
-    return () => window.clearInterval(id);
+    const id = globalThis.setInterval(() => void load(false), REFRESH_INTERVAL_MS);
+    return () => globalThis.clearInterval(id);
   }, [load]);
 
   return { items, windowHours, loading, refreshing, error, loadedAt, load };
@@ -173,7 +173,7 @@ export default function Dashboard() {
     setSatellite(null);
   };
   const refresh = () => {
-    feed.load(false);
+    void feed.load(false);
     activity.reload();
   };
 

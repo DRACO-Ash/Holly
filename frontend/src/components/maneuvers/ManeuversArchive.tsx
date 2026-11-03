@@ -47,8 +47,8 @@ export default function ManeuversArchive() {
         setItems(page.items);
         setTotal(page.total);
       })
-      .catch((err: unknown) => {
-        if (!cancelled) setError(extractErrorMessage(err, "Failed to load maneuvers."));
+      .catch((error_: unknown) => {
+        if (!cancelled) setError(extractErrorMessage(error_, "Failed to load maneuvers."));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);

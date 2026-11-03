@@ -76,17 +76,17 @@ export function parseEventClass(eventClass: string | null | undefined): ParsedEv
   if (!eventClass) return null;
   const parts = eventClass
     .split("/")
-    .map(tidy)
+    .map((part) => tidy(part))
     .filter((part) => part !== "");
   if (parts.length === 0) return null;
   const kindLabel = parts[0];
   let rest = parts.slice(1);
-  const last = rest.length > 0 ? rest[rest.length - 1].toUpperCase() : undefined;
+  const last = rest.at(-1)?.toUpperCase();
   const regime = last !== undefined && REGIME_WORDS.has(last) ? (last as Regime) : null;
   if (regime) rest = rest.slice(0, -1);
   const objects = rest
     .flatMap((part) => part.split(/\svs\.?\s/i))
-    .map(eventObject)
+    .map((part) => eventObject(part))
     .filter((object) => object.name !== "");
   return { kind: eventKind(kindLabel), kindLabel, objects, regime };
 }
@@ -117,6 +117,19 @@ export interface Satellite {
   elset: ActivityElset | null;
 }
 
+// The names a notice gives its objects, and its regime, which belongs to its first object.
+function nameFromNotice(parsed: ParsedEvent, entry: (id: string) => Satellite): void {
+  for (const [index, object] of parsed.objects.entries()) {
+    if (object.id === null) continue;
+    const satellite = entry(object.id);
+    satellite.name ??= object.name;
+    if (index === 0 && parsed.regime && satellite.regimeFrom === null) {
+      satellite.regime = parsed.regime;
+      satellite.regimeFrom = "notice";
+    }
+  }
+}
+
 // Every satellite the window names, with what the notices and element sets say about it.
 export function satelliteDirectory(
   notices: readonly ActivityNotice[],
@@ -133,18 +146,9 @@ export function satelliteDirectory(
     return found;
   };
   for (const notice of notices) {
-    const parsed = parseEventClass(notice.event_class);
     for (const id of notice.sat_ids) entry(id);
-    for (const object of parsed?.objects ?? []) {
-      if (object.id === null) continue;
-      const satellite = entry(object.id);
-      satellite.name ??= object.name;
-      // The regime a notice states belongs to its first object, the one it is about.
-      if (parsed?.regime && object === parsed.objects[0] && satellite.regimeFrom === null) {
-        satellite.regime = parsed.regime;
-        satellite.regimeFrom = "notice";
-      }
-    }
+    const parsed = parseEventClass(notice.event_class);
+    if (parsed) nameFromNotice(parsed, entry);
   }
   for (const maneuver of maneuvers) {
     if (maneuver.sat_no !== null) entry(String(maneuver.sat_no));
@@ -275,7 +279,7 @@ export const dayUtc = (time: number) => {
 };
 export const stampUtc = (time: number) => `${dayUtc(time)} ${clockUtc(time)}`;
 export const fullUtc = (time: number) =>
-  new Date(time).toISOString().replace("T", " ").slice(0, 19) + "Z";
+  `${new Date(time).toISOString().replace("T", " ").slice(0, 19)}Z`;
 
 export const startOfDayUtc = (time: number) => Math.floor(time / DAY) * DAY;
 
@@ -370,7 +374,9 @@ export function sourceSlots(
   sources: readonly (string | null)[],
   slots: number,
 ): Map<string, number> {
-  const names = [...new Set(sources.map((s) => s ?? "Unknown"))].sort((a, b) => a.localeCompare(b));
+  const unique = new Set<string>();
+  for (const source of sources) unique.add(source ?? "Unknown");
+  const names = [...unique].sort((a, b) => a.localeCompare(b));
   return new Map(names.map((name, index) => [name, (index % slots) + 1]));
 }
 

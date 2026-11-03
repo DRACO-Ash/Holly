@@ -64,8 +64,8 @@ export default function DashboardTimeline({
         range={resolveRange(choice, now)}
         onRange={(range) => onChoose(range ? { from: range[0], to: range[1] } : null)}
         onPick={(id) => {
-          if (notices.has(id)) navigate(`/notifications/${id}`);
-          else navigate("/maneuvers");
+          if (notices.has(id)) void navigate(`/notifications/${id}`);
+          else void navigate("/maneuvers");
         }}
       />
       <p className="console-hint">

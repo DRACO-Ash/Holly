@@ -139,7 +139,11 @@ export default function ActivityTimeline({
     return ((event.clientX - box.left) / box.width) * WIDTH;
   };
   const onDown = (event: PointerEvent<SVGRectElement>) => {
-    event.currentTarget.setPointerCapture?.(event.pointerId);
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // Without pointer capture the drag still works while the pointer stays on the plot.
+    }
     const x = viewX(event);
     setDrag([x, x]);
   };

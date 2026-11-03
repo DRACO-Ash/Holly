@@ -26,7 +26,10 @@ export const KIND_SHAPES: Readonly<Record<EventKind, MarkShape>> = {
 
 export function noticeTitle(notice: ActivityNotice, parsed: ParsedEvent | null): string {
   const objects = parsed?.objects.map((o) => (o.id ? `${o.name} (${o.id})` : o.name)).join(" vs ");
-  return objects || notice.event_class || notice.notice || "Notice";
+  if (objects) return objects;
+  return (
+    [notice.event_class, notice.notice].find((text) => text !== null && text !== "") ?? "Notice"
+  );
 }
 
 function noticeMark(

@@ -24,8 +24,9 @@ export default function ManeuverDrawer({
       .then((loaded) => {
         if (!cancelled) setDetail(loaded);
       })
-      .catch((err: unknown) => {
-        if (!cancelled) setError(extractErrorMessage(err, "Failed to load the maneuver record."));
+      .catch((error_: unknown) => {
+        if (!cancelled)
+          setError(extractErrorMessage(error_, "Failed to load the maneuver record."));
       });
     return () => {
       cancelled = true;

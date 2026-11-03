@@ -7,9 +7,9 @@ const HOUR = 3_600_000;
 const START = Date.parse("2026-10-31T12:00:00Z");
 const END = START + 48 * HOUR;
 const NOW = END - HOUR;
-// The plot runs from view x 128 to 984; the box below maps one client pixel to one view unit.
-const GUTTER = 128;
-const PLOT = 856;
+// The plot runs from view x 200 to 984; the box below maps one client pixel to one view unit.
+const GUTTER = 200;
+const PLOT = 784;
 const xAt = (fraction: number) => GUTTER + fraction * PLOT;
 const timeAt = (fraction: number) => START + fraction * (END - START);
 

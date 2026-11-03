@@ -36,8 +36,9 @@ export function useActivity(): ActivityState {
         setError(null);
         setLoadedAt(Date.now());
       })
-      .catch((err: unknown) => {
-        if (!cancelled) setError(extractErrorMessage(err, "Failed to load the activity overview."));
+      .catch((error_: unknown) => {
+        if (!cancelled)
+          setError(extractErrorMessage(error_, "Failed to load the activity overview."));
       })
       .finally(() => {
         if (cancelled) return;
@@ -50,8 +51,8 @@ export function useActivity(): ActivityState {
   }, [token]);
 
   useEffect(() => {
-    const id = window.setInterval(reload, ACTIVITY_REFRESH_MS);
-    return () => window.clearInterval(id);
+    const id = globalThis.setInterval(reload, ACTIVITY_REFRESH_MS);
+    return () => globalThis.clearInterval(id);
   }, [reload]);
 
   return { data, error, loading, refreshing, loadedAt, reload };
