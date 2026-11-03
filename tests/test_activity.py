@@ -162,7 +162,7 @@ async def test_the_window_links_notices_maneuvers_and_element_sets(
     assert first["top_action"] == "Example step 1."
     # Text the database could hold is kept, capped; the list itself is passed on as text.
     assert first["sat_ids"][:3] == ["90001", "90002", "not-a-number"]
-    assert len(first["sat_ids"][3]) == activity_route.SAT_ID_CAP
+    assert len(first["sat_ids"][3]) == 32
     assert second["notice"] == "TEST-ID"
     assert second["urgency"] == "pending"
     assert second["sat_ids"] == ["7"]
@@ -356,6 +356,9 @@ class TestManeuverFacts:
         assert fact_text("A\u202eB\u200bC\u2066D") == "ABCD"
         assert fact_text("\u202e") is None
         assert fact_text("ab cd", 3) == "ab"
+        assert fact_text("A\x1bB\x07C\x7fD\nE") == "ABCD E"
+        # Only the start of a long value is read, so a huge field costs no more than a short one.
+        assert fact_text("x" * 100 + " " + "y" * 10_000, 10) == "x" * 10
 
     def test_a_time_without_an_offset_is_read_as_utc(self) -> None:
         facts = maneuver_facts({"eventEndTime": "2026-06-05T11:00:00"})

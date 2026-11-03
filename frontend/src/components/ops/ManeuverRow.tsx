@@ -19,8 +19,9 @@ export function FactList({
   if (inline) {
     return (
       <span className="fact-list">
-        {facts.map((fact) => (
+        {facts.map((fact, index) => (
           <span key={fact.label} className="fact" title={fact.title}>
+            {index > 0 && <span className="visually-hidden">, </span>}
             <span className="fact-label">{fact.label}</span>{" "}
             <span className="fact-value">{fact.value}</span>
           </span>

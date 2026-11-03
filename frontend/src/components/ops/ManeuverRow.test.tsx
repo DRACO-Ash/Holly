@@ -144,3 +144,20 @@ describe("FactList", () => {
     expect(screen.getByTitle("From deltaVel").textContent).toBe("Δv1 m/s");
   });
 });
+
+describe("FactList inside a row", () => {
+  it("parts its facts so they never run together when read", () => {
+    render(
+      <FactList
+        inline
+        facts={[
+          { label: "Δv", value: "1 m/s" },
+          { label: "Δpos", value: "2 km" },
+        ]}
+      />,
+    );
+    const list = document.querySelector(".fact-list");
+    expect(list?.textContent).toBe("Δv 1 m/s, Δpos 2 km");
+    expect(list?.querySelectorAll(".visually-hidden")).toHaveLength(1);
+  });
+});

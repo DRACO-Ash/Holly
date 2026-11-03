@@ -267,7 +267,8 @@ function Console({
           <p className="console-hint">
             Longitude after the burn, from each record&apos;s postGeoLongitude (UDL field, TBC). The
             line shows the direction of the drift and its rough size; drifts above 0.2° a day are
-            drawn at the same length. Marks close together are stacked.
+            drawn at the same length. Marks close together are stacked up to three high; a fourth
+            overlaps the lowest.
           </p>
         </section>
       )}

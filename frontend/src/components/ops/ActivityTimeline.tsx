@@ -61,16 +61,17 @@ function Glyph({
   size,
   children,
   ...handlers
-}: Readonly<{
-  shape: MarkShape;
-  x: number;
-  y: number;
-  size: number;
-  children: ReactNode;
-  className: string;
-  onPointerDown?: (event: PointerEvent) => void;
-  onClick?: () => void;
-}>) {
+}: Readonly<
+  {
+    shape: MarkShape;
+    x: number;
+    y: number;
+    size: number;
+    children: ReactNode;
+    className: string;
+    onClick?: () => void;
+  } & Partial<BrushHandlers>
+>) {
   switch (shape) {
     case "diamond":
       return (
@@ -117,20 +118,33 @@ function Glyph({
   }
 }
 
+// The plot's drag handlers. A mark that is not picked carries them too, so a drag can start on it.
+export interface BrushHandlers {
+  onPointerDown: (event: PointerEvent) => void;
+  onPointerMove: (event: PointerEvent) => void;
+  onPointerUp: () => void;
+  onPointerCancel: () => void;
+}
+
 export function Mark({
   mark,
   x,
   y,
   onPick,
+  brush,
   dense = false,
 }: Readonly<{
   mark: TimelineMark;
   x: number;
   y: number;
   onPick?: (id: string) => void;
+  brush?: BrushHandlers;
   dense?: boolean;
 }>) {
   const base = dense ? 3 : 5;
+  const pointer = onPick
+    ? { onPointerDown: (event: PointerEvent) => event.stopPropagation() }
+    : brush;
   return (
     <Glyph
       shape={mark.shape}
@@ -138,8 +152,8 @@ export function Mark({
       y={y}
       size={mark.emphasis ? base + 2 : base}
       className={markClass(mark, onPick !== undefined)}
-      // A pickable mark takes its own pointer; any other lets a drag start on it.
-      onPointerDown={onPick ? (event) => event.stopPropagation() : undefined}
+      // A pickable mark takes its own pointer; any other starts a drag as the plot does.
+      {...pointer}
       onClick={onPick ? () => onPick(mark.id) : undefined}
     >
       <title>{mark.label}</title>
@@ -214,7 +228,7 @@ export default function ActivityTimeline({
     if (!box || box.width === 0) return gutter;
     return ((event.clientX - box.left) / box.width) * width;
   };
-  const onDown = (event: PointerEvent<SVGRectElement>) => {
+  const onDown = (event: PointerEvent) => {
     try {
       event.currentTarget.setPointerCapture(event.pointerId);
     } catch {
@@ -223,7 +237,7 @@ export default function ActivityTimeline({
     const x = viewX(event);
     setDrag([x, x]);
   };
-  const onMove = (event: PointerEvent<SVGRectElement>) => {
+  const onMove = (event: PointerEvent) => {
     if (drag) setDrag([drag[0], viewX(event)]);
   };
   const onUp = () => {
@@ -232,6 +246,13 @@ export default function ActivityTimeline({
     setDrag(null);
     if (Math.abs(b - a) < MIN_DRAG) onRange(null);
     else onRange([timeOf(Math.min(a, b)), timeOf(Math.max(a, b))]);
+  };
+
+  const brush: BrushHandlers = {
+    onPointerDown: onDown,
+    onPointerMove: onMove,
+    onPointerUp: onUp,
+    onPointerCancel: () => setDrag(null),
   };
 
   const shown: TimeRange | null = drag
@@ -316,10 +337,7 @@ export default function ActivityTimeline({
         y={AXIS - 4}
         width={plot}
         height={height - AXIS}
-        onPointerDown={onDown}
-        onPointerMove={onMove}
-        onPointerUp={onUp}
-        onPointerCancel={() => setDrag(null)}
+        {...brush}
       />
       {lanes.map((lane, index) => {
         const y = AXIS + index * LANE + LANE / 2;
@@ -332,6 +350,7 @@ export default function ActivityTimeline({
                 x={xOf(mark.time)}
                 y={y}
                 onPick={onPick}
+                brush={brush}
                 dense={lane.marks.length > DENSE}
               />
             ))}

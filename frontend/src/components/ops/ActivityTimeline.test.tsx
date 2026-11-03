@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import ActivityTimeline, { type TimelineLane, type TimelineMark } from "./ActivityTimeline";
 
 const HOUR = 3_600_000;
@@ -198,5 +198,93 @@ describe("ActivityTimeline", () => {
     const { container } = draw({ lanes: [], start: START, end: START });
     expect(container.querySelectorAll(".timeline-lane")).toHaveLength(0);
     expect(screen.getByRole("img", { name: "Notices: 0 events in 0 lanes, ." })).toBeTruthy();
+  });
+
+  describe("drawn at its measured width", () => {
+    let observed: ((entries: { contentRect: { width: number } }[]) => void) | null = null;
+    const disconnect = vi.fn();
+    class FakeObserver {
+      constructor(callback: (entries: { contentRect: { width: number } }[]) => void) {
+        observed = callback;
+      }
+      observe() {}
+      disconnect() {
+        disconnect();
+      }
+    }
+    const measure = (width: number) => act(() => observed?.([{ contentRect: { width } }]));
+
+    beforeEach(() => {
+      observed = null;
+      disconnect.mockReset();
+      vi.stubGlobal("ResizeObserver", FakeObserver);
+    });
+    afterEach(() => vi.unstubAllGlobals());
+
+    it("narrows its gutter on a phone and maps a drag at that width", () => {
+      const { container, svg, brush, onRange } = draw();
+      measure(500);
+      expect(svg.getAttribute("viewBox")).toMatch(/^0 0 500 /);
+      const lane = container.querySelector(".timeline-lane-bg") as SVGRectElement;
+      // 500 wide, a 110 gutter and 16 on the right leave 374 for the plot.
+      expect([lane.getAttribute("x"), lane.getAttribute("width")]).toEqual(["110", "374"]);
+      box(svg, 500);
+      fireEvent.pointerDown(brush, { clientX: 110 + 374 * 0.25, pointerId: 1 });
+      fireEvent.pointerMove(brush, { clientX: 110 + 374 * 0.5, pointerId: 1 });
+      fireEvent.pointerUp(brush, { clientX: 110 + 374 * 0.5, pointerId: 1 });
+      const [range] = onRange.mock.calls[0] as [[number, number]];
+      expect(range[0]).toBeCloseTo(timeAt(0.25), -3);
+      expect(range[1]).toBeCloseTo(timeAt(0.5), -3);
+    });
+
+    it("cuts a lane's name to fit, its whole name on hover, and leaves a short one alone", () => {
+      const long = "A very long lane name indeed";
+      const { container } = draw({
+        lanes: [
+          { key: "l", label: long, tone: "other", marks: [] },
+          { key: "s", label: "Short", tone: "other", marks: [] },
+        ],
+      });
+      measure(400);
+      const [first, second] = [...container.querySelectorAll(".timeline-lane-label")];
+      expect(first.textContent).toMatch(/…$/);
+      expect(first.textContent?.length).toBeLessThan(long.length);
+      expect(first.parentElement?.querySelector("title")?.textContent).toBe(long);
+      expect(second.textContent).toBe("Short");
+      expect(second.parentElement?.querySelector("title")).toBeNull();
+    });
+
+    it("keeps its width when measured at nothing, and stops measuring when it goes", () => {
+      const { svg, unmount } = draw();
+      measure(0);
+      expect(svg.getAttribute("viewBox")).toMatch(/^0 0 1000 /);
+      unmount();
+      expect(disconnect).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("draws the marks of a lane of more than 80 smaller, so its density shows", () => {
+    const many = (count: number, key: string): TimelineLane => ({
+      key,
+      label: key,
+      tone: "maneuver",
+      marks: Array.from({ length: count }, (_, i) => mark(`${key}-${i}`, "dot")),
+    });
+    const { container } = draw({ lanes: [many(81, "dense"), many(80, "sparse")] });
+    const dense = container.querySelectorAll("circle")[0];
+    const sparse = container.querySelectorAll("circle")[81];
+    expect(dense.getAttribute("r")).toBe("3");
+    expect(sparse.getAttribute("r")).toBe("5");
+  });
+
+  it("starts a drag on a mark that is not picked, as on the plot", () => {
+    const { svg, onRange, container } = draw({ onPick: undefined });
+    box(svg);
+    const markOnPlot = container.querySelector("circle") as SVGCircleElement;
+    fireEvent.pointerDown(markOnPlot, { clientX: GUTTER + PLOT * 0.25, pointerId: 1 });
+    fireEvent.pointerMove(markOnPlot, { clientX: GUTTER + PLOT * 0.5, pointerId: 1 });
+    fireEvent.pointerUp(markOnPlot, { clientX: GUTTER + PLOT * 0.5, pointerId: 1 });
+    expect(onRange).toHaveBeenCalledTimes(1);
+    expect(onRange.mock.calls[0][0]).not.toBeNull();
   });
 });

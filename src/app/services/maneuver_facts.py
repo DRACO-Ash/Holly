@@ -72,15 +72,24 @@ FACT_NAMES: tuple[str, ...] = (
 )
 
 
+# Unicode format and control characters; whitespace among the controls is read as a space first.
+_HIDDEN = frozenset({"Cf", "Cc"})
+
+
 def fact_text(value: Any, cap: int = TEXT_CAP) -> str | None:
     """Storable text on one line: every run of whitespace, line breaks among them, becomes one
     space, so a value can never start a line of its own wherever it is shown or quoted. Format
     characters (Unicode category Cf: bidirectional overrides, zero-width spaces and the like)
-    are dropped, so text cannot show in another order than it is."""
+    are dropped, so text cannot show in another order than it is, and so are control
+    characters. Only the start of a long value is read, enough for the cap and more."""
     if not isinstance(value, str) or not storable_text(value):
         return None
-    visible = "".join(char for char in value if unicodedata.category(char) != "Cf")
-    text = " ".join(visible.split())
+    head = value[: cap * 8]
+    words = (
+        "".join(char for char in word if unicodedata.category(char) not in _HIDDEN)
+        for word in head.split()
+    )
+    text = " ".join(word for word in words if word)
     return text[:cap].rstrip() or None
 
 

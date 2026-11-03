@@ -19,7 +19,9 @@ describe("Truncation", () => {
     expect(
       screen.getByText(/more notices than this view carries: it shows the newest/),
     ).toBeTruthy();
-    expect(screen.getByText(/lowest catalogue numbers have one/)).toBeTruthy();
+    expect(
+      screen.getByText(/looked up only for those with the lowest catalogue numbers/),
+    ).toBeTruthy();
   });
 
   it("names both lists when both were cut, and says nothing of element sets when they were not", () => {

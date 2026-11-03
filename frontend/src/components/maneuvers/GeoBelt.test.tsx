@@ -55,4 +55,15 @@ describe("GeoBelt", () => {
     expect(reach(lines[0])).toBe(60);
     expect(reach(lines[1])).toBeCloseTo(-3);
   });
+
+  it("stacks a column three high, the fourth mark on the lowest row", () => {
+    const { container } = render(
+      <GeoBelt
+        marks={[mark(0, "P", 1), mark(0.1, "P", 1), mark(0.2, "P", 1), mark(0.3, "P", 1)]}
+      />,
+    );
+    const rows = [0, 1, 2, 3].map((index) => cy(container, index));
+    expect(new Set(rows.slice(0, 3)).size).toBe(3);
+    expect(rows[3]).toBe(rows[0]);
+  });
 });

@@ -17,8 +17,9 @@ export default function Truncation({ data }: Readonly<{ data: ActivityOverview }
       )}
       {data.truncated.elsets && (
         <p className="console-truncated">
-          The window names more satellites than this view carries element sets for: those with the
-          lowest catalogue numbers have one, and a regime may be missing for the rest.
+          The window names more satellites than this view looks up element sets for: they were
+          looked up only for those with the lowest catalogue numbers, and a regime may be missing
+          for the rest.
         </p>
       )}
     </>
