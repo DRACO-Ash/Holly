@@ -18,7 +18,9 @@ const DRIFT_CAP = 60;
 
 // Any longitude, east of Greenwich up to 360 too, as -180 to 180.
 const normalised = (longitude: number) => ((((longitude + 180) % 360) + 360) % 360) - 180;
-const xOf = (longitude: number) => LEFT + ((normalised(longitude) + 180) / 360) * PLOT;
+// A tick sits where its own longitude falls, so 180°E stays at the right-hand end.
+const tickX = (longitude: number) => LEFT + ((longitude + 180) / 360) * PLOT;
+const xOf = (longitude: number) => tickX(normalised(longitude));
 
 // The row each mark sits on: the lowest whose last mark is far enough to its left.
 function stackRows(xs: readonly number[]): number[] {
@@ -76,8 +78,8 @@ export default function GeoBelt({ marks }: Readonly<{ marks: readonly BeltMark[]
         <line className="geo-belt-axis" x1={LEFT} x2={WIDTH - RIGHT} y1={AXIS_Y} y2={AXIS_Y} />
         {TICKS.map((tick) => (
           <g key={tick} className="geo-belt-tick">
-            <line x1={xOf(tick)} x2={xOf(tick)} y1={AXIS_Y - 6} y2={AXIS_Y + 6} />
-            <text x={xOf(tick)} y={AXIS_Y + 26}>
+            <line x1={tickX(tick)} x2={tickX(tick)} y1={AXIS_Y - 6} y2={AXIS_Y + 6} />
+            <text x={tickX(tick)} y={AXIS_Y + 26}>
               {tickLabel(tick)}
             </text>
           </g>

@@ -66,4 +66,14 @@ describe("GeoBelt", () => {
     expect(new Set(rows.slice(0, 3)).size).toBe(3);
     expect(rows[3]).toBe(rows[0]);
   });
+
+  it("puts each tick at its own longitude, 180°W at the left end and 180°E at the right", () => {
+    const { container } = render(<GeoBelt marks={[mark(0, "P", 1)]} />);
+    const ticks = [...container.querySelectorAll(".geo-belt-tick text")];
+    const at = (label: string) =>
+      Number(ticks.find((t) => t.textContent === label)?.getAttribute("x"));
+    expect(at("180°W")).toBeLessThan(at("0°"));
+    expect(at("180°E")).toBeGreaterThan(at("120°E"));
+    expect(new Set(ticks.map((t) => t.getAttribute("x"))).size).toBe(ticks.length);
+  });
 });
