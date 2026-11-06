@@ -117,7 +117,7 @@ These come first, because each one changes what gets built.
 6. **The list of event types**, and which types get a guided flow in the first release. The memo names manoeuvre, RPO, photometric change and separation, and says "there's a whole list".
 7. **The MMB hand-off.** Copy as text (assumed for V0.20), a formatted export, or a later integration? `TBC` with the MMB's owner.
 8. **The module's name.**
-9. **The end-of-shift run time.** The shift change times in UTC, so the run starts about 15 minutes before each (`HANDOVER_RUN_TIMES`, `TBC` from the owner), plus a "draft now" button for an off-pattern handover.
+9. **The end-of-shift run time.** The shift change times in UTC, and how long before each the run starts, for example 40 minutes so the lead has time to review the draft (`HANDOVER_RUN_TIMES`, `TBC` from the owner), plus a "draft now" button for an off-pattern handover.
 
 ### Architecture
 
@@ -172,6 +172,7 @@ The module is one new tab and one backend package within the existing Holly cont
 ● **Migrations from `0020`:**
   ■ `handover` (object, shift date, synopsis text, flow answers, sources, status, author);
   ■ `handover_thread_link`;
+  ■ `handover_claim` (the checked claims, cached per thread against its newest post id);
   ■ `mattermost_message.root_id` with its index;
   ■ a GIN index on `notification.sat_ids`;
   ■ `event_timer.origin` (manual or look-ahead).
