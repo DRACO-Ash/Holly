@@ -1,6 +1,6 @@
 # Holly handover module: description and implementation plan
 
-Status: proposal, not built. Working title "Handover" (the owner has not named it yet). Prepared on 6 November 2026 from the owner's dictated memo (`Holly_advancements_memo.txt`) and a survey of the Holly V0.18 code. A fact read in the code carries its file reference; an inference or an assumption says so; anything not yet verified is marked `TBC, re-verify`.
+Status: proposal, not built. Working title "Handover" (the owner has not named it yet). Decision of the owner, 6 November 2026: the module uses no external LLM. Its language model runs inside the Holly container as a batch job of up to 5 minutes near the end of each shift; it is not a chat assistant. Prepared on 6 November 2026 from the owner's dictated memo (`Holly_advancements_memo.txt`) and a survey of the Holly V0.18 code. A fact read in the code carries its file reference; an inference or an assumption says so; anything not yet verified is marked `TBC, re-verify`.
 
 ## Part 1: The module, described
 
@@ -39,7 +39,7 @@ The module is a new tab in Holly. It helps the mission lead build that handover 
   ■ the best lighting windows for one object to observe the other.
 
   These points are woven into the narrative, and the lead can turn any of them into a Holly event timer in one click.
-● **It drafts the synopsis and shows its sources.** The module drafts the 3-sentence paragraph from the facts it has gathered, and the lead edits it. Every statement carries a source tag:
+● **It drafts the synopsis and shows its sources.** Near the end of the shift, a language model running inside Holly reads the linked Mattermost threads and pulls out each provider's claims. Holly checks every claim against its source post. It then drafts the 3-sentence paragraph from the checked facts, and the lead edits it. Nothing is sent outside Holly. Every statement carries a source tag:
   ■ a NOTSO;
   ■ a provider record;
   ■ a Mattermost post;
@@ -95,21 +95,33 @@ Holly V0.18 already holds more than half of what the module needs. The plan is t
 
 These come first, because each one changes what gets built.
 
-1. **Disclosure of NOTSO content to the assistant.** Fact: only markings listed in `ASSISTANT_CLEARED_MARKINGS` reach the assistant, and the JCO feed's marking is not cleared by default (`SECURITY.md:27`). Until a data owner clears it, any drafting by a large language model (LLM) gets no NOTSO content. The owner is setting this now; the decision is recorded in `SECURITY.md` before the module relies on it. **The plan does not depend on the LLM:** phases 1 to 3 draft the synopsis from a deterministic template, and the LLM is an optional upgrade in phase 4.
-2. **Disclosure of Mattermost threads.** Fact: chat carries no marking and is already sent to the assistant from followed channels (`SECURITY.md:27`). Feeding threads into a synopsis widens that. This needs an architecture decision record (ADR-016) and a `SECURITY.md` row: either a per-channel "cleared for assistant" flag that fails closed, or chat kept out of every prompt and used only on screen.
-3. **A real record from each source**, checked before code is written against it:
+1. **No external LLM in the module (decided).** The owner decided on 6 November 2026 that the module never calls an external large language model (LLM). Mattermost threads and NOTSO content are read only by a model running inside the Holly container, so neither leaves the App Store. Inference: this turns a release decision into a question of whether the App Store environment is approved for this data. The owner and the data owner confirm that, and it is recorded in an architecture decision record (ADR-016) and a `SECURITY.md` row. A test fails the build if any module under `services/handover/` imports the Anthropic client (`services/claude.py`).
+2. **The existing assistant still sends chat.** Fact: Holly's notice evaluations already include up to 30 recent Mattermost messages in what they send to Anthropic (`services/assistant.py:261-280`, `SECURITY.md:27`). That is separate from this module. To stop it, set `MATTERMOST_MAX_MESSAGES_IN_PROMPT=0` and restart. It is the owner's call, and the decision is recorded when made.
+3. **The local-model trial (go or no-go), run before V0.20.**
+   ■ **Where:** a container capped at 8Gi and 6 CPU, inside Bluestaq's environment. Real threads are never pasted into an external tool, including this conversation.
+   ■ **What:** 2 or 3 permissively licensed models, quantised to 3 to 8 billion parameters, run on 5 real event threads.
+   ■ **Measure:**
+     ● extraction accuracy against a mission lead's own reading;
+     ● time per thread;
+     ● peak memory.
+   ■ **Go criteria (proposed):**
+     ● no unsupported figure gets through the checks;
+     ● the threads for a typical shift's live events fit in the 5-minute run;
+     ● peak memory leaves Holly at least 2Gi of headroom.
+4. **A real record from each source**, checked before code is written against it:
    ■ a stored KBR and a stored NorthStar manoeuvre record, to confirm the key names and units in `maneuver_facts.py` (`TBC, re-verify`);
    ■ a Mattermost event thread, to confirm how threads cite NOTSOs (NOTSO number, catalogue number, channel per event?) and whether providers post under their own accounts;
    ■ RPO NOTSOs, to confirm whether `sat_ids` holds both objects or only the primary;
    ■ a photometric NOTSO, to see what it states (magnitude, sensor, time).
-4. **Provider list.** Which providers to recognise in chat, and under what names and aliases, comes from the owner as configuration. It is never inferred.
-5. **The list of event types**, and which types get a guided flow in the first release. The memo names manoeuvre, RPO, photometric change and separation, and says "there's a whole list".
-6. **The MMB hand-off.** Copy as text (assumed for phase 2), a formatted export, or a later integration? `TBC` with the MMB's owner.
-7. **The module's name.**
+5. **Provider list.** Which providers to recognise in chat, and under what names and aliases, comes from the owner as configuration. It is never inferred.
+6. **The list of event types**, and which types get a guided flow in the first release. The memo names manoeuvre, RPO, photometric change and separation, and says "there's a whole list".
+7. **The MMB hand-off.** Copy as text (assumed for V0.20), a formatted export, or a later integration? `TBC` with the MMB's owner.
+8. **The module's name.**
+9. **The end-of-shift run time.** The shift change times in UTC, so the run starts about 15 minutes before each (`HANDOVER_RUN_TIMES`, `TBC` from the owner), plus a "draft now" button for an off-pattern handover.
 
 ### Architecture
 
-The module is one new tab and one backend package within the existing Holly container. It adds no new process, and it follows Holly's rules on boundary validation, sign-in, audit and failing closed.
+The module is one new tab and one backend package within the existing Holly container, plus a short-lived child process for the local model during the end-of-shift run. It follows Holly's rules on boundary validation, sign-in, audit and failing closed.
 
 **Backend.** These go in `src/app/services/handover/` with routes under `/api/v1/handover`, all signed-in:
 
@@ -134,9 +146,29 @@ The module is one new tab and one backend package within the existing Holly cont
   ■ The sun position comes from a low-precision analytic model, so no ephemeris file is downloaded and the container stays offline.
   ■ Each point carries the `udl_id` and epoch of the element set it used.
   ■ It refuses an element set older than a set age, and says so.
-● `synopsis.py`: drafts the 3 sentences from a template filled with the verified facts, each with its source tag.
-  ■ In phase 4, an optional `call_claude(purpose="handover.synopsis")` rewrites the template into fluent prose.
-  ■ The model returns JSON citing only source ids it was given; anything else is rejected. It gets one retry, then fails closed back to the template.
+● `local_model.py`: the language model inside Holly. It never calls out of the container.
+  ■ **Runtime.** `llama.cpp` through its Python binding, compiled in the image's build stage so the compiler toolchain stays out of the final image.
+  ■ **Weights.** One quantised model with a permissive licence, pinned by SHA-256 and held on the `/data` volume or in the image; which one is for the platform team to say.
+  ■ **A child process per run.** The model runs in a child process started for the end-of-shift run and ended when the run finishes. That gives 3 things:
+    ● a crash in native code takes down only the child process, not Holly's background loops;
+    ● the model's memory is freed between runs;
+    ● a thread cap stops it starving the web app of CPU.
+
+    It departs from Holly's one-process rule, so it is recorded in ADR-016.
+  ■ **No network.** The child process gets no network access and no database connection: Holly hands it the text and reads back its answer.
+● `extract.py`: reads each confirmed thread and returns structured claims through the local model, for example provider NorthStar, quantity period change, value +25, unit s, post id. Each claim is then checked in code, and any that fails a check is dropped:
+  ■ the figure must appear word for word in the post it cites;
+  ■ the provider must be in the configured list;
+  ■ the post must belong to the thread being read.
+
+  A made-up number cannot survive, because it is not in the source post. Results are cached per thread against its newest post id, so a rerun reads only threads that have changed.
+● `end_of_shift.py`: the batch run, at the configured times and on "draft now".
+  ■ It works through live events in priority order: the most recent change first, then RPO, then the rest.
+  ■ It stops at the 5-minute budget, and any event it did not reach is marked "template only, not read by the model".
+  ■ It writes one audit row per run: events read, claims kept and dropped, time taken.
+  ■ It is single-flight, like the other loops.
+● `synopsis.py`: drafts the 3 sentences from a template filled with the checked facts, each with its source tag.
+  ■ Optionally, the local model smooths the wording. A check then refuses any draft that adds a number, name or time not in its input, and the template wording stands instead.
 ● **Migrations from `0020`:**
   ■ `handover` (object, shift date, synopsis text, flow answers, sources, status, author);
   ■ `handover_thread_link`;
@@ -164,11 +196,16 @@ Each release is a version bump and goes through the verification loop, both gate
 ● The Handover tab with the object rail, the story timeline, provenance chips and free-text notes.
 ● Acceptance: a lead can open any object named in a NOTSO in the last 120 hours. They see its NOTSOs, provider records and confirmed threads in time order, each with its source.
 
-**V0.20: guided flows and the template synopsis (size M).**
+**V0.20: guided flows, the template synopsis and the end-of-shift run (size L).** It needs the local-model trial (phase 0, item 3) to have passed, and Holly raised to 8Gi and 6 CPU.
 ● Flow definitions for manoeuvre, RPO, photometric change and separation.
 ● The flow renderer, with answers filled from data, and the template synopsis.
+● The local model, the extraction checks and the end-of-shift run, with provider claims from Mattermost.
+● ADR-016 and the `SECURITY.md` row.
 ● Saved handovers per shift, "copy for MMB", and confirmed handovers listed in the Shift Log's end-of-shift view, so the two handover features agree instead of competing.
-● Acceptance: for the owner's worked example, the flow fills every node the data can answer. It names the unanswered ones, and it produces a 3-sentence synopsis with every statement sourced.
+● Acceptance:
+  ■ For the owner's worked example, the flow fills every node the data can answer. It names the unanswered ones, and it produces a 3-sentence synopsis with every statement sourced.
+  ■ The end-of-shift run finishes within 5 minutes and sends nothing out of the container.
+  ■ A planted figure that is not in its cited post never reaches a synopsis.
 
 **V0.21: the 48-hour look-ahead and timers (size L).**
 ● Add the `sgp4` package. Fact: no propagator is installed today. It is pinned, relocked and licence-checked like any dependency.
@@ -176,19 +213,24 @@ Each release is a version bump and goes through the verification loop, both gate
 ● Add `look_ahead.py` with tests against reference cases, the look-ahead strip, one-click timers with `origin=look-ahead`, and upcoming points in the synopsis's third sentence.
 ● Acceptance: for a GEO pair in an RPO NOTSO, the module lists the closest approaches, the RIC box and the lighting windows for 48 hours. Each is labelled with the element set and epoch it came from. A timer is 1 click away.
 
-**V0.22: provider deltas, photometric context and optional AI drafting (size M).**
-● Provider pairing and the delta card.
-● Provider names in Mattermost from the configured list.
+**V0.22: provider deltas, photometric context and polished wording (size M).**
+● Provider pairing across manoeuvre records and the chat claims from V0.20, with the delta card.
 ● Photometric context: alignment with manoeuvre starts and close approaches, and time to revisit the same geometry, with a timer.
-● The optional LLM rewrite of the synopsis, only if decisions 1 and 2 are recorded, with its own audit row and a cap within the daily token budget.
-● Acceptance: the NorthStar versus KBR example appears as a highlighted disagreement on apsis and period change. An LLM draft never cites a source it was not given, and it falls back to the template on any failure.
+● Optional smoothing of the synopsis wording by the local model, with the no-new-facts check.
+● Acceptance:
+  ■ The NorthStar versus KBR example appears as a highlighted disagreement on apsis and period change, each figure linked to its source.
+  ■ A smoothed draft that adds a fact is refused, and the template wording stands.
 
 ### Risks
 
 | Risk | Effect | Mitigation |
 |---|---|---|
 | Element-set accuracy at GEO | Fact: TLE and SGP4 positions carry errors of the order of kilometres. Inference: an RPO box computed from TLEs is indicative only | Label every computed figure "from element set [epoch], indicative". Prefer provider state vectors if the UDL offers them (`TBC, re-verify`). Never present a computed figure as observed |
-| JCO marking not cleared | The LLM drafting has no NOTSO content | The template synopsis works without the LLM; the LLM is phase 4 and optional |
+| The local model makes up a figure | A wrong number reaches a handover | Only claims whose figure appears word for word in the cited post are kept. The lead sees the source post for every claim |
+| The local model is too slow | The run does not cover every live event in 5 minutes | Priority order, cache per thread, and "template only" marked on what was not read. The trial sets the model size |
+| Memory | Holly is stopped for running out of memory, taking the loops with it | 8Gi allocation; the model runs in a child process that ends after the run; peak memory measured in the trial |
+| A bigger image and native code | Longer builds, a larger container scan, new CVEs to answer | Weights pinned by SHA-256; toolchain only in the build stage; the binding version pinned and audited like any dependency |
+| The App Store is not approved for this data | Running the model inside Holly does not settle the question | The owner and the data owner confirm it, recorded in ADR-016 |
 | Wrong thread-to-NOTSO links | A synopsis cites chat about a different event | Suggest, never assume; only a lead-confirmed link counts |
 | Provider fields mis-read | Wrong deltas reach a handover | Check against a real record in phase 0. Show the raw value beside every delta |
 | CPU in the single worker | The look-ahead slows the other background loops | Compute on request for named pairs only, cache by element-set id, and bound the steps |
@@ -199,9 +241,12 @@ Each release is a version bump and goes through the verification loop, both gate
 ### Answers needed from the owner
 
 1. Confirm the readings in the table under "How I read the dictated memo".
-2. Disclosure: will NOTSO content and Mattermost threads go to the assistant, and who records that decision (phase 0, items 1 and 2)?
-3. 1 stored KBR record, 1 NorthStar record and 1 example Mattermost event thread, for phase 0 item 3.
-4. The provider names and aliases to recognise.
-5. Which event types get a guided flow first, and the full list.
-6. How the synopsis reaches the MMB.
-7. The module's name.
+2. Confirm the App Store environment is approved to hold and process the JCO data and the threads the local model reads (phase 0, item 1).
+3. Whether to stop the existing assistant sending chat to Anthropic (phase 0, item 2).
+4. Agreement to raise Holly to 8Gi memory and 6 CPU, and the platform team's answers: will the build accept an image several GB larger, and may it fetch the model weights from outside?
+5. 1 stored KBR record, 1 NorthStar record and 1 example Mattermost event thread, for phase 0 item 4, checked inside Bluestaq's environment.
+6. The provider names and aliases to recognise.
+7. Which event types get a guided flow first, and the full list.
+8. How the synopsis reaches the MMB.
+9. The module's name.
+10. The shift change times in UTC, for the end-of-shift run.
