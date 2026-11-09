@@ -1,0 +1,1090 @@
+<!doctype html>
+<html lang="en-GB">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>body{margin:0}[hidden]{display:none!important}img{max-width:100%}</style>
+<title>Holly Handover Brief</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: a navy masthead, a sticky contents rail on wide screens, and one reading column of
+   sections, each opening with a plain-English lead before the interactive part. */
+:root{
+  --bg:#F3F6FB; --surface:#FFFFFF; --surface-2:#E9EEF7; --line:#CFD8E7;
+  --fg:#22324A; --fg-dim:#55657C; --strong:#162646;
+  --bar:#162646; --bar-fg:#FFFFFF; --bar-dim:#B9C8E2;
+  --accent:#385FAF; --accent-soft:#DCE6F6; --on-accent:#FFFFFF;
+  --go:#1D7F46; --go-fill:#27AE60; --go-soft:#DDF2E5;
+  --amber:#9A5F00; --amber-fill:#C67C00; --amber-soft:#F8EBD3;
+  --red:#B03030; --red-soft:#F6DEDE;
+  --shadow:0 1px 2px rgba(22,38,70,.08),0 6px 18px rgba(22,38,70,.07);
+  --font:"Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
+  --mono:ui-monospace,"Cascadia Mono",Consolas,"SF Mono",Menlo,monospace;
+  --r:10px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0C1527; --surface:#121E35; --surface-2:#192844; --line:#2B3D60;
+    --fg:#E3EAF5; --fg-dim:#A3B3CC; --strong:#FFFFFF;
+    --bar:#0A1222; --bar-fg:#FFFFFF; --bar-dim:#A9B9D6;
+    --accent:#8CAEE2; --accent-soft:#1E3157; --on-accent:#0C1527;
+    --go:#55CF8C; --go-fill:#27AE60; --go-soft:#143528;
+    --amber:#E9AC4C; --amber-fill:#C67C00; --amber-soft:#3A2A10;
+    --red:#F08A8A; --red-soft:#3A1C22;
+    --shadow:0 1px 2px rgba(0,0,0,.4);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0C1527; --surface:#121E35; --surface-2:#192844; --line:#2B3D60;
+  --fg:#E3EAF5; --fg-dim:#A3B3CC; --strong:#FFFFFF;
+  --bar:#0A1222; --bar-fg:#FFFFFF; --bar-dim:#A9B9D6;
+  --accent:#8CAEE2; --accent-soft:#1E3157; --on-accent:#0C1527;
+  --go:#55CF8C; --go-fill:#27AE60; --go-soft:#143528;
+  --amber:#E9AC4C; --amber-fill:#C67C00; --amber-soft:#3A2A10;
+  --red:#F08A8A; --red-soft:#3A1C22;
+  --shadow:0 1px 2px rgba(0,0,0,.4);
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:calc(env(safe-area-inset-top,0px) + 72px)}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{background:var(--bg);color:var(--fg);font-family:var(--font);font-size:16px;line-height:1.6}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:30;background:var(--bar)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+code,.mono{font-family:var(--mono);font-size:.88em}
+code{background:var(--surface-2);padding:1px 5px;border-radius:4px}
+
+/* masthead */
+.bar{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;background:var(--bar);color:var(--bar-fg);
+  padding-block:10px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  display:flex;align-items:center;gap:12px 20px;flex-wrap:wrap}
+.brand{display:flex;flex-direction:column;line-height:1.2;min-width:0}
+.brand small{color:var(--bar-dim);font-size:11px;letter-spacing:.14em;text-transform:uppercase;font-weight:600}
+.brand b{font-size:16px;font-weight:600}
+.bar .spacer{flex:1}
+.bar .tog{font:inherit;font-size:13px;font-weight:600;color:var(--bar-fg);background:transparent;border:1px solid var(--bar-dim);border-radius:999px;padding:5px 12px;cursor:pointer}
+.bar .tog[aria-pressed="true"]{background:var(--bar-fg);color:var(--bar)}
+.prog{position:absolute;left:0;bottom:0;height:3px;width:0;background:var(--go-fill)}
+
+/* page layout */
+.wrap{max-width:1240px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  display:grid;grid-template-columns:minmax(0,1fr);gap:40px}
+@media (min-width:1100px){.wrap{grid-template-columns:210px minmax(0,1fr)}}
+.toc{display:none}
+@media (min-width:1100px){.toc{display:block;position:sticky;top:calc(env(safe-area-inset-top,0px) + 80px);align-self:start;padding-block:36px 24px}}
+.toc p{font-size:11px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:var(--fg-dim);margin:0 0 10px}
+.toc ol{list-style:none;margin:0;padding:0;display:grid;gap:2px;counter-reset:t}
+.toc a{display:flex;gap:10px;color:var(--fg-dim);text-decoration:none;font-size:14px;padding:5px 8px;border-radius:6px;counter-increment:t}
+.toc a::before{content:counter(t);font-variant-numeric:tabular-nums;font-size:12px;color:var(--fg-dim);width:1.2em;text-align:right;padding-top:1px}
+.toc a:hover{color:var(--fg);background:var(--surface-2)}
+.toc a.on{color:var(--accent);background:var(--accent-soft);font-weight:600}
+.toc a.on::before{color:var(--accent)}
+main{min-width:0}
+.sec{padding-block:44px 8px}
+.eyebrow{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-weight:700;margin:0}
+h1{font-size:clamp(32px,5.2vw,50px);line-height:1.08;letter-spacing:-.015em;text-wrap:balance;margin:.25em 0 .3em;color:var(--strong);font-weight:700}
+h2{font-size:clamp(24px,3.2vw,32px);line-height:1.2;text-wrap:balance;margin:.25em 0 .5em;color:var(--strong);font-weight:700}
+h3{font-size:18px;line-height:1.3;margin:0 0 .35em;color:var(--strong);text-wrap:balance}
+h4{font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--fg-dim);margin:0 0 .4em}
+p{max-width:70ch;margin:0 0 1em}
+.lead{font-size:18px;color:var(--fg)}
+.muted{color:var(--fg-dim)}
+.small{font-size:14px}
+ul.dots{list-style:none;padding:0;margin:0 0 1em;display:grid;gap:6px}
+ul.dots li{padding-left:1.35em;position:relative;max-width:70ch}
+ul.dots li::before{content:"●";position:absolute;left:0;top:.42em;font-size:.62em;color:var(--accent)}
+ul.sq li::before{content:"■";font-size:.55em;top:.5em;color:var(--fg-dim)}
+.term{font:inherit;color:inherit;background:none;border:0;padding:0;margin:0;border-bottom:1.5px dotted var(--accent);cursor:help;line-height:inherit}
+.term:hover{color:var(--accent)}
+.tech{display:none;font-size:13.5px;color:var(--fg-dim);background:var(--surface-2);border-radius:8px;padding:8px 12px;margin:.6em 0 0}
+.tech::before{content:"Technical detail";display:block;font-size:11px;letter-spacing:.12em;text-transform:uppercase;font-weight:700;color:var(--accent);margin-bottom:2px}
+body.show-tech .tech{display:block}
+.note{font-size:13px;color:var(--fg-dim);font-style:italic}
+
+.grid{display:grid;gap:14px}
+.g2{grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr))}
+.g3{grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr))}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px 18px;min-width:0}
+.card.raised{box-shadow:var(--shadow)}
+.chip{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;line-height:1.5;padding:1px 9px;border-radius:999px;border:1px solid transparent;white-space:nowrap;vertical-align:middle}
+.chip.existing{background:var(--surface-2);color:var(--fg-dim);border-color:var(--line)}
+.chip.new{background:var(--accent-soft);color:var(--accent)}
+.chip.changed{background:transparent;color:var(--accent);border:1px dashed var(--accent)}
+.chip.go{background:var(--go-soft);color:var(--go)}
+.chip.amber{background:var(--amber-soft);color:var(--amber)}
+.chip.red{background:var(--red-soft);color:var(--red)}
+.chip.people{background:var(--surface);color:var(--fg);border-color:var(--fg-dim)}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.btn{font:inherit;font-size:14px;font-weight:600;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--fg);padding:7px 14px;cursor:pointer;line-height:1.3}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
+.btn[aria-pressed="true"],.btn[aria-selected="true"]{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.btn:disabled{opacity:.45;cursor:default}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+
+/* hero */
+.hero{padding-block:48px 12px}
+.hero .status{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,170px),1fr));gap:12px;margin:26px 0 8px}
+.stat{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px}
+.stat .n{font-size:34px;font-weight:700;color:var(--strong);line-height:1.1;font-variant-numeric:tabular-nums}
+.stat .l{font-size:14px;color:var(--fg-dim)}
+.howto{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:12px;margin-top:18px}
+.howto .card{display:flex;gap:12px;align-items:flex-start}
+.howto .k{flex:0 0 auto;width:30px;height:30px;border-radius:8px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;font-weight:700;font-size:14px}
+
+/* before / after */
+.ba{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));margin-top:8px}
+.quote{border-radius:var(--r);padding:18px 20px;font-size:17px;line-height:1.65}
+.quote.today{background:var(--surface);border:1px dashed var(--fg-dim);color:var(--fg-dim)}
+.quote.goal{background:var(--surface);border:1px solid var(--accent);box-shadow:var(--shadow)}
+.quote .lbl{display:block;font-size:12px;letter-spacing:.12em;text-transform:uppercase;font-weight:700;margin-bottom:8px}
+.quote.today .lbl{color:var(--fg-dim)} .quote.goal .lbl{color:var(--accent)}
+.s{border-radius:4px;transition:background .2s;padding:1px 0}
+.s.on[data-part="what"]{background:var(--accent-soft)}
+.s.on[data-part="impact"]{background:var(--amber-soft)}
+.s.on[data-part="next"]{background:var(--go-soft)}
+.parts{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr));gap:10px;margin-top:14px}
+.part{text-align:left;font:inherit;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;cursor:pointer;color:var(--fg)}
+.part b{display:block;font-size:15px;color:var(--strong)}
+.part span{font-size:14px;color:var(--fg-dim)}
+.part[data-part="what"]{border-top:4px solid var(--accent)}
+.part[data-part="impact"]{border-top:4px solid var(--amber-fill)}
+.part[data-part="next"]{border-top:4px solid var(--go-fill)}
+.part[aria-pressed="true"]{box-shadow:var(--shadow);border-color:var(--accent)}
+
+/* architecture */
+.dia-tools{display:flex;flex-wrap:wrap;gap:8px 16px;align-items:center;justify-content:space-between;margin:10px 0}
+.legend{display:flex;flex-wrap:wrap;gap:6px}
+.dia-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--r);background:var(--surface);-webkit-overflow-scrolling:touch}
+.dia-wrap svg{display:block;min-width:1000px;width:100%;height:auto}
+.nd{cursor:pointer}
+.nd rect{fill:var(--surface);stroke:var(--line);stroke-width:1.2;transition:opacity .25s}
+.nd.existing rect{fill:var(--surface-2);stroke:var(--line)}
+.nd.new rect{fill:var(--accent-soft);stroke:var(--accent)}
+.nd.changed rect{fill:var(--surface-2);stroke:var(--accent);stroke-dasharray:5 3}
+.nd.people rect{fill:var(--surface);stroke:var(--fg-dim)}
+.nd.blocked rect{fill:var(--red-soft);stroke:var(--red);stroke-dasharray:6 4}
+.nd text{pointer-events:none}
+.nd .t{fill:var(--fg);font-size:13px;font-weight:600;font-family:var(--font)}
+.nd .s2{fill:var(--fg-dim);font-size:11px;font-family:var(--font)}
+.nd.blocked .t{fill:var(--red)}
+.nd:hover rect,.nd.sel rect,.nd:focus-visible rect{stroke:var(--accent);stroke-width:2.4}
+.nd:focus{outline:none}
+.ed{fill:none;stroke:var(--fg-dim);stroke-width:1.3;opacity:.5;transition:opacity .25s}
+.ed.blocked{stroke:var(--red);stroke-dasharray:5 4;opacity:.85}
+.colh{fill:var(--fg-dim);font-size:11px;font-weight:700;letter-spacing:.12em;font-family:var(--font)}
+.bnd{fill:none;stroke:var(--go-fill);stroke-width:1.6;stroke-dasharray:9 6}
+.blabel{fill:var(--go);font-size:12px;font-weight:700;font-family:var(--font)}
+.xmark{stroke:var(--red);stroke-width:3;stroke-linecap:round}
+svg.playing .nd:not(.lit) rect,svg.playing .nd:not(.lit) text{opacity:.25}
+svg.playing .ed:not(.lit){opacity:.08}
+svg.playing .ed.lit{stroke:var(--accent);opacity:1;stroke-width:2.4;stroke-dasharray:7 5;animation:flow 1s linear infinite}
+svg.playing .ed.lit.blocked{stroke:var(--red)}
+svg.newonly .nd.existing rect,svg.newonly .nd.existing text,svg.newonly .nd.people rect,svg.newonly .nd.people text{opacity:.25}
+@keyframes flow{to{stroke-dashoffset:-12}}
+@media (prefers-reduced-motion: reduce){svg.playing .ed.lit{animation:none}}
+.player{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;margin-top:12px}
+.stepcap{background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:var(--r);padding:14px 16px;min-height:86px}
+.stepcap .k{font-size:12px;letter-spacing:.12em;text-transform:uppercase;font-weight:700;color:var(--accent)}
+.stepcap p{margin:.3em 0 0}
+.panel{margin-top:14px}
+.panel .head{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:6px}
+.panel .head h3{margin:0 8px 0 0}
+dl.kv{display:grid;grid-template-columns:minmax(0,1fr);gap:2px 16px;margin:.6em 0 0}
+@media (min-width:640px){dl.kv{grid-template-columns:200px minmax(0,1fr)}}
+dl.kv dt{font-size:13px;font-weight:700;color:var(--fg-dim)}
+dl.kv dd{margin:0 0 8px}
+.hint{font-size:14px;color:var(--fg-dim)}
+
+/* sources */
+.src h3{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.src dl{display:grid;grid-template-columns:minmax(0,1fr);gap:0;margin:8px 0 0}
+.src dt{font-size:12px;letter-spacing:.08em;text-transform:uppercase;font-weight:700;color:var(--fg-dim);margin-top:8px}
+.src dd{margin:0;font-size:15px}
+
+/* data shelves */
+.shelves{display:grid;gap:10px}
+details.shelf{background:var(--surface);border:1px solid var(--line);border-radius:var(--r)}
+details.shelf[open]{box-shadow:var(--shadow)}
+details.shelf summary{list-style:none;cursor:pointer;padding:12px 16px;display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center}
+details.shelf summary::-webkit-details-marker{display:none}
+details.shelf summary::after{content:"Open";margin-left:auto;font-size:12px;font-weight:600;color:var(--accent)}
+details.shelf[open] summary::after{content:"Close"}
+details.shelf summary b{font-size:16px;color:var(--strong)}
+.shelf-body{padding:0 16px 16px}
+.ex{width:100%;border-collapse:collapse;font-size:14px;margin-top:6px}
+.ex td{padding:5px 8px;vertical-align:top;border-top:1px solid var(--line)}
+.ex td:first-child{color:var(--fg-dim);width:38%;font-weight:600}
+.tablewrap{overflow-x:auto}
+.trace{display:flex;flex-direction:column;gap:0;margin-top:14px}
+.hop{display:flex;gap:12px;align-items:stretch}
+.hop .rail{flex:0 0 22px;display:flex;flex-direction:column;align-items:center}
+.hop .dot{width:14px;height:14px;border-radius:50%;background:var(--accent);margin-top:16px;flex:0 0 auto}
+.hop .ln{flex:1;width:2px;background:var(--accent);opacity:.4}
+.hop:last-child .ln{display:none}
+.hop .card{flex:1;margin-bottom:8px;padding:10px 14px}
+.hop .card small{display:block;font-size:12px;letter-spacing:.08em;text-transform:uppercase;font-weight:700;color:var(--fg-dim)}
+
+/* run simulation */
+.runbox{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px}
+.clock{font-family:var(--mono);font-size:28px;font-weight:700;color:var(--strong);font-variant-numeric:tabular-nums}
+.track{position:relative;height:14px;border-radius:999px;background:var(--surface-2);overflow:hidden;margin:10px 0 4px}
+.track .fill{position:absolute;inset:0 auto 0 0;width:0;background:var(--accent)}
+.ticks{display:flex;justify-content:space-between;font-size:12px;color:var(--fg-dim);font-family:var(--mono)}
+.evrows{display:grid;gap:8px;margin-top:14px}
+.ev{display:grid;grid-template-columns:minmax(0,1fr);gap:4px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+@media (min-width:640px){.ev{grid-template-columns:28px minmax(0,1.3fr) minmax(0,1fr);align-items:center;gap:12px}}
+.ev .pri{font-family:var(--mono);font-weight:700;color:var(--fg-dim)}
+.ev .nm b{display:block;color:var(--strong);font-size:15px}
+.ev .nm span{font-size:13px;color:var(--fg-dim)}
+.ev .st{font-size:14px}
+.ev.reading{border-color:var(--accent);background:var(--accent-soft)}
+.ev.done{border-color:var(--go-fill)}
+.ev.cut{border-color:var(--amber-fill);background:var(--amber-soft)}
+.mini{height:6px;border-radius:999px;background:var(--surface-2);overflow:hidden;margin-top:4px}
+.mini i{display:block;height:100%;width:0;background:var(--accent)}
+
+/* checks */
+.posts{display:grid;gap:8px;margin:10px 0}
+.post{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-size:15px}
+.post .meta{font-size:12px;color:var(--fg-dim);font-family:var(--mono)}
+mark{background:var(--go-soft);color:var(--go);border-radius:3px;padding:0 2px}
+table.checks{width:100%;border-collapse:collapse;font-size:14px;min-width:620px}
+table.checks th{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--fg-dim);text-align:left;padding:6px 8px;font-weight:700}
+table.checks td{padding:8px;border-top:1px solid var(--line);vertical-align:top}
+table.checks td.c{text-align:center;width:110px;font-weight:700}
+.pass{color:var(--go)} .fail{color:var(--red)} .wait{color:var(--fg-dim)}
+.why{font-size:13px;color:var(--fg-dim);display:block}
+
+/* flows */
+.tabs{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 12px}
+.flowwrap{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:var(--r)}
+.flowwrap svg{display:block;min-width:640px;width:100%;height:auto}
+.fn{cursor:pointer}
+.fn rect,.fn polygon{stroke-width:1.4;fill:var(--surface)}
+.fn.data rect,.fn.data polygon{fill:var(--go-soft);stroke:var(--go-fill)}
+.fn.calc rect,.fn.calc polygon{fill:var(--accent-soft);stroke:var(--accent)}
+.fn.you rect,.fn.you polygon{fill:var(--amber-soft);stroke:var(--amber-fill)}
+.fn.link rect,.fn.link polygon{fill:var(--surface);stroke:var(--accent);stroke-dasharray:5 3}
+.fn.end rect{fill:var(--accent);stroke:var(--accent)}
+.fn text{font-family:var(--font);font-size:13px;fill:var(--fg);pointer-events:none}
+.fn.end text{fill:var(--on-accent);font-weight:700}
+.fn:hover rect,.fn:hover polygon,.fn.sel rect,.fn.sel polygon,.fn:focus-visible rect,.fn:focus-visible polygon{stroke-width:2.6}
+.fn:focus{outline:none}
+.fe{stroke:var(--fg-dim);stroke-width:1.3;fill:none}
+.fl{font-size:11px;font-weight:700;fill:var(--fg-dim);font-family:var(--font)}
+.fdetail{margin-top:12px}
+
+/* journeys */
+.personas{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr));gap:10px;margin:10px 0 16px}
+.persona{font:inherit;text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;cursor:pointer;color:var(--fg)}
+.persona b{display:block;color:var(--strong);font-size:15px;line-height:1.3}
+.persona span{font-size:13px;color:var(--fg-dim)}
+.persona[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft)}
+.journey{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}
+@media (min-width:900px){.journey{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}
+.jhead{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;justify-content:space-between;margin-bottom:10px}
+.dots-nav{display:flex;gap:6px;flex-wrap:wrap}
+.dots-nav button{width:28px;height:28px;border-radius:50%;border:1px solid var(--line);background:var(--surface);color:var(--fg-dim);font:inherit;font-size:12px;font-weight:700;cursor:pointer;font-variant-numeric:tabular-nums}
+.dots-nav button[aria-current="step"]{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.dots-nav button.seen{border-color:var(--accent);color:var(--accent)}
+.when{font-family:var(--mono);font-size:13px;font-weight:700;color:var(--accent)}
+.jstep h3{font-size:22px;margin:.1em 0 .4em}
+.jstep dl{margin:0}
+.jstep dt{font-size:12px;letter-spacing:.08em;text-transform:uppercase;font-weight:700;color:var(--fg-dim);margin-top:10px}
+.jstep dd{margin:0}
+.jstep .out{margin-top:12px;background:var(--go-soft);color:var(--go);border-radius:8px;padding:8px 12px;font-weight:600;font-size:15px}
+.mock{border:1px solid var(--line);border-radius:12px;background:var(--bg);overflow:hidden;box-shadow:var(--shadow);align-self:start}
+.mk-top{display:flex;justify-content:space-between;gap:8px;background:var(--bar);color:var(--bar-fg);font-size:12px;font-weight:600;padding:7px 12px}
+.mk-top span:last-child{color:var(--bar-dim)}
+.mk-body{padding:14px;display:grid;gap:10px;font-size:14px}
+.mk-row{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.mk-card{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px 12px;min-width:0}
+.mk-card b{color:var(--strong)}
+.mk-list{display:grid;gap:6px}
+.mk-item{display:flex;justify-content:space-between;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px 10px;flex-wrap:wrap}
+.mk-item.sel{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.lanes{display:grid;gap:6px}
+.lane{display:grid;grid-template-columns:86px minmax(0,1fr);gap:8px;align-items:center;font-size:12px;color:var(--fg-dim)}
+.lane .tr{position:relative;height:18px;background:var(--surface);border:1px solid var(--line);border-radius:999px}
+.lane .tr i{position:absolute;top:3px;width:10px;height:10px;border-radius:50%;background:var(--accent)}
+.lane .tr i.am{background:var(--amber-fill)} .lane .tr i.gn{background:var(--go-fill)} .lane .tr i.sq{border-radius:2px;background:var(--fg-dim)}
+.cmp{width:100%;border-collapse:collapse;font-size:13.5px}
+.cmp th{text-align:left;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--fg-dim);padding:4px 6px}
+.cmp td{padding:6px;border-top:1px solid var(--line)}
+.cmp td.diff{background:var(--amber-soft);color:var(--amber);font-weight:700}
+.poi{display:grid;gap:6px}
+.poi .mk-item span:first-child{font-family:var(--mono);font-size:13px;color:var(--accent);font-weight:700}
+.sx{background:var(--surface);border:1px solid var(--accent);border-radius:8px;padding:10px 12px;line-height:1.6}
+.src-chip{font-size:11px;font-weight:700;padding:0 6px;border-radius:999px;background:var(--surface-2);color:var(--fg-dim);border:1px solid var(--line);white-space:nowrap}
+.banner{background:var(--amber-soft);border:1px solid var(--amber-fill);color:var(--fg);border-radius:8px;padding:8px 12px;display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center}
+.env{font-family:var(--mono);font-size:12.5px;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px 12px;overflow-x:auto;white-space:pre;line-height:1.7}
+
+/* roadmap */
+.road{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr));gap:8px;position:relative;margin:10px 0 14px}
+.rel{font:inherit;text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px;cursor:pointer;color:var(--fg)}
+.rel .v{font-family:var(--mono);font-weight:700;color:var(--accent);font-size:14px}
+.rel b{display:block;color:var(--strong);font-size:15px;line-height:1.3;margin-top:2px}
+.rel span{font-size:12px;color:var(--fg-dim)}
+.rel[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft)}
+.relcard .cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:16px;margin-top:8px}
+
+/* safeguards, risks, decisions */
+.guard{display:flex;gap:12px;align-items:flex-start}
+.guard .ico{flex:0 0 34px;height:34px;border-radius:9px;display:grid;place-items:center;background:var(--go-soft);color:var(--go);font-weight:800}
+details.risk{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:0}
+details.risk summary{cursor:pointer;padding:12px 16px;font-weight:600;color:var(--strong);list-style:none;display:flex;gap:10px;align-items:center}
+details.risk summary::-webkit-details-marker{display:none}
+details.risk summary::before{content:"■";color:var(--amber-fill);font-size:11px}
+details.risk[open] summary{color:var(--accent)}
+details.risk .body{padding:0 16px 14px}
+.dec{display:grid;gap:8px}
+.dec label{display:flex;gap:12px;align-items:flex-start;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;cursor:pointer}
+.dec input{width:18px;height:18px;margin-top:3px;accent-color:var(--accent);flex:0 0 auto}
+.dec label.done{background:var(--go-soft);border-color:var(--go-fill)}
+.dec label.done .q{text-decoration:line-through;color:var(--fg-dim)}
+.dec .who{display:block;font-size:13px;color:var(--fg-dim)}
+.meter{height:8px;border-radius:999px;background:var(--surface-2);overflow:hidden;max-width:420px;margin:6px 0 14px}
+.meter i{display:block;height:100%;background:var(--go-fill);width:0;transition:width .3s}
+
+/* glossary and popover */
+.gloss{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:10px}
+.gloss div{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px}
+.gloss b{display:block;color:var(--strong)}
+.gloss span{font-size:14px;color:var(--fg-dim)}
+.pop{position:absolute;z-index:40;background:var(--surface);color:var(--fg);border:1px solid var(--accent);border-radius:10px;box-shadow:var(--shadow);padding:10px 12px;font-size:14px;line-height:1.5}
+.pop strong{display:block;color:var(--strong);margin-bottom:2px}
+footer{margin-top:56px;background:var(--bar);color:var(--bar-dim);font-size:13px;padding-block:22px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+footer .in{max-width:1240px;margin:0 auto;display:flex;flex-wrap:wrap;gap:6px 24px;justify-content:space-between}
+footer b{color:var(--bar-fg)}
+</style>
+
+<header class="bar">
+  <div class="brand"><small>Bluestaq Limited · Holly</small><b>Handover Brief</b></div>
+  <div class="spacer"></div>
+  <button type="button" class="tog" id="techTog" aria-pressed="false">Show technical detail</button>
+  <div class="prog" id="prog"></div>
+</header>
+
+<div class="wrap">
+  <nav class="toc" aria-label="Contents">
+    <p>Contents</p>
+    <ol>
+      <li><a href="#start">Start here</a></li>
+      <li><a href="#problem">The problem</a></li>
+      <li><a href="#picture">How it works</a></li>
+      <li><a href="#sources">Where data comes from</a></li>
+      <li><a href="#holds">How Holly holds it</a></li>
+      <li><a href="#run">The end-of-shift run</a></li>
+      <li><a href="#flows">Guided flows</a></li>
+      <li><a href="#journeys">User journeys</a></li>
+      <li><a href="#plan">Delivery plan</a></li>
+      <li><a href="#safeguards">Safeguards and risks</a></li>
+      <li><a href="#decisions">Decisions needed</a></li>
+      <li><a href="#glossary">Glossary</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <section class="hero sec" id="start">
+      <div class="status"><span class="chip amber">Proposal, not built</span><span class="chip existing">6 November 2026</span><span class="chip existing">Working title: Handover</span></div>
+      <p class="eyebrow">Holly add-on brief</p>
+      <h1>A handover the next crew can act on</h1>
+      <p class="lead">Handover is a planned new tab in <button type="button" class="term" data-t="holly">Holly</button>. It helps the mission lead hand each live event to the oncoming crew as a short, sourced story: what happened, what it means and what comes next. A <button type="button" class="term" data-t="localmodel">language model that runs inside Holly</button> does the heavy reading near the end of the shift, so nothing is sent to an outside AI service.</p>
+      <div class="stats">
+        <div class="stat"><div class="n">3</div><div class="l">sentences per handover, each one sourced</div></div>
+        <div class="stat"><div class="n">48 h</div><div class="l">looked ahead for crossings, approaches and lighting</div></div>
+        <div class="stat"><div class="n">5 min</div><div class="l">for the end-of-shift run, at most</div></div>
+        <div class="stat"><div class="n">0</div><div class="l">calls to an outside AI service</div></div>
+      </div>
+      <h3 style="margin-top:28px">How to read this page</h3>
+      <div class="howto">
+        <div class="card"><div class="k">1</div><div><b>Read top to bottom.</b> <span class="muted">Each section starts in plain English, then lets you explore.</span></div></div>
+        <div class="card"><div class="k">2</div><div><b>Tap any dotted word.</b> <span class="muted">It explains itself, for example <button type="button" class="term" data-t="notso">NOTSO</button> or <button type="button" class="term" data-t="rpo">RPO</button>.</span></div></div>
+        <div class="card"><div class="k">3</div><div><b>Want the engineering?</b> <span class="muted">Switch on <em>Show technical detail</em> at the top for file names and mechanics.</span></div></div>
+      </div>
+      <p class="tech">Source plan: <code>docs/roadmap/handover-module.md</code> on branch <code>claude/rehydrate-foundations-bundle-abogpu</code>. Built against Holly V0.18.</p>
+    </section>
+
+    <section class="sec" id="problem">
+      <p class="eyebrow">1 · The problem</p>
+      <h2>Today's handover says what, but not why or what next</h2>
+      <p>At the end of a shift, the mission lead hands the watch to the oncoming crew in the Americas. For each event, the handover is often one line. The oncoming crew then spend the start of their shift rebuilding what the outgoing crew already knew.</p>
+      <div class="row" role="group" aria-label="Compare handovers" style="margin:14px 0 4px">
+        <button type="button" class="btn" id="baBoth" aria-pressed="true">Side by side</button>
+        <button type="button" class="btn" id="baToday" aria-pressed="false">Today only</button>
+        <button type="button" class="btn" id="baGoal" aria-pressed="false">With Handover only</button>
+      </div>
+      <div class="ba">
+        <div class="quote today" id="qToday"><span class="lbl">Today</span>"RED-1: NOTSO released, awaiting more data."</div>
+        <div class="quote goal" id="qGoal"><span class="lbl">With Handover</span>
+          <span class="s" data-part="what">At 14:02Z RED-1 manoeuvred in the <button type="button" class="term" data-t="geo">GEO belt</button>; we issued the possible-manoeuvre NOTSO and the verbal, and verified the manoeuvre at 16:30Z.</span>
+          <span class="s" data-part="impact">The burn arrested its drift and parked it near BLUE-1, putting the pair in <button type="button" class="term" data-t="rpo">RPO</button> conditions within a 4 x 9 x 3 km <button type="button" class="term" data-t="ric">RIC box</button>; NorthStar and KBR disagree on the burn (perigee raise against apogee raise).</span>
+          <span class="s" data-part="next">Next closest approach is at 03:40Z and the next good-lighting window at 05:10Z; <button type="button" class="term" data-t="timer">timers</button> are set for both.</span>
+          <div class="row" style="margin-top:12px"><button type="button" class="btn" id="copySyn">Copy example</button><span class="note" id="copyMsg">Illustrative. Names, times and figures are placeholders, not real data.</span></div>
+        </div>
+      </div>
+      <h3 style="margin-top:26px">Every handover answers three questions</h3>
+      <p class="muted small">Tap a card to light up its sentence above.</p>
+      <div class="parts">
+        <button type="button" class="part" data-part="what" aria-pressed="false"><b>What happened</b><span>With UTC times and the NOTSOs that marked it.</span></button>
+        <button type="button" class="part" data-part="impact" aria-pressed="false"><b>The impact</b><span>What changed for the object and any blue asset near it, and where providers disagree.</span></button>
+        <button type="button" class="part" data-part="next" aria-pressed="false"><b>What comes next</b><span>The next 48 hours, and the timers already set so nobody has to remember.</span></button>
+      </div>
+    </section>
+
+    <section class="sec" id="picture">
+      <p class="eyebrow">2 · How it works</p>
+      <h2>The big picture, from source to oncoming crew</h2>
+      <p>Data flows left to right. It arrives from four sources, Holly collects and keeps it, works out the story and the next 48 hours, and shows it to you to check and confirm. Everything inside the green dashed box happens inside Holly on the <button type="button" class="term" data-t="appstore">Bluestaq App Store</button>. The only line that crosses the box towards an outside AI service is crossed out: Handover never uses one.</p>
+      <div class="dia-tools">
+        <div class="legend">
+          <span class="chip existing">Exists today</span><span class="chip changed">Changed</span><span class="chip new">New</span><span class="chip people">People</span><span class="chip red">Never used</span>
+        </div>
+        <div class="row">
+          <button type="button" class="btn" id="newOnly" aria-pressed="false">Highlight what's new</button>
+        </div>
+      </div>
+      <div class="dia-wrap"><svg id="arch" viewBox="0 0 1270 610" role="group" aria-label="Architecture diagram. Select a box for details."></svg></div>
+      <div class="player">
+        <div class="row">
+          <button type="button" class="btn primary" id="play">Follow the data</button>
+          <button type="button" class="btn" id="prev">Back</button>
+          <button type="button" class="btn" id="next">Next</button>
+          <button type="button" class="btn" id="stopPlay">Show everything</button>
+          <span class="hint" id="stepNo">9 steps. Or select any box.</span>
+        </div>
+        <div class="stepcap" id="stepcap" aria-live="polite"><span class="k">Start</span><p>Press <b>Follow the data</b> to walk through Handover one step at a time, or select any box in the diagram to see what it does.</p></div>
+      </div>
+      <div class="card panel" id="panel" aria-live="polite"><p class="hint" style="margin:0">Select a box in the diagram to see what it does, where its data comes from and when it arrives.</p></div>
+      <p class="hint" style="margin-top:8px">On a phone, swipe the diagram sideways to see all of it.</p>
+    </section>
+
+    <section class="sec" id="sources">
+      <p class="eyebrow">3 · Where data comes from</p>
+      <h2>Four sources, all of them read only</h2>
+      <p>Handover adds no new kind of data. Holly already reads three of these sources; the fourth is read today only when someone asks. Holly never writes back to any of them.</p>
+      <div class="grid g2">
+        <div class="card src"><h3>NOTSOs <span class="chip existing">Exists</span></h3><p class="small muted">The formal notices that mark an event.</p>
+          <dl><dt>What it is</dt><dd>A <button type="button" class="term" data-t="notso">NOTSO</button> is published to the <button type="button" class="term" data-t="udl">UDL</button> when something noteworthy happens to an object, such as a possible manoeuvre.</dd>
+          <dt>How Holly gets it</dt><dd>Holly asks the UDL for new NOTSOs every hour and looks back 120 hours.</dd>
+          <dt>What Holly keeps</dt><dd>Each publication as received: NOTSO number, event, objects, times, marking and the full original record.</dd>
+          <dt>What Handover uses it for</dt><dd>The backbone of each object's story, and the "what happened" sentence.</dd></dl>
+          <p class="tech">Pull of <code>TACREP_NOTSO</code>, source <code>JCO</code>, data mode <code>REAL</code> in <code>services/background_refresh.py</code>; table <code>notification</code>.</p></div>
+        <div class="card src"><h3>Provider manoeuvre records <span class="chip existing">Exists</span></h3><p class="small muted">Each provider's reading of a burn.</p>
+          <dl><dt>What it is</dt><dd>Companies that analyse space data, the <button type="button" class="term" data-t="provider">providers</button> (for example NorthStar and KBR), publish how a <button type="button" class="term" data-t="manoeuvre">manoeuvre</button> changed an orbit.</dd>
+          <dt>How Holly gets it</dt><dd>From the UDL every 10 minutes, looking back 48 hours.</dd>
+          <dt>What Holly keeps</dt><dd>Each record with its before and after figures: <button type="button" class="term" data-t="period">period</button>, <button type="button" class="term" data-t="apsis">apogee and perigee</button>, inclination, longitude and drift.</dd>
+          <dt>What Handover uses it for</dt><dd>The provider comparison: where providers agree and where they differ.</dd></dl>
+          <p class="tech">Table <code>maneuver</code>; figures read from <code>raw</code> by <code>services/maneuver_facts.py</code>. Key names and units are TBC, re-verify against a real KBR and NorthStar record.</p></div>
+        <div class="card src"><h3>Element sets <span class="chip changed">Changed</span></h3><p class="small muted">Where each object's orbit is.</p>
+          <dl><dt>What it is</dt><dd>An <button type="button" class="term" data-t="elset">element set</button> describes an orbit at a moment in time, so Holly can predict where an object will be.</dd>
+          <dt>How Holly gets it</dt><dd>Today only when someone asks. New in V0.21: Holly fetches them automatically, but only for objects with a live event.</dd>
+          <dt>What Holly keeps</dt><dd>The orbit description and its time (epoch). Holly refuses one that is too old and says so.</dd>
+          <dt>What Handover uses it for</dt><dd>The 48-hour look-ahead: crossings, closest approaches and lighting.</dd></dl>
+          <p class="tech">Table <code>elset</code> with TLE lines. The earlier automatic pull was removed because nobody used it; the new one is scoped to live objects with a freshness guard.</p></div>
+        <div class="card src"><h3>Mattermost threads <span class="chip changed">Changed</span></h3><p class="small muted">Where analysts and providers talk an event through.</p>
+          <dl><dt>What it is</dt><dd>The team chat. A <button type="button" class="term" data-t="thread">thread</button> is a post and its replies. Providers often post their figures here first.</dd>
+          <dt>How Holly gets it</dt><dd>Every 60 seconds, from channels the Holly bot is in and that are followed. New: Holly records which thread each post belongs to.</dd>
+          <dt>What Holly keeps</dt><dd>Each post: channel, author, time and text. Holly only reads; it never posts.</dd>
+          <dt>What Handover uses it for</dt><dd>Provider claims, read by the local model and checked word for word.</dd></dl>
+          <p class="tech">Table <code>mattermost_message</code>; the thread id (<code>root_id</code>) sits inside <code>raw</code> today and becomes its own indexed column in V0.19.</p></div>
+      </div>
+      <div class="card" style="margin-top:14px;border-left:4px solid var(--go-fill)">
+        <h3>Two rules at the door</h3>
+        <ul class="dots"><li>Every value is checked as it arrives. Anything Holly cannot store safely is skipped, never guessed.</li><li>Holly reads from the UDL and Mattermost and writes back to neither.</li></ul>
+      </div>
+    </section>
+
+    <section class="sec" id="holds">
+      <p class="eyebrow">4 · How Holly holds the data</p>
+      <h2>Labelled shelves in Holly's own database</h2>
+      <p>Think of Holly's database as a set of labelled shelves. Each source has its own shelf, and every item keeps its original record so any figure can be checked later. Handover reads the existing shelves and adds three new ones. Open a shelf to see what one item on it holds.</p>
+      <div class="grid g2" style="align-items:start">
+        <div><h4>Shelves that exist today</h4><div class="shelves" id="shelvesOld"></div></div>
+        <div><h4>New shelves for Handover</h4><div class="shelves" id="shelvesNew"></div></div>
+      </div>
+      <h3 style="margin-top:30px">Trace a fact back to where it came from</h3>
+      <p>Every statement in a synopsis carries its <button type="button" class="term" data-t="provenance">provenance</button>. Pick a statement and follow it back to its source.</p>
+      <div class="row" role="group" aria-label="Pick a fact" id="traceBtns"></div>
+      <div class="trace" id="trace" aria-live="polite"></div>
+      <p class="note">Illustrative. Names, times and figures are placeholders, not real data.</p>
+    </section>
+
+    <section class="sec" id="run">
+      <p class="eyebrow">5 · The end-of-shift run</p>
+      <h2>Five minutes of reading, done before you sit down to hand over</h2>
+      <p>At times your team sets, for example 40 minutes before each shift change, Holly starts its own language model. It works through the live events in priority order: the most recent change first, then RPO, then the rest. For each one it reads the confirmed chat threads and pulls out each provider's figures. At five minutes it stops. Any event it did not reach is marked <em>template only</em>, so nothing is skipped without you knowing.</p>
+      <p>The model runs as a <button type="button" class="term" data-t="childprocess">child process</button> with no network and no database access: Holly hands it the text and reads back its answer. It stops when the run ends.</p>
+      <div class="runbox">
+        <div class="row" style="justify-content:space-between">
+          <div><div class="clock" id="clock">0:00</div><div class="hint">of a 5:00 budget</div></div>
+          <div class="row"><button type="button" class="btn primary" id="runPlay">Run the simulation</button><button type="button" class="btn" id="runReset">Reset</button></div>
+        </div>
+        <div class="track" aria-hidden="true"><div class="fill" id="runFill"></div></div>
+        <div class="ticks" aria-hidden="true"><span>0:00</span><span>1:00</span><span>2:00</span><span>3:00</span><span>4:00</span><span>5:00</span></div>
+        <div class="evrows" id="evrows"></div>
+        <p class="note" style="margin:10px 0 0">Illustrative. Five made-up events; the times are guesses until the trial measures real ones.</p>
+      </div>
+      <h3 style="margin-top:30px">Why a made-up number can't reach your handover</h3>
+      <p>Small language models sometimes invent things. So the model is only allowed to pull figures out, and Holly checks every one before it is used. A figure that is not written in the post it came from is thrown away.</p>
+      <div class="posts" id="posts"></div>
+      <div class="row" style="margin:10px 0"><button type="button" class="btn primary" id="chkRun">Run the checks</button><button type="button" class="btn" id="chkReset">Reset</button></div>
+      <div class="tablewrap"><table class="checks" id="chkTable"></table></div>
+      <p class="note">Illustrative posts and figures. NorthStar and KBR are the providers named in the owner's memo.</p>
+      <p class="tech">Planned modules: <code>services/handover/local_model.py</code> (llama.cpp through its Python binding, one quantised, permissively licensed model pinned by SHA-256), <code>extract.py</code> (claims and the three checks), <code>end_of_shift.py</code> (single-flight batch, 5-minute budget, one audit row per run). Results are cached per thread against its newest post id, so a rerun reads only threads that changed.</p>
+    </section>
+
+    <section class="sec" id="flows">
+      <p class="eyebrow">6 · Guided flows</p>
+      <h2>The right questions for each kind of event</h2>
+      <p>Each event type gets a short flowchart of the questions a good handover answers. Holly fills in what it can from data and shows you what is left. Select any box to see why the question matters and where its answer comes from.</p>
+      <div class="legend" style="margin:6px 0"><span class="chip go">From data</span><span class="chip new">Worked out by Holly</span><span class="chip amber">Needs you</span><span class="chip changed">Opens another flow</span></div>
+      <div class="tabs" role="tablist" id="flowTabs"></div>
+      <div class="flowwrap"><svg id="flowSvg" role="group" aria-label="Flowchart"></svg></div>
+      <div class="card fdetail" id="flowDetail" aria-live="polite"><p class="hint" style="margin:0">Select a box in the flowchart.</p></div>
+      <p class="note">Draft questions, to be agreed with the mission leads. More event types follow.</p>
+    </section>
+
+    <section class="sec" id="journeys">
+      <p class="eyebrow">7 · User journeys</p>
+      <h2>What using it feels like, step by step</h2>
+      <p>Pick a person and step through their journey. Each step shows what they do, what Holly does behind the scenes and what they get. The screens are sketches, not final designs.</p>
+      <div class="personas" id="personas"></div>
+      <div id="journey"></div>
+    </section>
+
+    <section class="sec" id="plan">
+      <p class="eyebrow">8 · Delivery plan</p>
+      <h2>Four releases, each useful on its own</h2>
+      <p>The work ships in steps. Each release passes Holly's full checks before it goes live: the automated test loop, the engineering and security review gates, and the App Store pipeline. Select a step to see what you get.</p>
+      <div class="road" id="road"></div>
+      <div class="card relcard" id="relcard" aria-live="polite"></div>
+    </section>
+
+    <section class="sec" id="safeguards">
+      <p class="eyebrow">9 · Safeguards and risks</p>
+      <h2>Built so a wrong handover is hard to make</h2>
+      <div class="grid g2">
+        <div class="card guard"><div class="ico">1</div><div><h3>Nothing leaves Holly</h3><p class="small">The model runs inside Holly's container. A test fails the build if any Handover code even imports the outside AI client.</p></div></div>
+        <div class="card guard"><div class="ico">2</div><div><h3>Made-up figures are thrown away</h3><p class="small">Every figure must appear word for word in the post it came from, from a provider on your list.</p></div></div>
+        <div class="card guard"><div class="ico">3</div><div><h3>A person links chat to events</h3><p class="small">Holly suggests which thread belongs to which NOTSO. Only a link a lead confirms is used.</p></div></div>
+        <div class="card guard"><div class="ico">4</div><div><h3>You confirm every handover</h3><p class="small">Nothing reaches the oncoming crew as a handover until the mission lead confirms it.</p></div></div>
+        <div class="card guard"><div class="ico">5</div><div><h3>Calculated figures say so</h3><p class="small">Every look-ahead figure is labelled "from element set, indicative", with its time. It is never presented as observed.</p></div></div>
+        <div class="card guard"><div class="ico">6</div><div><h3>It still works without the model</h3><p class="small">If the model fails or runs out of time, the synopsis falls back to the template, filled with checked data.</p></div></div>
+        <div class="card guard"><div class="ico">7</div><div><h3>Providers are never blended</h3><p class="small">Disagreements are shown side by side. Two providers are never averaged into one figure.</p></div></div>
+        <div class="card guard"><div class="ico">8</div><div><h3>Every run is recorded</h3><p class="small">One audit row per run: events read, claims kept and dropped, time taken.</p></div></div>
+      </div>
+      <h3 style="margin-top:30px">Risks and how the plan handles them</h3>
+      <div class="grid" id="risks"></div>
+    </section>
+
+    <section class="sec" id="decisions">
+      <p class="eyebrow">10 · Decisions needed</p>
+      <h2>What we need before building</h2>
+      <p>Tick each one as it is settled. Your ticks are saved in this browser only.</p>
+      <div class="meter" aria-hidden="true"><i id="meter"></i></div>
+      <p class="hint" id="meterTxt"></p>
+      <div class="dec" id="dec"></div>
+    </section>
+
+    <section class="sec" id="glossary">
+      <p class="eyebrow">11 · Glossary</p>
+      <h2>Words used on this page</h2>
+      <div class="gloss" id="gloss"></div>
+    </section>
+  </main>
+</div>
+
+<footer><div class="in"><span><b>Bluestaq Limited</b> · Holly Handover Brief · Proposal, 6 November 2026</span><span>Plan of record: docs/roadmap/handover-module.md</span></div></footer>
+<div class="pop" id="pop" role="dialog" aria-live="polite" hidden></div>
+
+<script>
+(function(){
+"use strict";
+var $=function(s,r){return (r||document).querySelector(s)};
+var $$=function(s,r){return Array.prototype.slice.call((r||document).querySelectorAll(s))};
+var store={get:function(k,d){try{var v=localStorage.getItem(k);return v===null?d:JSON.parse(v)}catch(e){return d}},set:function(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
+var reduce=false;try{reduce=window.matchMedia("(prefers-reduced-motion: reduce)").matches}catch(e){}
+function T(id,txt){return '<button type="button" class="term" data-t="'+id+'">'+txt+'</button>'}
+
+/* ---------- glossary ---------- */
+var GLOSS={
+ holly:["Holly","Bluestaq's daily operations dashboard for Space Domain Awareness (SDA) watch analysts. Handover is a new tab inside it."],
+ udl:["Unified Data Library (UDL)","The shared library of space data Holly reads from. Holly only reads; it never writes back."],
+ notso:["NOTSO","A formal notice published to the UDL when something noteworthy happens to an object in space, such as a possible manoeuvre. Holly pulls them every hour."],
+ mattermost:["Mattermost","The team chat tool. Analysts and providers talk events through in channels and threads."],
+ thread:["Thread","A Mattermost post together with all the replies to it."],
+ provider:["Provider","A company that analyses space data and publishes its assessments, for example NorthStar or KBR."],
+ manoeuvre:["Manoeuvre","A deliberate burn that changes a satellite's orbit."],
+ geo:["GEO and the GEO belt","Geostationary orbit, about 35,786 km above the equator, where a satellite keeps pace with the Earth and seems to hover over one longitude. The GEO belt is the ring of satellites there."],
+ rpo:["Rendezvous and Proximity Operations (RPO)","One satellite moving close to another and staying near it."],
+ ric:["RIC box","The space one object moves in, relative to another, measured Radial (up and down), In-track (ahead and behind) and Cross-track (side to side), in kilometres."],
+ node:["Node crossing","The moment an orbit crosses the equator, going north (ascending node) or south (descending node)."],
+ apsis:["Apogee and perigee (the apsides)","The highest point (apogee) and lowest point (perigee) of an orbit. Which one a burn raised says a lot about its purpose."],
+ period:["Period","How long one orbit takes. A change of a few seconds is a sign that a burn happened."],
+ elset:["Element set","A compact description of an orbit at a moment in time (its epoch). Holly uses it to predict where an object will be."],
+ photometric:["Photometric change","A change in how bright an object looks to a sensor. It can mean the object turned, deployed something or manoeuvred."],
+ lighting:["Good lighting","When the sun lights the target and the observing satellite sits at an angle that lets it see the target well."],
+ llm:["Large language model (LLM)","Software that reads and writes text. Handover uses one only to pull figures out of chat, and it runs inside Holly."],
+ localmodel:["Local model","A language model that runs inside Holly's own container, so the text it reads never leaves."],
+ mmb:["Mission Management Board (MMB)","The NOTSO compilation tool the mission lead pastes the confirmed synopsis into."],
+ timer:["Event timer","Holly's existing alarm for an upcoming moment, with a warning beforehand, shown on every page."],
+ synopsis:["Synopsis","The three-sentence handover paragraph: what happened, the impact, what comes next."],
+ provenance:["Provenance","Where a fact came from. Every statement in a Handover synopsis shows its source."],
+ container:["Container","The sealed box Holly runs in on the Bluestaq App Store, with its own memory and processors."],
+ appstore:["Bluestaq App Store","The platform that builds, checks and runs Holly at holly.appstore.bluestaq.com."],
+ childprocess:["Child process","A separate program Holly starts for the run and stops afterwards, so a fault in the model cannot take the rest of Holly down."],
+ template:["Template","A fixed sentence pattern Holly fills with checked facts. It works even with no model."],
+ catno:["Catalogue number","The unique number every tracked space object has."],
+ z:["Z (Zulu time)","Coordinated Universal Time (UTC). 14:02Z means 14:02 UTC."],
+ audit:["Audit log","Holly's tamper-evident record of who did what and when."]
+};
+var pop=$("#pop"),popFor=null;
+function showPop(btn){var g=GLOSS[btn.getAttribute("data-t")];if(!g)return;
+ pop.innerHTML="<strong>"+g[0]+"</strong><span>"+g[1]+"</span>";pop.hidden=false;
+ var r=btn.getBoundingClientRect(),pw=Math.min(320,window.innerWidth-32);pop.style.width=pw+"px";
+ var left=r.left+window.scrollX;left=Math.max(window.scrollX+16,Math.min(left,window.scrollX+window.innerWidth-pw-16));
+ pop.style.left=left+"px";pop.style.top=(r.bottom+window.scrollY+8)+"px";popFor=btn}
+document.addEventListener("click",function(e){var t=e.target.closest(".term");
+ if(t){if(popFor===t&&!pop.hidden){pop.hidden=true;popFor=null}else showPop(t);e.stopPropagation();return}
+ if(!e.target.closest("#pop")){pop.hidden=true;popFor=null}});
+document.addEventListener("keydown",function(e){if(e.key==="Escape"){pop.hidden=true;popFor=null}});
+window.addEventListener("resize",function(){pop.hidden=true});
+$("#gloss").innerHTML=Object.keys(GLOSS).map(function(k){return GLOSS[k]}).sort(function(a,b){return a[0].localeCompare(b[0])}).map(function(g){return "<div><b>"+g[0]+"</b><span>"+g[1]+"</span></div>"}).join("");
+
+/* ---------- technical detail toggle ---------- */
+var techTog=$("#techTog");
+function setTech(on){document.body.classList.toggle("show-tech",on);techTog.setAttribute("aria-pressed",on?"true":"false");store.set("hb-tech",on)}
+setTech(!!store.get("hb-tech",false));
+techTog.addEventListener("click",function(){setTech(!document.body.classList.contains("show-tech"))});
+
+/* ---------- contents and progress ---------- */
+var tocLinks=$$(".toc a"),prog=$("#prog");
+function onScroll(){var h=document.documentElement;var max=h.scrollHeight-window.innerHeight;prog.style.width=(max>0?Math.min(100,window.scrollY/max*100):0)+"%"}
+window.addEventListener("scroll",onScroll,{passive:true});onScroll();
+if("IntersectionObserver" in window){var io=new IntersectionObserver(function(es){es.forEach(function(en){if(en.isIntersecting){tocLinks.forEach(function(a){a.classList.toggle("on",a.getAttribute("href")==="#"+en.target.id)})}})},{rootMargin:"-30% 0px -60% 0px"});$$("main .sec").forEach(function(s){io.observe(s)})}
+
+/* ---------- before / after ---------- */
+var baBtns={both:$("#baBoth"),today:$("#baToday"),goal:$("#baGoal")};
+function setBA(k){Object.keys(baBtns).forEach(function(x){baBtns[x].setAttribute("aria-pressed",x===k?"true":"false")});$("#qToday").hidden=(k==="goal");$("#qGoal").hidden=(k==="today")}
+Object.keys(baBtns).forEach(function(k){baBtns[k].addEventListener("click",function(){setBA(k)})});
+$$(".part").forEach(function(b){b.addEventListener("click",function(e){if(e.target.closest(".term"))return;var p=b.getAttribute("data-part"),on=b.getAttribute("aria-pressed")!=="true";
+ $$(".part").forEach(function(x){x.setAttribute("aria-pressed","false")});$$(".s").forEach(function(s){s.classList.remove("on")});
+ if(on){b.setAttribute("aria-pressed","true");$$('.s[data-part="'+p+'"]').forEach(function(s){s.classList.add("on")});setBA(baBtns.today.getAttribute("aria-pressed")==="true"?"both":(baBtns.goal.getAttribute("aria-pressed")==="true"?"goal":"both"))}})});
+$("#copySyn").addEventListener("click",function(){var txt=$$("#qGoal .s").map(function(s){return s.textContent.replace(/\s+/g," ").trim()}).join(" ");var msg=$("#copyMsg");
+ function sel(){var r=document.createRange();r.selectNodeContents($("#qGoal"));var s=window.getSelection();s.removeAllRanges();s.addRange(r);msg.textContent="Selected. Press Ctrl+C (or Cmd+C) to copy."}
+ try{navigator.clipboard.writeText(txt).then(function(){msg.textContent="Copied. In Handover this button is Copy for MMB."},sel)}catch(e){sel()}});
+
+/* ---------- architecture ---------- */
+var W=150;
+var NODES={
+ notso:{x:20,y:120,l:"NOTSOs",s:"UDL notices",st:"existing",col:"Source"},
+ mnvr:{x:20,y:210,l:"Provider manoeuvres",s:"NorthStar, KBR on UDL",st:"existing",col:"Source"},
+ elset:{x:20,y:300,l:"Element sets",s:"UDL orbit data",st:"existing",col:"Source"},
+ mm:{x:20,y:390,l:"Mattermost threads",s:"team and provider chat",st:"existing",col:"Source"},
+ loop_notice:{x:200,y:120,l:"Notice pull",s:"every hour",st:"existing"},
+ loop_mnvr:{x:200,y:210,l:"Manoeuvre pull",s:"every 10 minutes",st:"existing"},
+ loop_elset:{x:200,y:300,l:"Element-set pull",s:"live objects only",st:"new"},
+ loop_mm:{x:200,y:390,l:"Chat pull",s:"every 60 s, threads new",st:"changed"},
+ db:{x:380,y:255,h:290,l:"Holly's database",s:"PostgreSQL",st:"changed",lines:["Existing shelves:","NOTSOs, manoeuvres,","element sets, chat,","timers, Shift Log","","New shelves:","handovers, thread links,","checked claims"]},
+ data_vol:{x:380,y:480,l:"Model file",s:"on Holly's /data volume",st:"new"},
+ links:{x:560,y:120,l:"Thread links",s:"a lead confirms each",st:"new"},
+ story:{x:560,y:210,l:"Object story",s:"everything on one object",st:"new"},
+ look:{x:560,y:300,l:"48-hour look-ahead",s:"crossings, approaches, light",st:"new"},
+ flow:{x:740,y:120,l:"Guided flows",s:"questions per event type",st:"new"},
+ run:{x:740,y:210,l:"End-of-shift run",s:"local model, 5 minutes",st:"new"},
+ checks:{x:740,y:300,l:"Claim checks",s:"figure must be in the post",st:"new"},
+ deltas:{x:740,y:390,l:"Provider comparison",s:"where providers differ",st:"new"},
+ syn:{x:740,y:480,l:"Synopsis builder",s:"three sentences, sourced",st:"new"},
+ ui_tab:{x:920,y:165,h:110,l:"Handover tab",s:"review, edit, confirm",st:"new",lines:["","story, flow, look-ahead,","comparison, synopsis"]},
+ shiftlog:{x:920,y:300,l:"Shift Log",s:"confirmed handovers",st:"changed"},
+ ui_timers:{x:920,y:390,l:"Event timers",s:"set from the look-ahead",st:"changed"},
+ lead:{x:1100,y:165,l:"Mission lead",s:"outgoing shift",st:"people"},
+ mmb:{x:1100,y:300,l:"MMB",s:"lead pastes the synopsis",st:"people"},
+ crew:{x:1100,y:435,l:"Oncoming crew",s:"the Americas shift",st:"people"},
+ ext_ai:{x:830,y:20,h:36,l:"Outside AI service",s:"",st:"blocked"}
+};
+var INFO={
+ notso:["The formal notice published when something happens to an object, such as a possible manoeuvre. Most events start with one.","The UDL, from the operations centre. Holly already reads them.","Each publication as received, including the full original record.","Exists today","Hourly pull of TACREP_NOTSO, source JCO, 120-hour window (services/background_refresh.py)."],
+ mnvr:["Providers publish their own reading of a manoeuvre: how much the period, apogee and perigee changed.","The UDL, pulled every 10 minutes.","Each provider's record with its before and after orbit figures.","Exists today; field names to be checked against a real record","Table maneuver; services/maneuver_facts.py reads the figures from raw at read time."],
+ elset:["A compact description of an object's orbit at a moment in time, so Holly can predict where it will be.","The UDL.","The orbit description and its time (epoch).","Exists; automatic pull for live objects in V0.21","Table elset, with the two-line element (TLE) lines."],
+ mm:["Where analysts and providers talk an event through. Providers often post figures here first.","Mattermost channels the Holly bot is in and that are followed.","Each post: channel, author, time and text. Holly reads; it never posts.","Exists; thread grouping new in V0.19","services/mattermost_ingest.py; root_id moves out of raw into its own indexed column."],
+ loop_notice:["Every hour Holly asks the UDL for new NOTSOs and stores them.","The UDL.","New and updated NOTSOs, looking back 120 hours.","Exists today","Single-flight background loop in the one gunicorn worker."],
+ loop_mnvr:["Every 10 minutes Holly fetches new provider manoeuvre records.","The UDL.","Manoeuvre records, looking back 48 hours.","Exists today","Single-flight background loop."],
+ loop_elset:["New: Holly fetches fresh element sets, but only for objects with a live event, so the look-ahead always has recent data.","The UDL.","Element sets for live objects. One older than a set age is refused, and the look-ahead says why.","New in V0.21","Scoped pull with a freshness guard; the earlier unscoped pull was removed because nobody used it."],
+ loop_mm:["Every 60 seconds Holly reads new posts from followed channels. New: it also records which thread each post belongs to.","Mattermost.","New posts, with their thread.","Changed in V0.19","Thread id backfilled from raw for posts already stored."],
+ db:["Holly's own database. Everything it collects lives here, inside Holly. Handover adds three new shelves: handovers, thread links and checked claims.","The collection loops, and your confirmations in the Handover tab.","See the next section, How Holly holds the data.","Exists; new tables from V0.19","PostgreSQL 16 add-on; Alembic migrations from 0020; a GIN index on notification.sat_ids for the per-object view."],
+ data_vol:["The model file, several gigabytes, sits on Holly's storage volume. It is a file, not a service: nothing about it talks to the outside world.","Placed there when Holly is built or first started; how is still to be agreed with the platform team.","One model, pinned by its fingerprint (SHA-256) so a changed file is refused.","New in V0.20","Volume or image: TBC with the platform team."],
+ links:["Holly spots chat threads that mention a NOTSO number or an object's catalogue number and suggests the link. A lead confirms it. Only confirmed links are used.","Chat posts and NOTSOs in the database.","Each link: the thread, the event, suggested or confirmed, by whom and when.","New in V0.19","handover_thread_link table; matching on NOTSO numbers and catalogue numbers in the text."],
+ story:["Everything about one object on one timeline: NOTSOs, provider records, confirmed threads, timers and your notes.","The database.","Nothing new: the story is built from what Holly already holds.","New in V0.19","services/handover/object_story.py; per-object query on sat_no and sat_ids."],
+ look:["From the element sets Holly works out the next 48 hours: equator crossings, highest and lowest points, closest approaches between a red and a blue object with their RIC box, and when lighting is good for one to see the other.","Element sets in the database.","Points of interest, each labelled with the element set and time it came from.","New in V0.21","services/handover/look_ahead.py, pure and unit-tested; sgp4 propagation and an analytic sun position, so no ephemeris download. Indicative only at GEO (kilometre-level error)."],
+ flow:["A short chain of questions for each event type. Holly answers what it can from data and shows you the rest.","The object story, the look-ahead and your answers.","Your answers, saved with your name as their source.","New in V0.20","Flow definitions are data, so a new event type is a new definition, not new code."],
+ run:["At the times your team sets, Holly starts its own language model for up to five minutes. It reads the confirmed threads for live events and pulls out each provider's figures, then stops.","Confirmed threads, handed to it by Holly.","Claims: provider, quantity, value, unit and the post it came from.","New in V0.20","A child process per run with no network and no database; llama.cpp through its Python binding; capped threads; single-flight."],
+ checks:["Every figure the model pulls out must appear, word for word, in the post it came from. The provider must be on your list. Anything that fails is thrown away.","The model's claims and the original posts.","Kept claims, and the reason for each dropped one.","New in V0.20","services/handover/extract.py; handover_claim table, cached per thread against its newest post id."],
+ deltas:["Sets each provider's figures side by side and highlights where they disagree. It never averages them.","Provider manoeuvre records and the checked chat claims.","Differences above a set threshold, and any disagreement on which point of the orbit was raised.","Chat claims in V0.20; full comparison in V0.22","services/handover/provider_deltas.py; pairs records on catalogue number and overlapping time, or a shared event id."],
+ syn:["Fills the three-sentence pattern with checked facts. Every statement carries a source chip you can click.","The story, the flow answers, the comparison and the look-ahead.","A draft synopsis for you to edit and confirm.","New in V0.20","services/handover/synopsis.py; optional wording polish by the local model, refused if it adds a fact."],
+ ui_tab:["The new tab where you pick an object, read its story, walk its flow, check the providers, set timers and confirm the synopsis.","Everything to its left.","Your edits, notes and confirmations.","New from V0.19","Route /handover; one entry in the navigation; hand-drawn SVG flowcharts because Holly's page security blocks injected diagram styles."],
+ shiftlog:["Confirmed handovers appear in the Shift Log's end-of-shift view, so the team has one handover, not two.","The Handover tab.","Confirmed handovers per shift.","Changed in V0.20","pages/ShiftLog.tsx and services/shift_log.py read confirmed handovers."],
+ ui_timers:["Holly's existing timers. New: one click on a look-ahead point sets a timer, marked as coming from the look-ahead.","The look-ahead, through the Handover tab.","Each timer: label, time, warning and where it came from.","Changed in V0.21","event_timer.origin column: manual or look-ahead."],
+ lead:["You. You check, edit and confirm. Nothing reaches the oncoming crew as a handover without your confirmation.","The Handover tab.","Your confirmed synopsis.","People",""],
+ mmb:["You paste the confirmed synopsis into the Mission Management Board (MMB). Anything beyond copy and paste is still to be decided.","The Copy for MMB button.","The synopsis text.","People","Integration format TBC with the MMB's owner."],
+ crew:["The oncoming crew reads the handover, follows the sources if they need to, and inherits the timers.","The Shift Log, the Handover tab and the timer banner.","",'People',""],
+ ext_ai:["Holly's existing notice assistant uses an outside AI service. Handover never does: a test fails the build if Handover code even imports that client.","","Nothing.","A rule from V0.19","Test asserts no module under services/handover imports services/claude.py. The existing assistant's use of chat is a separate decision."]
+};
+var EDGES=[
+ ["notso","loop_notice"],["mnvr","loop_mnvr"],["elset","loop_elset"],["mm","loop_mm"],
+ ["loop_notice","db",{ty:150}],["loop_mnvr","db",{ty:210}],["loop_elset","db",{ty:300}],["loop_mm","db",{ty:370}],
+ ["db","links",{sy:130}],["db","story",{sy:210}],["db","look",{sy:300}],["db","deltas",{sy:390}],
+ ["links","story",{v:1}],["story","flow"],["story","run"],
+ ["data_vol","run",{p:"M530,480 L548,480 Q555,480 555,487 L555,533 Q555,540 562,540 L718,540 Q725,540 725,533 L725,222 Q725,215 732,215 L740,215"}],
+ ["run","checks",{v:1}],["checks","deltas",{v:1}],["deltas","syn",{v:1}],
+ ["look","syn",{p:"M635,328 L635,470 Q635,480 645,480 L740,480"}],
+ ["flow","ui_tab",{ty:140}],["syn","ui_tab",{ty:200}],
+ ["ui_tab","shiftlog",{v:1}],["ui_tab","ui_timers",{arc:1}],
+ ["ui_tab","lead"],["lead","mmb",{v:1}],["mmb","crew",{v:1}],["shiftlog","crew",{ty:425}],["ui_timers","crew",{ty:445}],
+ ["run","ext_ai",{p:"M890,205 L898,205 Q905,205 905,198 L905,40",blocked:1}]
+];
+var STEPS=[
+ {n:["notso","mnvr","elset","mm"],e:[],k:"Sources",t:"Events start outside Holly. NOTSOs, provider manoeuvre records and element sets are published to the UDL, and analysts and providers talk events through in Mattermost."},
+ {n:["loop_notice","loop_mnvr","loop_elset","loop_mm"],e:["notso>loop_notice","mnvr>loop_mnvr","elset>loop_elset","mm>loop_mm"],k:"Holly collects",t:"Holly fetches each source on a timer: NOTSOs every hour, manoeuvre records every 10 minutes, chat every 60 seconds. New: fresh element sets for objects with a live event."},
+ {n:["db","data_vol"],e:["loop_notice>db","loop_mnvr>db","loop_elset>db","loop_mm>db"],k:"Holly keeps",t:"Everything lands in Holly's own database, inside Holly. The model file sits on Holly's storage volume."},
+ {n:["links","story"],e:["db>links","db>story","links>story"],k:"The story",t:"Holly gathers everything about one object onto one timeline, and suggests which chat threads belong to which NOTSO. A lead confirms each link."},
+ {n:["look"],e:["db>look"],k:"The look-ahead",t:"From the element sets Holly works out the next 48 hours: equator crossings, highest and lowest points, closest approaches and good-lighting windows."},
+ {n:["run","checks","data_vol","ext_ai"],e:["story>run","data_vol>run","run>checks","run>ext_ai"],k:"End-of-shift run",t:"Near the end of the shift Holly's own model reads the confirmed threads for up to five minutes and pulls out providers' figures. Holly checks every figure against its post. The crossed-out line shows nothing goes to an outside AI service."},
+ {n:["deltas","syn","flow"],e:["checks>deltas","db>deltas","deltas>syn","look>syn","story>flow"],k:"Making sense of it",t:"Providers' figures are set side by side and differences highlighted. The synopsis builder fills the three sentences with checked facts, and the guided flow shows which questions are answered."},
+ {n:["ui_tab","lead","mmb","shiftlog"],e:["flow>ui_tab","syn>ui_tab","ui_tab>lead","lead>mmb","ui_tab>shiftlog"],k:"You confirm",t:"The mission lead reviews in the Handover tab, edits, confirms and pastes the synopsis into the MMB. The confirmed handover also appears in the Shift Log."},
+ {n:["ui_timers","crew"],e:["ui_tab>ui_timers","shiftlog>crew","ui_timers>crew","mmb>crew"],k:"Handed over",t:"The oncoming crew reads the handover and inherits the timers set from the look-ahead, so the next key moments are already watched."}
+];
+var STLABEL={existing:"Exists today",new:"New",changed:"Changed",people:"People",blocked:"Never used"};
+function nh(n){return n.h||56}
+function edgePath(e){var a=NODES[e[0]],b=NODES[e[1]],o=e[2]||{};
+ if(o.p)return o.p;
+ if(o.v){return "M"+(a.x+W/2)+","+(a.y+nh(a)/2)+" L"+(b.x+W/2)+","+(b.y-nh(b)/2-2)}
+ if(o.arc){var x=a.x+W,y1=a.y+20,y2=b.y;return "M"+x+","+y1+" C"+(x+24)+","+y1+" "+(x+24)+","+y2+" "+(x+2)+","+y2}
+ var x1=a.x+W,y1=(o.sy!=null?o.sy:a.y),x2=b.x-2,y2=(o.ty!=null?o.ty:b.y),m=(x1+x2)/2;
+ return "M"+x1+","+y1+" C"+m+","+y1+" "+m+","+y2+" "+x2+","+y2}
+function drawArch(){var s="";
+ s+='<defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--fg-dim)"/></marker>'+
+  '<marker id="arL" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/></marker></defs>';
+ s+='<rect class="bnd" x="186" y="48" width="898" height="524" rx="14"/>';
+ s+='<text class="blabel" x="200" y="562">INSIDE HOLLY ON THE BLUESTAQ APP STORE · NOTHING IN THIS BOX GOES TO AN OUTSIDE AI</text>';
+ [["1 SOURCES",95],["2 HOLLY COLLECTS",275],["3 HOLLY KEEPS",455],["4 HOLLY WORKS IT OUT",725],["5 YOU SEE",995],["6 PEOPLE",1175]].forEach(function(c){s+='<text class="colh" x="'+c[1]+'" y="80" text-anchor="middle">'+c[0]+'</text>'});
+ EDGES.forEach(function(e){var o=e[2]||{};s+='<path class="ed'+(o.blocked?" blocked":"")+'" data-k="'+e[0]+">"+e[1]+'" d="'+edgePath(e)+'"'+(o.blocked?"":' marker-end="url(#ar)"')+'/>'});
+ s+='<g class="xm"><line class="xmark" x1="896" y1="39" x2="914" y2="57"/><line class="xmark" x1="914" y1="39" x2="896" y2="57"/></g>';
+ Object.keys(NODES).forEach(function(id){var n=NODES[id],h=nh(n),top=n.y-h/2;
+  s+='<g class="nd '+n.st+'" data-id="'+id+'" tabindex="0" role="button" aria-label="'+n.l+', '+STLABEL[n.st]+'"><rect x="'+n.x+'" y="'+top+'" width="'+W+'" height="'+h+'" rx="9"/>';
+  if(n.lines){s+='<text class="t" x="'+(n.x+12)+'" y="'+(top+22)+'">'+n.l+'</text><text class="s2" x="'+(n.x+12)+'" y="'+(top+38)+'">'+n.s+'</text>';
+   n.lines.forEach(function(L,i){if(L)s+='<text class="s2" x="'+(n.x+12)+'" y="'+(top+60+i*16)+'">'+L+'</text>'})}
+  else if(!n.s){s+='<text class="t" x="'+(n.x+W/2)+'" y="'+(n.y+5)+'" text-anchor="middle">'+n.l+'</text>'}
+  else{s+='<text class="t" x="'+(n.x+12)+'" y="'+(n.y-4)+'">'+n.l+'</text><text class="s2" x="'+(n.x+12)+'" y="'+(n.y+13)+'">'+n.s+'</text>'}
+  s+='</g>'});
+ $("#arch").innerHTML=s}
+drawArch();
+var arch=$("#arch"),panel=$("#panel");
+function chipFor(st){return '<span class="chip '+st+'">'+STLABEL[st]+'</span>'}
+function selectNode(id){var n=NODES[id],d=INFO[id];$$(".nd",arch).forEach(function(g){g.classList.toggle("sel",g.getAttribute("data-id")===id)});
+ var h='<div class="head"><h3>'+n.l+'</h3>'+chipFor(n.st)+'<span class="chip existing">'+d[3]+'</span></div><p>'+d[0]+'</p><dl class="kv">';
+ if(d[1])h+='<dt>Where its data comes from</dt><dd>'+d[1]+'</dd>';
+ if(d[2])h+='<dt>What it keeps or produces</dt><dd>'+d[2]+'</dd>';
+ h+='</dl>'+(d[4]?'<p class="tech">'+d[4]+'</p>':'');panel.innerHTML=h}
+arch.addEventListener("click",function(e){var g=e.target.closest(".nd");if(g)selectNode(g.getAttribute("data-id"))});
+arch.addEventListener("keydown",function(e){var g=e.target.closest(".nd");if(g&&(e.key==="Enter"||e.key===" ")){e.preventDefault();selectNode(g.getAttribute("data-id"))}});
+$("#newOnly").addEventListener("click",function(){var on=!arch.classList.contains("newonly");arch.classList.toggle("newonly",on);this.setAttribute("aria-pressed",on?"true":"false")});
+var stepIdx=-1,playTimer=null;
+function showStep(i){stepIdx=i;var st=STEPS[i];arch.classList.add("playing");
+ $$(".nd",arch).forEach(function(g){g.classList.toggle("lit",st.n.indexOf(g.getAttribute("data-id"))>=0)});
+ $$(".ed",arch).forEach(function(p){p.classList.toggle("lit",st.e.indexOf(p.getAttribute("data-k"))>=0)});
+ $(".xm",arch).style.opacity=(st.e.indexOf("run>ext_ai")>=0||!arch.classList.contains("playing"))?1:.25;
+ $("#stepcap").innerHTML='<span class="k">Step '+(i+1)+' of '+STEPS.length+' · '+st.k+'</span><p>'+st.t+'</p>';
+ $("#stepNo").textContent="Step "+(i+1)+" of "+STEPS.length;
+ $("#prev").disabled=i<=0;$("#next").disabled=i>=STEPS.length-1}
+function stopAuto(){if(playTimer){clearInterval(playTimer);playTimer=null;$("#play").textContent="Follow the data"}}
+function clearSteps(){stopAuto();stepIdx=-1;arch.classList.remove("playing");$$(".lit",arch).forEach(function(x){x.classList.remove("lit")});$(".xm",arch).style.opacity=1;$("#stepNo").textContent="9 steps. Or select any box.";$("#prev").disabled=false;$("#next").disabled=false;
+ $("#stepcap").innerHTML='<span class="k">Start</span><p>Press <b>Follow the data</b> to walk through Handover one step at a time, or select any box in the diagram to see what it does.</p>'}
+$("#play").addEventListener("click",function(){if(playTimer){stopAuto();return}
+ showStep(stepIdx<0||stepIdx>=STEPS.length-1?0:stepIdx+1);
+ if(reduce)return;this.textContent="Pause";playTimer=setInterval(function(){if(stepIdx>=STEPS.length-1){stopAuto();return}showStep(stepIdx+1)},4200)});
+$("#next").addEventListener("click",function(){stopAuto();showStep(Math.min(STEPS.length-1,stepIdx+1))});
+$("#prev").addEventListener("click",function(){stopAuto();showStep(Math.max(0,stepIdx-1))});
+$("#stopPlay").addEventListener("click",clearSteps);
+
+/* ---------- data shelves ---------- */
+var SHELVES=[
+ {old:1,n:"NOTSOs",t:"notification",st:"existing",holds:["The NOTSO number and event id","The event class, for example Manoeuvre / RED-1 (catalogue number) / GEO","The objects' catalogue numbers","Publish and effective times","Its classification marking","The full original record from the UDL"],ex:[["NOTSO number","[number]"],["Event class","Manoeuvre / RED-1 ([cat. no.]) / GEO"],["Objects","[cat. no.]"],["Published","14:20Z"]],note:"One row per publication, so the whole history of an event is kept."},
+ {old:1,n:"Provider manoeuvre records",t:"maneuver",st:"existing",holds:["The provider","The object and the time of the burn","Before and after figures: period, apogee, perigee, inclination, longitude and drift","The full original record"],ex:[["Provider","NorthStar"],["Object","RED-1"],["Period before and after","[min] to [min]"],["Perigee before and after","[km] to [km]"]],note:"Field names still to be checked against a real KBR and NorthStar record."},
+ {old:1,n:"Element sets",t:"elset",st:"existing",holds:["The object","The orbit description and its time (epoch)","The two-line element lines"],ex:[["Object","BLUE-1"],["Epoch","06:12Z"]],note:"Filled automatically for live objects from V0.21."},
+ {old:1,n:"Chat posts",t:"mattermost_message",st:"changed",holds:["Channel, author and time","The text of the post","New: which thread it belongs to"],ex:[["Channel","[GEO channel]"],["Author","[provider analyst]"],["Thread","[thread id]"],["Text","We assess a +25s period change..."]],note:"The thread id already sits inside each stored post; V0.19 gives it its own column so threads can be found quickly."},
+ {old:1,n:"Event timers",t:"event_timer",st:"changed",holds:["A label, a time and a warning","The event it belongs to","New: where it came from, manual or look-ahead"],ex:[["Label","RED-1 and BLUE-1 closest approach"],["Time","03:40Z, warn 30 minutes before"],["Came from","Look-ahead"]],note:"The timer banner already shows on every page."},
+ {old:1,n:"Shift Log and event summaries",t:"shift_note, shift_summary, event_summary",st:"existing",holds:["Analysts' notes and the end-of-shift summary","A short summary per event, written by the existing assistant"],ex:[["Note","[analyst's free text]"]],note:"Handover shows an existing event summary only as labelled context. It never builds the synopsis from it, because the existing assistant uses an outside AI service."},
+ {old:0,n:"Handovers",t:"handover",st:"new",holds:["The object and the shift","The synopsis text and your flow answers","Every source behind it","Draft or confirmed, by whom and when"],ex:[["Object","RED-1"],["Shift","Day shift, [date]"],["Status","Confirmed by the outgoing lead, 18:48Z"],["Sources","3 NOTSOs, 2 provider records, 4 posts, 2 look-ahead points"]],note:"One per object per shift."},
+ {old:0,n:"Thread links",t:"handover_thread_link",st:"new",holds:["The thread and the event it is about","Suggested by Holly or confirmed by a lead","Who confirmed it and when"],ex:[["Thread","[thread id]"],["Event","NOTSO [number]"],["State","Confirmed, 18:31Z"]],note:"Only confirmed links are used."},
+ {old:0,n:"Checked claims",t:"handover_claim",st:"new",holds:["Provider, quantity, value and unit","The post and thread it came from","Kept, or dropped with the reason","The thread's newest post when it was read, so a rerun skips threads with nothing new"],ex:[["Provider","NorthStar"],["Claim","Period change, +25 s"],["From","Post at 17:42Z"],["Result","Kept: figure found in the post"]],note:"The model's output is never trusted until it is here, checked."}
+];
+function shelfHTML(x){return '<details class="shelf"><summary><b>'+x.n+'</b>'+chipFor(x.st)+'</summary><div class="shelf-body"><h4>What one item holds</h4><ul class="dots">'+x.holds.map(function(h){return "<li>"+h+"</li>"}).join("")+'</ul><h4 style="margin-top:10px">Example</h4><table class="ex">'+x.ex.map(function(r){return "<tr><td>"+r[0]+"</td><td>"+r[1]+"</td></tr>"}).join("")+'</table><p class="small muted" style="margin:10px 0 0">'+x.note+'</p><p class="tech">Table: '+x.t+'</p></div></details>'}
+$("#shelvesOld").innerHTML=SHELVES.filter(function(x){return x.old}).map(shelfHTML).join("");
+$("#shelvesNew").innerHTML=SHELVES.filter(function(x){return !x.old}).map(shelfHTML).join("");
+
+var TRACES=[
+ {b:"NorthStar: +25 s period change",hops:[["In the synopsis","Sentence 2: NorthStar and KBR disagree on the burn."],["Checked claim","NorthStar · period change · +25 s. Kept: the figure is in the post."],["Mattermost post, 17:42Z","“We assess a <mark>+25s</mark> period change and a 17km perigee raise.”"],["Thread","RED-1 manoeuvre discussion in the GEO channel."],["Thread link","Linked to NOTSO [number], confirmed by the outgoing lead at 18:31Z."],["Source","NOTSO [number], from the UDL."]]},
+ {b:"Next closest approach at 03:40Z",hops:[["In the synopsis","Sentence 3: next closest approach at 03:40Z."],["Look-ahead point","Closest approach, RED-1 and BLUE-1, indicative."],["Element sets","RED-1, epoch 05:58Z, and BLUE-1, epoch 06:12Z."],["Source","Both from the UDL, fetched for live objects."]]},
+ {b:"The manoeuvre was verified",hops:[["In the synopsis","Sentence 1: verified the manoeuvre at 16:30Z."],["Flow answer","Is the manoeuvre verified? Yes, at 16:30Z. Answered by the outgoing lead."],["Story","The NOTSOs for RED-1 that day, in order."],["Source","NOTSO [number], from the UDL."]]}
+];
+var tb=$("#traceBtns");
+tb.innerHTML=TRACES.map(function(t,i){return '<button type="button" class="btn" data-i="'+i+'" aria-pressed="false">'+t.b+'</button>'}).join("");
+function showTrace(i){$$("button",tb).forEach(function(b){b.setAttribute("aria-pressed",b.getAttribute("data-i")==i?"true":"false")});
+ $("#trace").innerHTML=TRACES[i].hops.map(function(h){return '<div class="hop"><div class="rail"><span class="dot"></span><span class="ln"></span></div><div class="card"><small>'+h[0]+'</small>'+h[1]+'</div></div>'}).join("")}
+tb.addEventListener("click",function(e){var b=e.target.closest("button");if(b)showTrace(+b.getAttribute("data-i"))});
+showTrace(0);
+
+/* ---------- end-of-shift run ---------- */
+var EVENTS=[
+ {n:"RED-1 near BLUE-1",k:"RPO · most recent change",secs:95,kept:9,drop:1},
+ {n:"RED-2 brightness change",k:"Photometric change",secs:40,kept:2,drop:0},
+ {n:"RED-3 manoeuvre",k:"Manoeuvre",secs:0,cached:1},
+ {n:"Object separating from RED-4",k:"Separation",secs:110,kept:5,drop:2},
+ {n:"RED-5 manoeuvre, quiet since yesterday",k:"Manoeuvre · lowest priority",secs:80,kept:3,drop:0}
+];
+var BUDGET=300,sched=[],runRaf=null;
+(function(){var t=0;EVENTS.forEach(function(ev){var s=t,e=t+ev.secs,cut=false;if(e>BUDGET){e=BUDGET;cut=true}sched.push({s:s,e:e,cut:cut});t=e})})();
+function fmt(sec){sec=Math.floor(sec);return Math.floor(sec/60)+":"+("0"+(sec%60)).slice(-2)}
+function renderRun(sim){$("#clock").textContent=fmt(sim);$("#runFill").style.width=(sim/BUDGET*100)+"%";
+ $("#evrows").innerHTML=EVENTS.map(function(ev,i){var sc=sched[i],cls="",st;
+  if(sim<sc.s||(sim===0&&sc.s===0&&!ev.cached)){st='<span class="muted">Waiting</span>'}
+  else if(ev.cached){cls="done";st='<span class="pass">No new posts since the last run: kept its earlier reading</span>'}
+  else if(sim<sc.e){cls="reading";var p=(sim-sc.s)/ev.secs*100;st='Reading its threads and checking claims<div class="mini"><i style="width:'+p+'%"></i></div>'}
+  else if(sc.cut){cls="cut";st='<span style="color:var(--amber);font-weight:600">Stopped at 5:00. Template only: the lead sees it was not read</span>'}
+  else{cls="done";st='<span class="pass">Done: '+ev.kept+' claims kept, '+ev.drop+' dropped</span>'}
+  return '<div class="ev '+cls+'"><span class="pri">'+(i+1)+'</span><div class="nm"><b>'+ev.n+'</b><span>'+ev.k+'</span></div><div class="st">'+st+'</div></div>'}).join("")}
+renderRun(0);
+$("#runPlay").addEventListener("click",function(){if(runRaf)return;var dur=reduce?0:12000,t0=performance.now(),btn=this;btn.disabled=true;
+ function fr(now){var sim=dur?Math.min(BUDGET,(now-t0)/dur*BUDGET):BUDGET;renderRun(sim);if(sim<BUDGET){runRaf=requestAnimationFrame(fr)}else{runRaf=null;btn.disabled=false;btn.textContent="Run it again"}}
+ runRaf=requestAnimationFrame(fr)});
+$("#runReset").addEventListener("click",function(){if(runRaf){cancelAnimationFrame(runRaf);runRaf=null}$("#runPlay").disabled=false;$("#runPlay").textContent="Run the simulation";renderRun(0)});
+
+/* ---------- checks demo ---------- */
+var POSTS=[
+ {id:"p1",m:"17:42Z · NorthStar analyst · confirmed thread",t:"RED-1 burn looks complete. We assess a +25s period change and a 17km perigee raise, now near circular. Looks parked near BLUE-1."},
+ {id:"p2",m:"15:05Z · KBR analyst · confirmed thread",t:"Early read on RED-1: 5s period change, apogee raise. Will update."},
+ {id:"p3",m:"16:10Z · watch analyst · confirmed thread",t:"My guess is the period moved about 20s."}
+];
+var CLAIMS=[
+ {p:"NorthStar",q:"Period change",v:"+25 s",post:"p1",hit:"+25s",r:[1,1,1]},
+ {p:"NorthStar",q:"Perigee change",v:"+17 km",post:"p1",hit:"17km",r:[1,1,1]},
+ {p:"NorthStar",q:"Apogee change",v:"+30 km",post:"p1",hit:"",r:[0,1,1],why:"The post never says 30. The model made it up, so Holly throws it away."},
+ {p:"KBR",q:"Period change",v:"+5 s",post:"p2",hit:"5s",r:[1,1,1]},
+ {p:"No provider named",q:"Period change",v:"+20 s",post:"p3",hit:"20s",r:[1,0,1],why:"No provider on your list said this, so it is not a provider's assessment."}
+];
+function renderPosts(marks){$("#posts").innerHTML=POSTS.map(function(p){var t=p.t;if(marks){CLAIMS.forEach(function(c){if(c.post===p.id&&c.hit&&c.r.every(Boolean))t=t.replace(c.hit,"<mark>"+c.hit+"</mark>")})}
+ return '<div class="post"><div class="meta">'+p.m+'</div>'+t+'</div>'}).join("")}
+function renderChecks(n){var heads=["Figure is in the post","Provider is on your list","Post is in a confirmed thread"];
+ var h='<thead><tr><th>Claim the model pulled out</th>'+heads.map(function(x){return '<th style="text-align:center">'+x+'</th>'}).join("")+'<th>Result</th></tr></thead><tbody>';
+ CLAIMS.forEach(function(c,i){var shown=i<n;h+='<tr><td><b>'+c.p+'</b> · '+c.q+' · '+c.v+'</td>';
+  c.r.forEach(function(ok){h+='<td class="c '+(shown?(ok?"pass":"fail"):"wait")+'">'+(shown?(ok?"Pass":"Fail"):"·")+'</td>'});
+  var keep=c.r.every(Boolean);h+='<td>'+(shown?(keep?'<span class="chip go">Kept</span>':'<span class="chip red">Dropped</span><span class="why">'+c.why+'</span>'):'<span class="muted">Not checked yet</span>')+'</td></tr>'});
+ $("#chkTable").innerHTML=h+"</tbody>"}
+var chkT=null;
+function resetChecks(){if(chkT){clearInterval(chkT);chkT=null}renderPosts(false);renderChecks(0);$("#chkRun").disabled=false}
+resetChecks();
+$("#chkRun").addEventListener("click",function(){var n=0,btn=this;btn.disabled=true;if(reduce){renderChecks(CLAIMS.length);renderPosts(true);return}
+ chkT=setInterval(function(){n++;renderChecks(n);if(n>=CLAIMS.length){clearInterval(chkT);chkT=null;renderPosts(true)}},700)});
+$("#chkReset").addEventListener("click",resetChecks);
+
+/* ---------- guided flows ---------- */
+var FLOWS={
+ manoeuvre:{name:"Manoeuvre",nodes:[
+  {t:"q",x:"When was the manoeuvre detected, in UTC?",st:"data",src:"The first NOTSO for the object.",why:"Every handover starts with a time the oncoming crew can line up against their own data."},
+  {t:"q",x:"Were the possible-manoeuvre NOTSO and the verbal sent?",st:"you",src:"The NOTSO from data; the verbal from you.",why:"The oncoming crew must know what has already been reported, so nothing is reported twice or missed."},
+  {t:"d",x:"Is the manoeuvre verified?",st:"you",src:"Later NOTSOs and your judgement.",why:"An unverified manoeuvre is handed over as a watch item, not a fact.",side:{lab:"No",x:"Say what is awaited and set a timer for it",st:"you"}},
+  {t:"q",x:"What changed: period, apogee, perigee, inclination, drift?",st:"data",src:"Provider manoeuvre records and checked chat claims.",why:"The figures tell you what kind of burn it was."},
+  {t:"d",x:"Do the providers agree?",st:"data",src:"The provider comparison.",why:"The oncoming crew will be asked. They need to know where the uncertainty is.",side:{lab:"No",x:"Name each provider's figures and the difference",st:"data"}},
+  {t:"q",x:"What was the effect, for example drift arrested or parked?",st:"you",src:"Provider records, with your reading.",why:"This is the impact sentence of the synopsis."},
+  {t:"d",x:"Is a blue asset now close?",st:"calc",src:"The look-ahead.",why:"Proximity to a blue asset changes the priority of the whole event.",side:{lab:"Yes",x:"Open the RPO flow",st:"link"}},
+  {t:"q",x:"What comes next in 48 hours, and are timers set?",st:"calc",src:"The look-ahead and Holly's timers.",why:"This is the what-comes-next sentence, and it keeps the next moments watched."},
+  {t:"end",x:"Draft the synopsis"}]},
+ rpo:{name:"RPO",nodes:[
+  {t:"q",x:"Which two objects, red and blue, with catalogue numbers?",st:"data",src:"The RPO NOTSO.",why:"Names and numbers stop the crew confusing two similar events."},
+  {t:"q",x:"How did they get close: a manoeuvre or drift?",st:"data",src:"The object story.",why:"A deliberate approach reads very differently from a slow drift."},
+  {t:"q",x:"How close: the RIC box in km",st:"calc",src:"The look-ahead, labelled indicative.",why:"The size of the box is the clearest measure of how close the pair is operating."},
+  {t:"q",x:"When is the next closest approach?",st:"calc",src:"The look-ahead.",why:"It is the moment most worth watching on the next shift."},
+  {t:"q",x:"When is lighting good for one to observe the other?",st:"calc",src:"The look-ahead: the target sunlit and the viewing angle good.",why:"Good lighting is when a close satellite could image its neighbour."},
+  {t:"d",x:"Does the geometry repeat?",st:"calc",src:"The look-ahead over 48 hours.",why:"A repeating pattern lets the crew plan rather than react.",side:{lab:"Yes",x:"Say how often, for example about every 12 hours",st:"calc"}},
+  {t:"q",x:"What do providers say about intent?",st:"data",src:"Checked chat claims.",why:"Assessments of intent belong to named providers, never to Holly."},
+  {t:"q",x:"Are timers set for the approach and the lighting?",st:"calc",src:"Holly's timers.",why:"So the oncoming crew is alerted without anyone remembering to do it."},
+  {t:"end",x:"Draft the synopsis"}]},
+ photometric:{name:"Photometric change",nodes:[
+  {t:"q",x:"What changed in brightness, when, and seen by which sensor?",st:"data",src:"The photometric NOTSO (what it states is still to be checked).",why:"A brightness change is only useful with its time and sensor."},
+  {t:"d",x:"Does it line up with the start of a manoeuvre?",st:"data",src:"The object story.",why:"A change at a burn start may be the object turning to fire.",side:{lab:"Yes",x:"Open the manoeuvre flow",st:"link"}},
+  {t:"d",x:"Does it line up with a close approach in good lighting?",st:"calc",src:"The look-ahead.",why:"It may be one satellite turning to observe another.",side:{lab:"Yes",x:"Open the RPO flow",st:"link"}},
+  {t:"q",x:"When does the same viewing geometry come round again?",st:"calc",src:"The look-ahead.",why:"Only a revisit at the same geometry shows whether the change persisted."},
+  {t:"q",x:"Is a timer set for the revisit?",st:"calc",src:"Holly's timers.",why:"So the check actually happens."},
+  {t:"q",x:"Ask the oncoming crew: did it persist, or was it a one-off?",st:"you",src:"You, as a question in the handover.",why:"It tells the next crew exactly what to look for."},
+  {t:"end",x:"Draft the synopsis"}]},
+ separation:{name:"Separation",nodes:[
+  {t:"q",x:"What separated from what, and when?",st:"data",src:"The NOTSO.",why:"The basic facts of the event."},
+  {t:"q",x:"Is the new object catalogued yet?",st:"data",src:"The NOTSO or the UDL (to be checked).",why:"Without a catalogue number the crew cannot track it in other tools."},
+  {t:"q",x:"Is it moving away or staying close?",st:"calc",src:"The look-ahead, once element sets exist.",why:"A piece that stays close may be deliberate."},
+  {t:"d",x:"Is a blue asset at risk?",st:"calc",src:"The look-ahead.",why:"Raises the priority straight away.",side:{lab:"Yes",x:"Open the RPO flow",st:"link"}},
+  {t:"q",x:"What do providers say it is?",st:"data",src:"Checked chat claims.",why:"Named assessments, with disagreements shown."},
+  {t:"q",x:"Are timers set?",st:"calc",src:"Holly's timers.",why:"So the next key moment is watched."},
+  {t:"end",x:"Draft the synopsis"}]}
+};
+var STF={data:"From data",calc:"Worked out by Holly",you:"Needs you",link:"Opens another flow"};
+var STC={data:"go",calc:"new",you:"amber",link:"changed"};
+function wrap(t,max){var w=t.split(" "),out=[],l="";w.forEach(function(x){if((l+" "+x).trim().length>max){out.push(l.trim());l=x}else l+=" "+x});if(l.trim())out.push(l.trim());return out}
+var curFlow="manoeuvre";
+function drawFlow(key){curFlow=key;var f=FLOWS[key],SX=24,SW=330,DX=430,DW=250,y=16,s="",items=[];
+ $$("#flowTabs button").forEach(function(b){b.setAttribute("aria-selected",b.getAttribute("data-k")===key?"true":"false")});
+ f.nodes.forEach(function(n,i){var lines=wrap(n.x,40),h=Math.max(46,16+lines.length*17);var top=y;
+  if(i>0)s+='<line class="fe" x1="'+(SX+SW/2)+'" y1="'+(top-22)+'" x2="'+(SX+SW/2)+'" y2="'+(top-3)+'" marker-end="url(#far)"/>';
+  var cls="fn "+(n.t==="end"?"end":n.st);
+  s+='<g class="'+cls+'" data-i="'+i+'" tabindex="0" role="button" aria-label="'+n.x+'">';
+  if(n.t==="d"){var c=14;s+='<polygon points="'+(SX+c)+','+top+' '+(SX+SW-c)+','+top+' '+(SX+SW)+','+(top+h/2)+' '+(SX+SW-c)+','+(top+h)+' '+(SX+c)+','+(top+h)+' '+SX+','+(top+h/2)+'"/>'}
+  else s+='<rect x="'+SX+'" y="'+top+'" width="'+SW+'" height="'+h+'" rx="'+(n.t==="end"?h/2:9)+'"/>';
+  lines.forEach(function(L,j){s+='<text x="'+(SX+SW/2)+'" y="'+(top+h/2-(lines.length-1)*8.5+4+j*17)+'" text-anchor="middle">'+L+'</text>'});
+  s+='</g>';
+  if(n.side){var sl=wrap(n.side.x,32),sh=Math.max(46,16+sl.length*17),sy=top+h/2-sh/2;
+   s+='<line class="fe" x1="'+(SX+SW)+'" y1="'+(top+h/2)+'" x2="'+(DX-3)+'" y2="'+(top+h/2)+'" marker-end="url(#far)"/><text class="fl" x="'+((SX+SW+DX)/2)+'" y="'+(top+h/2-6)+'" text-anchor="middle">'+n.side.lab.toUpperCase()+'</text>';
+   s+='<g class="fn '+n.side.st+'" data-i="'+i+'s" tabindex="0" role="button" aria-label="'+n.side.x+'"><rect x="'+DX+'" y="'+sy+'" width="'+DW+'" height="'+sh+'" rx="9"/>';
+   sl.forEach(function(L,j){s+='<text x="'+(DX+DW/2)+'" y="'+(sy+sh/2-(sl.length-1)*8.5+4+j*17)+'" text-anchor="middle">'+L+'</text>'});s+='</g>';
+   if(n.t==="d")s+='<text class="fl" x="'+(SX+SW/2+8)+'" y="'+(top+h+15)+'">'+(n.side.lab==="No"?"YES":"NO")+'</text>'}
+  y=top+h+26});
+ var H=y-6;var svg=$("#flowSvg");svg.setAttribute("viewBox","0 0 700 "+H);
+ svg.innerHTML='<defs><marker id="far" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--fg-dim)"/></marker></defs>'+s;
+ $("#flowDetail").innerHTML='<p class="hint" style="margin:0">Select a box in the '+f.name.toLowerCase()+' flowchart.</p>'}
+$("#flowTabs").innerHTML=Object.keys(FLOWS).map(function(k){return '<button type="button" class="btn" role="tab" data-k="'+k+'" aria-selected="false">'+FLOWS[k].name+'</button>'}).join("");
+$("#flowTabs").addEventListener("click",function(e){var b=e.target.closest("button");if(b)drawFlow(b.getAttribute("data-k"))});
+function flowSel(g){var id=g.getAttribute("data-i"),side=/s$/.test(id),n=FLOWS[curFlow].nodes[parseInt(id,10)];
+ $$("#flowSvg .fn").forEach(function(x){x.classList.toggle("sel",x===g)});
+ var d=$("#flowDetail");
+ if(n.t==="end"){d.innerHTML='<h3>Draft the synopsis</h3><p style="margin:0">With the flow walked, Holly fills the three-sentence template from the answers, each with its source. You edit and confirm.</p>';return}
+ if(side){d.innerHTML='<h3>'+n.side.x+'</h3><div class="chips" style="margin-bottom:6px"><span class="chip '+STC[n.side.st]+'">'+STF[n.side.st]+'</span></div><p style="margin:0">Taken when the answer to “'+n.x+'” is '+n.side.lab.toLowerCase()+'.</p>';return}
+ d.innerHTML='<h3>'+n.x+'</h3><div class="chips" style="margin-bottom:6px"><span class="chip '+STC[n.st]+'">'+STF[n.st]+'</span></div><dl class="kv"><dt>Why it matters</dt><dd>'+n.why+'</dd><dt>Where the answer comes from</dt><dd>'+n.src+'</dd></dl>'}
+$("#flowSvg").addEventListener("click",function(e){var g=e.target.closest(".fn");if(g)flowSel(g)});
+$("#flowSvg").addEventListener("keydown",function(e){var g=e.target.closest(".fn");if(g&&(e.key==="Enter"||e.key===" ")){e.preventDefault();flowSel(g)}});
+drawFlow("manoeuvre");
+
+/* ---------- journeys ---------- */
+function mock(tab,body){return '<div class="mock" aria-label="Sketch of the screen"><div class="mk-top"><span>Holly · '+tab+'</span><span>sketch</span></div><div class="mk-body">'+body+'</div></div>'}
+var MOCKS={
+ running:function(){return mock("Handover",'<div class="mk-card"><b>End-of-shift run</b><div class="mk-row" style="margin-top:6px"><span class="chip new">Running · 2:10 of 5:00</span><span class="chip existing">Event 3 of 5</span></div><div class="mini" style="margin-top:8px"><i style="width:43%"></i></div><p class="small muted" style="margin:6px 0 0">Reading inside Holly. Nothing is sent out.</p></div>')},
+ rail:function(){return mock("Handover",'<div class="mk-row"><span class="chip go">Run finished 18:25Z</span><span class="chip existing">4 read</span><span class="chip amber">1 template only</span></div><div class="mk-list"><div class="mk-item sel"><span><b>RED-1</b> · RPO near BLUE-1</span><span class="chip go">Drafted</span></div><div class="mk-item"><span><b>RED-4</b> · Separation</span><span class="chip amber">Needs a link</span></div><div class="mk-item"><span><b>RED-2</b> · Photometric</span><span class="chip go">Drafted</span></div><div class="mk-item"><span><b>RED-5</b> · Manoeuvre</span><span class="chip existing">Template only</span></div></div>')},
+ link:function(){return mock("Handover · RED-1",'<div class="mk-card"><b>Suggested thread</b><p class="small" style="margin:4px 0">GEO channel, 14 posts. Mentions NOTSO [number] and RED-1’s catalogue number.</p><div class="mk-row"><button type="button" class="btn primary" tabindex="-1">Confirm</button><button type="button" class="btn" tabindex="-1">Not this one</button></div></div>')},
+ story:function(){return mock("Handover · RED-1",'<div class="lanes"><div class="lane"><span>NOTSOs</span><div class="tr"><i style="left:8%"></i><i style="left:46%"></i><i style="left:71%"></i></div></div><div class="lane"><span>Providers</span><div class="tr"><i class="am" style="left:30%"></i><i class="am" style="left:64%"></i></div></div><div class="lane"><span>Chat</span><div class="tr"><i class="sq" style="left:20%"></i><i class="sq" style="left:38%"></i><i class="sq" style="left:62%"></i><i class="sq" style="left:80%"></i></div></div><div class="lane"><span>Your notes</span><div class="tr"><i class="gn" style="left:52%"></i></div></div></div><p class="small muted" style="margin:0">Oldest on the left. Select any mark to open it.</p>')},
+ flow:function(){return mock("Handover · RED-1",'<div class="mk-list"><div class="mk-item"><span>Detected 14:02Z</span><span class="chip go">From data</span></div><div class="mk-item sel"><span>Verbal sent?</span><span class="chip amber">Needs you</span></div><div class="mk-item"><span>Verified 16:30Z</span><span class="chip go">From data</span></div><div class="mk-item"><span>Providers agree?</span><span class="chip go">No, see comparison</span></div></div>')},
+ compare:function(){return mock("Handover · RED-1",'<table class="cmp"><tr><th></th><th>NorthStar</th><th>KBR</th></tr><tr><td>Period change</td><td class="diff">+25 s</td><td class="diff">+5 s</td></tr><tr><td>Raised</td><td class="diff">Perigee, 17 km</td><td class="diff">Apogee</td></tr><tr><td>Reading</td><td>Parked</td><td>Not stated</td></tr></table><p class="small muted" style="margin:0">Highlighted cells disagree. Select a figure to see its post.</p>')},
+ look:function(){return mock("Handover · RED-1",'<div class="poi"><div class="mk-item"><span>03:40Z</span><span>Closest approach, BLUE-1</span><button type="button" class="btn" tabindex="-1">Set timer</button></div><div class="mk-item"><span>05:10Z</span><span>Good lighting window</span><button type="button" class="btn" tabindex="-1">Set timer</button></div><div class="mk-item"><span>09:55Z</span><span>Ascending node</span><button type="button" class="btn" tabindex="-1">Set timer</button></div></div><p class="small muted" style="margin:0">From element sets, indicative.</p>')},
+ synopsis:function(){return mock("Handover · RED-1",'<div class="sx">At 14:02Z RED-1 manoeuvred in GEO; we issued the NOTSO and the verbal and verified it at 16:30Z <span class="src-chip">NOTSO</span> <span class="src-chip">You</span>. It parked near BLUE-1 within a 4 x 9 x 3 km RIC box; NorthStar and KBR disagree on the burn <span class="src-chip">Providers</span> <span class="src-chip">Look-ahead</span>. Next closest approach 03:40Z, lighting 05:10Z; timers set <span class="src-chip">Timers</span>.</div><div class="mk-row"><span class="chip existing">3 of 3 sentences</span><button type="button" class="btn primary" tabindex="-1">Confirm</button><button type="button" class="btn" tabindex="-1">Copy for MMB</button></div>')},
+ banner:function(){return mock("Dashboard",'<div class="banner"><span><b>03:40Z</b> RED-1 and BLUE-1 closest approach · warns 30 minutes before</span><span class="chip new">From look-ahead</span></div><div class="banner"><span><b>05:10Z</b> RED-1 good lighting window</span><span class="chip new">From look-ahead</span></div>')},
+ banner2:function(){return mock("Handover · RED-1",'<div class="banner"><span><b>In 30 minutes</b> · RED-1 and BLUE-1 closest approach, 03:40Z</span><button type="button" class="btn" tabindex="-1">Dismiss</button></div><div class="mk-card small">Story updated 03:02Z: no new NOTSO since 16:30Z.</div>')},
+ shiftlog:function(){return mock("Shift Log",'<div class="mk-list"><div class="mk-item"><span><b>RED-1</b> · RPO near BLUE-1</span><span class="small muted">Confirmed 18:48Z</span></div><div class="mk-item"><span><b>RED-2</b> · Photometric change</span><span class="small muted">Confirmed 18:52Z</span></div><div class="mk-item"><span><b>RED-4</b> · Separation</span><span class="small muted">Confirmed 18:57Z</span></div></div>')},
+ source:function(){return mock("Handover · RED-1",'<div class="mk-card"><span class="small muted mono">Post · 17:42Z · NorthStar analyst</span><p style="margin:4px 0 0">We assess a <mark>+25s</mark> period change and a 17km perigee raise, now near circular.</p></div><p class="small muted" style="margin:0">Opened from the source chip on “+25 s”.</p>')},
+ note:function(){return mock("Handover · RED-1",'<div class="mk-card"><b>Your note</b><p class="small" style="margin:4px 0 0">03:45Z: approach passed, no new manoeuvre seen.</p></div><div class="mk-row"><span class="chip existing">Added to the story</span></div>')},
+ newnotso:function(){return mock("Handover",'<div class="mk-list"><div class="mk-item sel"><span><b>RED-1</b> · possible manoeuvre</span><span class="chip new">New NOTSO 13:05Z</span></div><div class="mk-item"><span><b>RED-2</b> · Photometric</span><span class="chip existing">Quiet</span></div></div>')},
+ draftnow:function(){return mock("Handover · RED-1",'<div class="mk-card"><b>Draft now</b><div class="mk-row" style="margin-top:6px"><span class="chip new">Reading 2 threads</span><span class="chip existing">inside Holly</span></div><div class="mini" style="margin-top:8px"><i style="width:60%"></i></div></div>')},
+ env:function(){return mock("App Store · environment",'<div class="env">HANDOVER_RUN_TIMES   ["06:20","18:20"]\nHANDOVER_PROVIDERS   [names and aliases]\nHANDOVER_MODEL_FILE  [path on /data]</div><p class="small muted" style="margin:0">Proposed names. Times are an example, set 40 minutes before each shift change.</p>')},
+ audit:function(){return mock("Audit log",'<div class="mk-list"><div class="mk-item"><span class="mono small">handover.run · 18:25Z</span><span class="small">4 read, 19 kept, 3 dropped, 4:58</span></div><div class="mk-item"><span class="mono small">handover.run · 06:25Z</span><span class="small">3 read, 11 kept, 1 dropped, 3:40</span></div></div>')},
+ fallback:function(){return mock("Handover",'<div class="banner"><span><b>Model not available.</b> Synopses are template only until it is fixed.</span></div><div class="mk-item"><span><b>RED-1</b></span><span class="chip existing">Template only</span></div>')},
+ adr:function(){return mock("Decision record",'<div class="mk-card"><b>ADR-016 · Handover reads with a local model</b><ul class="dots small" style="margin:6px 0 0"><li>The model runs inside Holly’s container</li><li>No network, no database, ends after each run</li><li>No outside AI service; a build test enforces it</li></ul></div>')},
+ approve:function(){return mock("SECURITY.md",'<div class="mk-card"><b>Handover data stays in the App Store</b><p class="small" style="margin:4px 0 0">Approved by: [data owner]. Date: [date]. Covers: JCO NOTSOs and followed Mattermost threads read by the local model.</p></div>')},
+ audit2:function(){return mock("Build checks",'<div class="mk-list"><div class="mk-item"><span class="small">No Handover code imports the outside AI client</span><span class="chip go">Pass</span></div><div class="mk-item"><span class="small">A planted figure never reaches a synopsis</span><span class="chip go">Pass</span></div></div>')},
+ env2:function(){return mock("App Store · environment",'<div class="env">MATTERMOST_MAX_MESSAGES_IN_PROMPT  0</div><p class="small muted" style="margin:0">Stops the existing notice assistant sending recent chat to its outside AI service. Takes effect after a restart.</p>')}
+};
+var JOURNEYS=[
+ {who:"Outgoing mission lead",sum:"Building the handover at the end of the shift",intro:"Your shift ends at 19:00Z. You want the oncoming crew to understand RED-1's manoeuvre in under a minute of reading.",steps:[
+  {w:"18:20Z",h:"Holly does the reading for you",you:"Nothing. Keep working.",holly:"At the time your team set, Holly starts its end-of-shift run. For up to five minutes its own model reads the confirmed threads for each live event and pulls out providers' figures.",out:"The heavy reading is done before you open the tab.",m:"running"},
+  {w:"18:30Z",h:"Open the Handover tab",you:"Select Handover in the top navigation.",holly:"Lists every object with a live event, most active first. Badges show what is ready: Drafted, Needs a link, Template only.",out:"You see at a glance where to start.",m:"rail"},
+  {w:"18:31Z",h:"Confirm a chat thread",you:"Holly suggests a GEO channel thread that mentions RED-1's NOTSO number. You glance at it and select Confirm.",holly:"Records who confirmed the link and when. Only confirmed threads feed the synopsis.",out:"Chat about another object cannot slip into your handover.",m:"link"},
+  {w:"18:33Z",h:"Read RED-1's story",you:"Scan the timeline: NOTSOs, provider records, the thread and your notes, oldest to newest.",holly:"Builds the timeline from what it already holds. Nothing is fetched or sent.",out:"The whole event in one view.",m:"story"},
+  {w:"18:36Z",h:"Walk the manoeuvre flow",you:"Green questions are answered from data. One amber question waits: was the verbal sent? You answer yes.",holly:"Saves your answer with your name as its source.",out:"Nothing important is forgotten.",m:"flow"},
+  {w:"18:40Z",h:"See where providers disagree",you:"Open the comparison. NorthStar reads +25 s and a perigee raise; KBR reads +5 s and an apogee raise. Select a figure to see its post.",holly:"Sets each provider's figures side by side and highlights differences. It never averages them.",out:"You can tell the next crew exactly where the uncertainty is.",m:"compare"},
+  {w:"18:44Z",h:"Set timers for what comes next",you:"On the look-ahead strip, select Set timer on the closest approach and the lighting window.",holly:"Creates event timers marked as coming from the look-ahead, each with a warning.",out:"The next crew is alerted without anyone having to remember.",m:"look"},
+  {w:"18:48Z",h:"Confirm and copy the synopsis",you:"Read the three sentences, adjust the wording, select Confirm, then Copy for MMB and paste it into the Mission Management Board.",holly:"Saves the confirmed handover with every source and adds it to the Shift Log.",out:"A clear, sourced handover, with time to spare.",m:"synopsis"}]},
+ {who:"Oncoming mission lead",sum:"Picking up the watch in the Americas",intro:"You start at 19:00Z and need to know what matters tonight before you read anything else.",steps:[
+  {w:"19:00Z",h:"Sign in and see the timers",you:"Sign in to Holly.",holly:"Shows the timers the outgoing shift set, including the closest approach at 03:40Z.",out:"You know what is coming before you read a word.",m:"banner"},
+  {w:"19:05Z",h:"Read the handovers",you:"Open the Shift Log or the Handover tab and read the confirmed synopses.",holly:"Lists each confirmed handover with who confirmed it and when.",out:"Each event in three sentences.",m:"shiftlog"},
+  {w:"19:07Z",h:"Check a source",you:"A figure looks surprising. Select its source chip.",holly:"Opens the exact post or NOTSO it came from.",out:"You trust the handover because you can check it.",m:"source"},
+  {w:"03:10Z",h:"The timer warns you",you:"The banner chimes 30 minutes before the closest approach. Open RED-1 and watch.",holly:"Keeps pulling NOTSOs hourly and provider records every 10 minutes into the story.",out:"You are ready when it happens.",m:"banner2"},
+  {w:"03:45Z",h:"Add what you saw",you:"Add a note: approach passed, no new manoeuvre seen.",holly:"Adds your note to the story, ready for your own end-of-shift run.",out:"Knowledge carries across shifts instead of resetting.",m:"note"}]},
+ {who:"Mission lead, mid-shift",sum:"Briefing upwards when providers disagree",intro:"A possible manoeuvre lands mid-shift and your supervisor wants a view within the hour.",steps:[
+  {w:"13:05Z",h:"A new NOTSO arrives",you:"RED-1 jumps to the top of the Handover tab.",holly:"The hourly pull brought in a possible-manoeuvre NOTSO.",out:"You see the change without hunting for it.",m:"newnotso"},
+  {w:"13:20Z",h:"Provider records land",you:"Open RED-1's story.",holly:"Provider manoeuvre records arrive every 10 minutes and join the timeline.",out:"Each provider's reading in one place.",m:"story"},
+  {w:"13:40Z",h:"Draft now",you:"Select Draft now on RED-1.",holly:"Runs the model for this one object, inside Holly, for a few minutes at most.",out:"You do not wait for the end of the shift.",m:"draftnow"},
+  {w:"13:44Z",h:"Brief from the comparison",you:"Use the comparison to brief: the providers disagree on which point of the orbit was raised.",holly:"Every figure links to its source post.",out:"A sourced brief in minutes.",m:"compare"}]},
+ {who:"Holly administrator",sum:"Setting it up and keeping it healthy",intro:"You look after Holly on the App Store.",steps:[
+  {w:"Set-up",h:"Set the run times and the provider list",you:"In the App Store environment settings, set the run times and the provider names Holly should recognise, then restart.",holly:"Reads the settings at start-up and refuses one it cannot read, rather than guessing.",out:"The run fires at the right time for your shifts.",m:"env"},
+  {w:"Each shift",h:"Check the run log",you:"Open the audit log and filter on the end-of-shift run.",holly:"Writes one row per run: events read, claims kept and dropped, time taken.",out:"You can see it is working without opening the model.",m:"audit"},
+  {w:"If it breaks",h:"The model is missing or failing",you:"A banner says synopses are template only. Fix the model file and restart.",holly:"Falls back to the template so handovers still work.",out:"A fault slows the handover down but never stops it.",m:"fallback"}]},
+ {who:"Data owner and ISM",sum:"Approving the data handling",intro:"You decide what Holly may do with operational data.",steps:[
+  {w:"Before V0.20",h:"Read the decision record",you:"Read ADR-016: the model runs inside Holly and nothing leaves.",holly:"The design keeps the model in a child process with no network and no database.",out:"A clear, reviewable position.",m:"adr"},
+  {w:"Before V0.20",h:"Confirm the platform is approved for the data",you:"Confirm the App Store environment may hold and process the JCO data and the threads.",holly:"Your decision is recorded in SECURITY.md with its date and scope.",out:"The decision is on record, not assumed.",m:"approve"},
+  {w:"Any time",h:"Spot-check the safeguards",you:"Check the build results and the audit log.",holly:"A build test proves Handover cannot call the outside AI client, and another proves a planted figure never reaches a synopsis.",out:"Assurance from evidence, not promises.",m:"audit2"},
+  {w:"Your call",h:"Decide on the existing assistant",you:"Choose whether Holly's existing notice assistant keeps sending recent chat to its outside AI service.",holly:"Setting the message limit to 0 stops it after a restart.",out:"Chat handling is consistent across Holly.",m:"env2"}]}
+];
+var jIdx=0,sIdx=0,seen={};
+$("#personas").innerHTML=JOURNEYS.map(function(j,i){return '<button type="button" class="persona" data-i="'+i+'" aria-pressed="false"><b>'+j.who+'</b><span>'+j.sum+'</span></button>'}).join("");
+function renderJourney(){var j=JOURNEYS[jIdx],st=j.steps[sIdx];seen[jIdx+"-"+sIdx]=1;
+ $$("#personas .persona").forEach(function(b){b.setAttribute("aria-pressed",+b.getAttribute("data-i")===jIdx?"true":"false")});
+ var dots=j.steps.map(function(s,i){return '<button type="button" data-s="'+i+'" aria-label="Step '+(i+1)+': '+s.h+'"'+(i===sIdx?' aria-current="step"':'')+(seen[jIdx+"-"+i]&&i!==sIdx?' class="seen"':'')+'>'+(i+1)+'</button>'}).join("");
+ $("#journey").innerHTML='<p class="muted">'+j.intro+'</p><div class="jhead"><div class="dots-nav" id="jdots">'+dots+'</div><div class="row"><button type="button" class="btn" id="jPrev"'+(sIdx===0?" disabled":"")+'>Back</button><button type="button" class="btn primary" id="jNext"'+(sIdx===j.steps.length-1?" disabled":"")+'>Next step</button></div></div>'+
+  '<div class="journey"><div class="card jstep"><span class="when">'+st.w+' · step '+(sIdx+1)+' of '+j.steps.length+'</span><h3>'+st.h+'</h3><dl><dt>What you do</dt><dd>'+st.you+'</dd><dt>What Holly does</dt><dd>'+st.holly+'</dd></dl><div class="out">'+st.out+'</div></div>'+MOCKS[st.m]()+'</div>'+
+  '<p class="note" style="margin-top:8px">Sketches with made-up names, times and figures. Not the final design.</p>'}
+$("#personas").addEventListener("click",function(e){var b=e.target.closest(".persona");if(!b)return;jIdx=+b.getAttribute("data-i");sIdx=0;renderJourney()});
+$("#journey").addEventListener("click",function(e){var b=e.target.closest("button");if(!b)return;
+ if(b.id==="jNext"){sIdx=Math.min(JOURNEYS[jIdx].steps.length-1,sIdx+1);renderJourney();$("#jNext")&&$("#jNext").focus()}
+ else if(b.id==="jPrev"){sIdx=Math.max(0,sIdx-1);renderJourney();$("#jPrev")&&$("#jPrev").focus()}
+ else if(b.hasAttribute("data-s")){sIdx=+b.getAttribute("data-s");renderJourney()}});
+renderJourney();
+
+/* ---------- roadmap ---------- */
+var REL=[
+ {v:"Phase 0",t:"Decide and test",z:"Before any build",get:"A go or no-go on the built-in model, and the decisions the build depends on.",build:["Confirm the App Store is approved for the data the model reads","Agree Holly's move from 4Gi memory and 2 CPU to 8Gi and 6 CPU, the platform's maximum","Ask the platform team about a larger image and fetching the model file","Check one real KBR record, one NorthStar record and one thread, inside Bluestaq","Trial 2 or 3 models on 5 real threads"],acc:["No unsupported figure gets through the checks","A typical shift's live events fit in 5 minutes","Holly keeps at least 2Gi of memory spare"]},
+ {v:"V0.19",t:"The object story",z:"Size M · no model, no new dependency",get:"The Handover tab: each object's whole story on one timeline, with sources.",build:["Object rail and story timeline","Chat grouped into threads","Suggested thread links that a lead confirms","Free-text notes","The build test that bans the outside AI client from Handover code"],acc:["Any object named in a NOTSO in the last 120 hours opens with its NOTSOs, provider records and confirmed threads in time order, each with its source"]},
+ {v:"V0.20",t:"Flows, synopsis and the end-of-shift run",z:"Size L · needs the trial passed and 8Gi and 6 CPU",get:"Guided flows, the three-sentence synopsis and the built-in model reading chat at the end of the shift.",build:["Flows for manoeuvre, RPO, photometric change and separation","The template synopsis and Copy for MMB","The local model, the claim checks and the end-of-shift run","Confirmed handovers in the Shift Log","ADR-016 and the SECURITY.md entry"],acc:["The owner's worked example fills every answerable question and names the rest","The run finishes inside 5 minutes and sends nothing out","A planted figure that is not in its post never reaches a synopsis"]},
+ {v:"V0.21",t:"Look-ahead and timers",z:"Size L · adds the sgp4 package",get:"The next 48 hours worked out, with one-click timers.",build:["Automatic element-set pull for live objects, with a freshness guard","Equator crossings, highest and lowest points, closest approaches with the RIC box, lighting windows","The look-ahead strip and Set timer"],acc:["For a GEO pair in an RPO NOTSO, approaches, the RIC box and lighting windows for 48 hours, each labelled with its element set and time, and a timer one click away"]},
+ {v:"V0.22",t:"Comparison, photometrics, polish",z:"Size M",get:"Full provider comparison, photometric context and smoother wording.",build:["Provider pairing across manoeuvre records and chat claims","Photometric context: lines up with a burn or a close approach, and when the same geometry returns","Optional wording polish by the local model, refused if it adds a fact"],acc:["The NorthStar and KBR example shows as a highlighted disagreement on apsis and period change, each figure linked to its source","A polished draft that adds a fact is refused and the template wording stands"]}
+];
+$("#road").innerHTML=REL.map(function(r,i){return '<button type="button" class="rel" data-i="'+i+'" aria-pressed="false"><span class="v">'+r.v+'</span><b>'+r.t+'</b><span>'+r.z+'</span></button>'}).join("");
+function showRel(i){var r=REL[i];$$("#road .rel").forEach(function(b){b.setAttribute("aria-pressed",+b.getAttribute("data-i")===i?"true":"false")});
+ $("#relcard").innerHTML='<div class="row" style="justify-content:space-between"><h3 style="margin:0">'+r.v+' · '+r.t+'</h3><span class="chip existing">'+r.z+'</span></div><p style="margin:.5em 0 0"><b>What you get:</b> '+r.get+'</p><div class="cols"><div><h4>What gets built or done</h4><ul class="dots">'+r.build.map(function(x){return "<li>"+x+"</li>"}).join("")+'</ul></div><div><h4>How we know it works</h4><ul class="dots">'+r.acc.map(function(x){return "<li>"+x+"</li>"}).join("")+'</ul></div></div>'}
+$("#road").addEventListener("click",function(e){var b=e.target.closest(".rel");if(b)showRel(+b.getAttribute("data-i"))});
+showRel(0);
+
+/* ---------- risks ---------- */
+var RISKS=[
+ ["The model invents a figure","A wrong number could reach a handover.","Only claims whose figure appears word for word in the post they cite are kept, and you can open the post behind every claim."],
+ ["The model is too slow","The run might not reach every live event in 5 minutes.","Events go in priority order, threads with nothing new are skipped, and anything not read is marked template only. The trial sets the model size."],
+ ["Memory","If Holly runs out of memory, the platform stops it, background loops included.","Holly moves to 8Gi, the model runs in a separate process that ends after each run, and the trial measures peak memory."],
+ ["Look-ahead accuracy at GEO","Orbit predictions from element sets can be kilometres out, so an RPO box is indicative.","Every calculated figure says which element set and time it came from, and is never shown as observed."],
+ ["A wrong chat link","A synopsis could quote chat about a different event.","Holly only suggests links; a lead confirms each one."],
+ ["Provider fields misread","Wrong differences could reach a handover.","Field names are checked against real records in phase 0, and the original value sits beside every figure."],
+ ["A bigger image and native code","Longer builds and more container scan findings to answer.","The model file is pinned by fingerprint, build tools stay out of the final image, and the model runtime is pinned and audited like any dependency."],
+ ["Two handovers","The Shift Log and the new tab could disagree.","Confirmed handovers feed the Shift Log, so there is one record."],
+ ["Code quality gate on a large new screen","The App Store's code quality stage failed two recent uploads on small issues.","Every changed file goes through the local quality probe before packaging."],
+ ["Approval of the platform for this data","Running the model inside Holly does not, on its own, settle whether the platform may process this data.","The data owner confirms it and the decision is recorded in ADR-016 and SECURITY.md."]
+];
+$("#risks").innerHTML=RISKS.map(function(r){return '<details class="risk"><summary>'+r[0]+'</summary><div class="body"><p class="small" style="margin:0 0 6px"><b>What could happen:</b> '+r[1]+'</p><p class="small" style="margin:0"><b>How the plan handles it:</b> '+r[2]+'</p></div></details>'}).join("");
+
+/* ---------- decisions ---------- */
+var DEC=[
+ ["Confirm how the dictated memo was read","Owner. For example: “notcells” as NOTSOs, “upsids points” as apsides."],
+ ["Confirm the App Store is approved to hold and process the JCO data and threads the model reads","Owner and data owner"],
+ ["Decide whether the existing assistant keeps sending recent chat to its outside AI service","Owner"],
+ ["Agree to raise Holly to 8Gi memory and 6 CPU","Owner"],
+ ["Will the build accept a larger image, and may it fetch the model file?","Platform team"],
+ ["Provide one KBR record, one NorthStar record and one example thread, checked inside Bluestaq","Owner and mission leads"],
+ ["The provider names and aliases Holly should recognise","Owner"],
+ ["Which event types get a flow first, and the full list","Mission leads"],
+ ["How the synopsis reaches the Mission Management Board (MMB)","MMB owner"],
+ ["The module's name","Owner"],
+ ["The shift change times in UTC, and how long before each the run starts","Owner and mission leads"]
+];
+var decState=store.get("hb-dec",{});
+function renderDec(){var done=0;$("#dec").innerHTML=DEC.map(function(d,i){var on=!!decState[i];if(on)done++;return '<label class="'+(on?"done":"")+'"><input type="checkbox" id="dec'+i+'" data-i="'+i+'"'+(on?" checked":"")+'><span><span class="q">'+d[0]+'</span><span class="who">'+d[1]+'</span></span></label>'}).join("");
+ $("#meter").style.width=(done/DEC.length*100)+"%";$("#meterTxt").textContent=done+" of "+DEC.length+" settled"}
+$("#dec").addEventListener("change",function(e){var i=e.target.getAttribute("data-i");if(i==null)return;decState[i]=e.target.checked;store.set("hb-dec",decState);renderDec();var el=$("#dec"+i);if(el)el.focus()});
+renderDec();
+})();
+</script>
+</html>
