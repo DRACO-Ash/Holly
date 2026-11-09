@@ -348,6 +348,29 @@ details.risk .body{padding:0 16px 14px}
 .meter{height:8px;border-radius:999px;background:var(--surface-2);overflow:hidden;max-width:420px;margin:6px 0 14px}
 .meter i{display:block;height:100%;background:var(--go-fill);width:0;transition:width .3s}
 
+
+/* trial */
+.tgrid{display:grid;grid-template-columns:minmax(0,1fr);gap:14px}
+@media (min-width:760px){.tgrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.tmark{display:grid;gap:4px}
+.tmark .top{display:flex;justify-content:space-between;gap:8px;align-items:baseline;flex-wrap:wrap}
+.tmark b{color:var(--strong);font-size:15px}
+.tmark .val{font-family:var(--mono);font-weight:700;font-variant-numeric:tabular-nums}
+.tmark .val.ok{color:var(--go)} .tmark .val.bad{color:var(--red)}
+.tmark input[type=range]{width:100%;accent-color:var(--accent)}
+.tmark small{color:var(--fg-dim);font-size:13px}
+.tverdict{margin-top:16px;border-radius:8px;padding:12px 14px;font-weight:600}
+.tverdict.go{background:var(--go-soft);color:var(--go)}
+.tverdict.nogo{background:var(--red-soft);color:var(--red)}
+.tverdict ul{margin:6px 0 0;font-weight:400;color:var(--fg)}
+.tcand{min-width:560px}
+.tcand th{text-align:left;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--fg-dim);padding:6px 8px}
+.tcand td:first-child{width:auto;color:var(--fg);font-weight:400}
+.tsteps{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr));gap:8px;margin:8px 0 12px}
+.tsteps button{font:inherit;text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:10px 12px;cursor:pointer;color:var(--fg)}
+.tsteps button span{display:block;font-family:var(--mono);font-size:12px;font-weight:700;color:var(--accent)}
+.tsteps button b{display:block;font-size:14px;color:var(--strong);line-height:1.3}
+.tsteps button[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft)}
 /* glossary and popover */
 .gloss{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:10px}
 .gloss div{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px}
@@ -380,6 +403,7 @@ footer b{color:var(--bar-fg)}
       <li><a href="#flows">Guided flows</a></li>
       <li><a href="#journeys">User journeys</a></li>
       <li><a href="#plan">Delivery plan</a></li>
+      <li><a href="#trial">The Phase 0 trial</a></li>
       <li><a href="#safeguards">Safeguards and risks</a></li>
       <li><a href="#decisions">Decisions needed</a></li>
       <li><a href="#glossary">Glossary</a></li>
@@ -563,12 +587,60 @@ footer b{color:var(--bar-fg)}
       <div class="card relcard" id="relcard" aria-live="polite"></div>
     </section>
 
+
+    <section class="sec" id="trial">
+      <p class="eyebrow">9 · The Phase 0 trial</p>
+      <h2>Proving the built-in model before we build on it</h2>
+      <p class="lead">Before V0.20 ships a language model inside Holly, a short trial answers one question: can a model running on ordinary processors, inside an 8 GiB, 6 CPU box, read a shift's chat threads within five minutes and pull out the providers' figures accurately enough for a handover, with no made-up figure getting through?</p>
+      <p>The trial runs inside Bluestaq on 5 real threads, against an answer key a mission lead writes first. Each candidate model gets a plain go or no-go. The tools for it are built and tested: they live in Holly's repository under <code>trial/</code>, outside the app itself.</p>
+      <div class="grid g3" style="margin-top:14px">
+        <div class="card"><h4>Status</h4><p style="margin:0"><span class="chip go">Ready to run</span> <span class="chip amber">Not yet run</span></p></div>
+        <div class="card"><h4>Effort</h4><p style="margin:0">About a day for a Holly engineer, plus 2 to 3 hours for a mission lead.</p></div>
+        <div class="card"><h4>Decides</h4><p style="margin:0">Whether V0.20 ships the model, and which one.</p></div>
+      </div>
+
+      <h3 style="margin-top:30px">The five pass marks</h3>
+      <p>A model must clear all five. Move the sliders to try a result and see how the verdict changes. The marks are proposals until you confirm them.</p>
+      <div class="card raised">
+        <div class="tgrid" id="tSliders"></div>
+        <div class="tverdict" id="tVerdict" aria-live="polite"></div>
+      </div>
+
+      <h3 style="margin-top:30px">The candidates</h3>
+      <div class="tablewrap"><table class="ex tcand"><thead><tr><th>Model</th><th>Size</th><th>Licence</th><th>Why it is in the trial</th></tr></thead><tbody>
+        <tr><td><b>Phi-3.5-mini-instruct</b></td><td>3.8 billion parameters</td><td>MIT</td><td>The smallest, so the fastest, if it is accurate enough</td></tr>
+        <tr><td><b>Qwen2.5-7B-Instruct</b></td><td>7.6 billion parameters</td><td>Apache-2.0</td><td>Strong at structured output</td></tr>
+        <tr><td><b>Mistral-7B-Instruct-v0.3</b></td><td>7.2 billion parameters</td><td>Apache-2.0</td><td>A widely used baseline of the same size</td></tr>
+      </tbody></table></div>
+      <p class="hint" style="margin-top:6px">All run as 4-bit compressed files on the processor alone. Licences are confirmed from each model card at download, and every file's fingerprint (SHA-256) is recorded.</p>
+
+      <h3 style="margin-top:30px">The eight steps</h3>
+      <p>Select a step to see who does it and what it produces.</p>
+      <div class="tsteps" id="tSteps" role="group" aria-label="Trial steps"></div>
+      <div class="card" id="tStep" aria-live="polite"></div>
+
+      <h3 style="margin-top:30px">Already proved, with made-up data</h3>
+      <div class="grid g2">
+        <div class="card"><p style="margin:0 0 8px">A dry run on three made-up threads, with canned replies standing in for a model, breaks every rule once. The tools catch each break:</p>
+          <ul class="dots small" style="margin:0"><li>a made-up figure, dropped</li><li>a provider not on the list, dropped</li><li>a post from outside the thread, dropped</li><li>a malformed claim, refused</li><li>a missed claim, which lowers the found rate</li><li>a figure swapped between two providers named in one post: the checks keep it, and only the lead's answer key catches it</li></ul></div>
+        <div class="card"><h4>Dry-run verdict</h4><p style="margin:0 0 6px"><span class="chip red">NO-GO, as designed</span></p>
+          <dl class="kv" style="margin:0"><dt>Found</dt><dd>7 of 10 (70%)</dd><dt>Unsupported kept</dt><dd>0</dd><dt>Wrong provider kept</dt><dd>1</dd></dl>
+          <p class="hint" style="margin:8px 0 0">The trial container also builds, runs its 17 tests and loads the model runtime with the network switched off.</p></div>
+      </div>
+
+      <h3 style="margin-top:30px">Data handling</h3>
+      <div class="card" style="border-left:4px solid var(--go-fill)">
+        <ul class="dots" style="margin:0"><li>Real threads, answer keys and results stay on one trial machine inside Bluestaq. None is committed, uploaded or pasted into any outside tool, including an AI assistant.</li><li>The model runs with the network switched off and reads the data folder without being able to change it.</li><li>Results hold post ids and figures, never thread text, and are deleted when the trial ends. Only a short summary of pass and fail per mark is kept.</li></ul>
+      </div>
+      <p class="tech">Protocol: <code>docs/roadmap/handover-trial-plan.md</code>. Harness: <code>trial/</code> (checks in <code>claims.py</code>, child-process runner, scoring and report, Mattermost converter, synthetic samples, 17 unit tests). Container: full <code>python:3.12</code> image pinned by digest, llama-cpp-python 0.3.36 hash-locked, uid 10001, run with <code>--network none --memory 8g --cpus 6</code>.</p>
+    </section>
+
     <section class="sec" id="safeguards">
-      <p class="eyebrow">9 · Safeguards and risks</p>
+      <p class="eyebrow">10 · Safeguards and risks</p>
       <h2>Built so a wrong handover is hard to make</h2>
       <div class="grid g2">
         <div class="card guard"><div class="ico">1</div><div><h3>Nothing leaves Holly</h3><p class="small">The model runs inside Holly's container. A test fails the build if any Handover code even imports the outside AI client.</p></div></div>
-        <div class="card guard"><div class="ico">2</div><div><h3>Made-up figures are thrown away</h3><p class="small">Every figure must appear word for word in the post it came from, from a provider on your list.</p></div></div>
+        <div class="card guard"><div class="ico">2</div><div><h3>Made-up figures are thrown away</h3><p class="small">Every figure must appear word for word in the post it came from, and the post itself must tie it to a provider on your list.</p></div></div>
         <div class="card guard"><div class="ico">3</div><div><h3>A person links chat to events</h3><p class="small">Holly suggests which thread belongs to which NOTSO. Only a link a lead confirms is used.</p></div></div>
         <div class="card guard"><div class="ico">4</div><div><h3>You confirm every handover</h3><p class="small">Nothing reaches the oncoming crew as a handover until the mission lead confirms it.</p></div></div>
         <div class="card guard"><div class="ico">5</div><div><h3>Calculated figures say so</h3><p class="small">Every look-ahead figure is labelled "from element set, indicative", with its time. It is never presented as observed.</p></div></div>
@@ -581,7 +653,7 @@ footer b{color:var(--bar-fg)}
     </section>
 
     <section class="sec" id="decisions">
-      <p class="eyebrow">10 · Decisions needed</p>
+      <p class="eyebrow">11 · Decisions needed</p>
       <h2>What we need before building</h2>
       <p>Tick each one as it is settled. Your ticks are saved in this browser only.</p>
       <div class="meter" aria-hidden="true"><i id="meter"></i></div>
@@ -590,7 +662,7 @@ footer b{color:var(--bar-fg)}
     </section>
 
     <section class="sec" id="glossary">
-      <p class="eyebrow">11 · Glossary</p>
+      <p class="eyebrow">12 · Glossary</p>
       <h2>Words used on this page</h2>
       <div class="gloss" id="gloss"></div>
     </section>
@@ -722,7 +794,7 @@ var INFO={
  look:["From the element sets Holly works out the next 48 hours: equator crossings, highest and lowest points, closest approaches between a red and a blue object with their RIC box, and when lighting is good for one to see the other.","Element sets in the database.","Points of interest, each labelled with the element set and time it came from.","New in V0.21","services/handover/look_ahead.py, pure and unit-tested; sgp4 propagation and an analytic sun position, so no ephemeris download. Indicative only at GEO (kilometre-level error)."],
  flow:["A short chain of questions for each event type. Holly answers what it can from data and shows you the rest.","The object story, the look-ahead and your answers.","Your answers, saved with your name as their source.","New in V0.20","Flow definitions are data, so a new event type is a new definition, not new code."],
  run:["At the times your team sets, Holly starts its own language model for up to five minutes. It reads the confirmed threads for live events and pulls out each provider's figures, then stops.","Confirmed threads, handed to it by Holly.","Claims: provider, quantity, value, unit and the post it came from.","New in V0.20","A child process per run with no network and no database; llama.cpp through its Python binding; capped threads; single-flight."],
- checks:["Every figure the model pulls out must appear, word for word, in the post it came from. The provider must be on your list. Anything that fails is thrown away.","The model's claims and the original posts.","Kept claims, and the reason for each dropped one.","New in V0.20","services/handover/extract.py; handover_claim table, cached per thread against its newest post id."],
+ checks:["Every figure the model pulls out must appear, word for word, in the post it came from. The post must tie it to a provider on your list, by naming the provider or because its author speaks for that provider. Anything that fails is thrown away.","The model's claims and the original posts.","Kept claims, and the reason for each dropped one.","New in V0.20","services/handover/extract.py; handover_claim table, cached per thread against its newest post id."],
  deltas:["Sets each provider's figures side by side and highlights where they disagree. It never averages them.","Provider manoeuvre records and the checked chat claims.","Differences above a set threshold, and any disagreement on which point of the orbit was raised.","Chat claims in V0.20; full comparison in V0.22","services/handover/provider_deltas.py; pairs records on catalogue number and overlapping time, or a shared event id."],
  syn:["Fills the three-sentence pattern with checked facts. Every statement carries a source chip you can click.","The story, the flow answers, the comparison and the look-ahead.","A draft synopsis for you to edit and confirm.","New in V0.20","services/handover/synopsis.py; optional wording polish by the local model, refused if it adds a fact."],
  ui_tab:["The new tab where you pick an object, read its story, walk its flow, check the providers, set timers and confirm the synopsis.","Everything to its left.","Your edits, notes and confirmations.","New from V0.19","Route /handover; one entry in the navigation; hand-drawn SVG flowcharts because Holly's page security blocks injected diagram styles."],
@@ -874,11 +946,11 @@ var CLAIMS=[
  {p:"NorthStar",q:"Perigee change",v:"+17 km",post:"p1",hit:"17km",r:[1,1,1]},
  {p:"NorthStar",q:"Apogee change",v:"+30 km",post:"p1",hit:"",r:[0,1,1],why:"The post never says 30. The model made it up, so Holly throws it away."},
  {p:"KBR",q:"Period change",v:"+5 s",post:"p2",hit:"5s",r:[1,1,1]},
- {p:"No provider named",q:"Period change",v:"+20 s",post:"p3",hit:"20s",r:[1,0,1],why:"No provider on your list said this, so it is not a provider's assessment."}
+ {p:"No provider named",q:"Period change",v:"+20 s",post:"p3",hit:"20s",r:[1,0,1],why:"The post names no provider on your list and its author speaks for none, so it is not a provider's assessment."}
 ];
 function renderPosts(marks){$("#posts").innerHTML=POSTS.map(function(p){var t=p.t;if(marks){CLAIMS.forEach(function(c){if(c.post===p.id&&c.hit&&c.r.every(Boolean))t=t.replace(c.hit,"<mark>"+c.hit+"</mark>")})}
  return '<div class="post"><div class="meta">'+p.m+'</div>'+t+'</div>'}).join("")}
-function renderChecks(n){var heads=["Figure is in the post","Provider is on your list","Post is in a confirmed thread"];
+function renderChecks(n){var heads=["Figure is in the post","Post ties it to a listed provider","Post is in a confirmed thread"];
  var h='<thead><tr><th>Claim the model pulled out</th>'+heads.map(function(x){return '<th style="text-align:center">'+x+'</th>'}).join("")+'<th>Result</th></tr></thead><tbody>';
  CLAIMS.forEach(function(c,i){var shown=i<n;h+='<tr><td><b>'+c.p+'</b> · '+c.q+' · '+c.v+'</td>';
   c.r.forEach(function(ok){h+='<td class="c '+(shown?(ok?"pass":"fail"):"wait")+'">'+(shown?(ok?"Pass":"Fail"):"·")+'</td>'});
@@ -1039,7 +1111,7 @@ renderJourney();
 
 /* ---------- roadmap ---------- */
 var REL=[
- {v:"Phase 0",t:"Decide and test",z:"Before any build",get:"A go or no-go on the built-in model, and the decisions the build depends on.",build:["Confirm the App Store is approved for the data the model reads","Agree Holly's move from 4Gi memory and 2 CPU to 8Gi and 6 CPU, the platform's maximum","Ask the platform team about a larger image and fetching the model file","Check one real KBR record, one NorthStar record and one thread, inside Bluestaq","Trial 2 or 3 models on 5 real threads"],acc:["No unsupported figure gets through the checks","A typical shift's live events fit in 5 minutes","Holly keeps at least 2Gi of memory spare"]},
+ {v:"Phase 0",t:"Decide and test",z:"Before any build",get:"A go or no-go on the built-in model, and the decisions the build depends on.",build:["Confirm the App Store is approved for the data the model reads","Agree Holly's move from 4Gi memory and 2 CPU to 8Gi and 6 CPU, the platform's maximum","Ask the platform team about a larger image and fetching the model file","Check one real KBR record, one NorthStar record and one thread, inside Bluestaq","Trial 2 or 3 models on 5 real threads"],acc:["No unsupported figure gets through the checks","No figure is credited to the wrong provider","At least 80% of the lead's figures are found","A typical shift's threads fit in 5 minutes","Holly keeps at least 2 GiB of memory spare"]},
  {v:"V0.19",t:"The object story",z:"Size M · no model, no new dependency",get:"The Handover tab: each object's whole story on one timeline, with sources.",build:["Object rail and story timeline","Chat grouped into threads","Suggested thread links that a lead confirms","Free-text notes","The build test that bans the outside AI client from Handover code"],acc:["Any object named in a NOTSO in the last 120 hours opens with its NOTSOs, provider records and confirmed threads in time order, each with its source"]},
  {v:"V0.20",t:"Flows, synopsis and the end-of-shift run",z:"Size L · needs the trial passed and 8Gi and 6 CPU",get:"Guided flows, the three-sentence synopsis and the built-in model reading chat at the end of the shift.",build:["Flows for manoeuvre, RPO, photometric change and separation","The template synopsis and Copy for MMB","The local model, the claim checks and the end-of-shift run","Confirmed handovers in the Shift Log","ADR-016 and the SECURITY.md entry"],acc:["The owner's worked example fills every answerable question and names the rest","The run finishes inside 5 minutes and sends nothing out","A planted figure that is not in its post never reaches a synopsis"]},
  {v:"V0.21",t:"Look-ahead and timers",z:"Size L · adds the sgp4 package",get:"The next 48 hours worked out, with one-click timers.",build:["Automatic element-set pull for live objects, with a freshness guard","Equator crossings, highest and lowest points, closest approaches with the RIC box, lighting windows","The look-ahead strip and Set timer"],acc:["For a GEO pair in an RPO NOTSO, approaches, the RIC box and lighting windows for 48 hours, each labelled with its element set and time, and a timer one click away"]},
@@ -1051,6 +1123,34 @@ function showRel(i){var r=REL[i];$$("#road .rel").forEach(function(b){b.setAttri
 $("#road").addEventListener("click",function(e){var b=e.target.closest(".rel");if(b)showRel(+b.getAttribute("data-i"))});
 showRel(0);
 
+
+/* ---------- the trial ---------- */
+var MARKS=[
+ {id:"found",l:"Lead's figures found",min:0,max:100,step:5,v:85,unit:"%",ok:function(x){return x>=80},rule:"80% or more",why:"Below this the lead fills too many gaps by hand."},
+ {id:"wrong",l:"Figures credited to the wrong provider",min:0,max:5,step:1,v:0,unit:"",ok:function(x){return x===0},rule:"none",why:"The one error the checks cannot catch, and the one that misleads a handover."},
+ {id:"unsup",l:"Unsupported figures kept",min:0,max:5,step:1,v:0,unit:"",ok:function(x){return x===0},rule:"none",why:"Proves the checks hold on real chat."},
+ {id:"time",l:"A typical shift's run, model loading included",min:60,max:600,step:15,v:240,unit:" s",ok:function(x){return x<=300},rule:"300 s or less",why:"The five-minute budget for the end-of-shift run."},
+ {id:"spare",l:"Memory left spare",min:0,max:6,step:0.25,v:2.5,unit:" GiB",ok:function(x){return x>=2},rule:"2 GiB or more",why:"Keeps Holly clear of being stopped for running out of memory."}
+];
+$("#tSliders").innerHTML=MARKS.map(function(m){return '<div class="tmark"><div class="top"><label for="tm-'+m.id+'"><b>'+m.l+'</b></label><span class="val" id="tv-'+m.id+'"></span></div><input type="range" id="tm-'+m.id+'" min="'+m.min+'" max="'+m.max+'" step="'+m.step+'" value="'+m.v+'"><small>Pass mark: '+m.rule+'. '+m.why+'</small></div>'}).join("");
+function trialVerdict(){var fails=[];MARKS.forEach(function(m){var x=parseFloat($("#tm-"+m.id).value),ok=m.ok(x),el=$("#tv-"+m.id);el.textContent=x+m.unit;el.className="val "+(ok?"ok":"bad");if(!ok)fails.push(m.l+": needs "+m.rule)});
+ var v=$("#tVerdict");if(!fails.length){v.className="tverdict go";v.innerHTML="GO: this model clears every mark."}else{v.className="tverdict nogo";v.innerHTML="NO-GO: "+fails.length+" mark"+(fails.length>1?"s":"")+" missed<ul class=\"dots\">"+fails.map(function(f){return "<li>"+f+"</li>"}).join("")+"</ul>"}}
+$("#tSliders").addEventListener("input",trialVerdict);trialVerdict();
+var TSTEPS=[
+ {t:"Get ready",who:"Owner, data owner, Holly engineer",d:"Confirm the pass marks. Supply Holly's peak memory and how many threads a typical shift's run reads. The data owner approves using 5 real threads on one trial machine. Download the 3 models and record their fingerprints.",out:"Approved inputs and a trial machine with Docker, at least 6 cores and 12 GiB of memory."},
+ {t:"Build and self-test",who:"Holly engineer",d:"Build the trial container, run its 17 tests and the dry run on made-up data.",out:"The same NO-GO dry-run report shown on this page, proving the tools work on that machine."},
+ {t:"Pick 5 threads",who:"Holly engineer, with a mission lead",d:"One each: a manoeuvre where providers disagreed, an RPO, a photometric change, a separation or other type, and the longest, noisiest thread of the last month. Export them from Mattermost and convert them.",out:"5 thread files, kept on the trial machine only."},
+ {t:"Write the answer keys",who:"Mission lead; a second lead spot-checks one",d:"List every provider figure in each thread before seeing any model output.",out:"The answer key the models are marked against."},
+ {t:"Run the models",who:"Holly engineer",d:"Run each candidate with the network off and Holly's 8 GiB, 6 CPU caps.",out:"A report: found rate, wrong claims, time per thread, peak memory, and a go or no-go per model."},
+ {t:"Review",who:"Holly engineer and mission lead",d:"Read the post behind every wrong claim kept and note why it slipped through.",out:"Lessons for the V0.20 instructions and checks."},
+ {t:"Decide",who:"Owner",d:"Pick the smallest model that passes every mark. If none passes: ship V0.20 with the template synopsis only, change a mark as a recorded decision, or try other models.",out:"A go or no-go for the model in V0.20."},
+ {t:"Record and clean up",who:"Holly engineer",d:"Commit a short summary of pass and fail per mark, with no thread text and no real figures, and delete the threads and keys.",out:"The evidence behind ADR-016, and nothing sensitive left behind."}
+];
+$("#tSteps").innerHTML=TSTEPS.map(function(x,i){return '<button type="button" data-i="'+i+'" aria-pressed="false"><span>Step '+(i+1)+'</span><b>'+x.t+'</b></button>'}).join("");
+function tShow(i){var x=TSTEPS[i];$$("#tSteps button").forEach(function(b){b.setAttribute("aria-pressed",+b.getAttribute("data-i")===i?"true":"false")});
+ $("#tStep").innerHTML='<h3>Step '+(i+1)+' · '+x.t+'</h3><dl class="kv"><dt>Who</dt><dd>'+x.who+'</dd><dt>What happens</dt><dd>'+x.d+'</dd><dt>What it produces</dt><dd>'+x.out+'</dd></dl>'}
+$("#tSteps").addEventListener("click",function(e){var b=e.target.closest("button");if(b)tShow(+b.getAttribute("data-i"))});
+tShow(0);
 /* ---------- risks ---------- */
 var RISKS=[
  ["The model invents a figure","A wrong number could reach a handover.","Only claims whose figure appears word for word in the post they cite are kept, and you can open the post behind every claim."],
@@ -1078,7 +1178,11 @@ var DEC=[
  ["Which event types get a flow first, and the full list","Mission leads"],
  ["How the synopsis reaches the Mission Management Board (MMB)","MMB owner"],
  ["The module's name","Owner"],
- ["The shift change times in UTC, and how long before each the run starts","Owner and mission leads"]
+ ["The shift change times in UTC, and how long before each the run starts","Owner and mission leads"],
+ ["Confirm or change the trial's five pass marks","Owner"],
+ ["Holly's own peak memory, from the App Store metrics, and how many threads a typical shift's run reads","Owner"],
+ ["Approve exporting 5 real threads to one trial machine inside Bluestaq","Data owner"],
+ ["A mission lead to write the answer keys, and a trial machine with Docker, 6 or more cores and 12 GiB","Owner"]
 ];
 var decState=store.get("hb-dec",{});
 function renderDec(){var done=0;$("#dec").innerHTML=DEC.map(function(d,i){var on=!!decState[i];if(on)done++;return '<label class="'+(on?"done":"")+'"><input type="checkbox" id="dec'+i+'" data-i="'+i+'"'+(on?" checked":"")+'><span><span class="q">'+d[0]+'</span><span class="who">'+d[1]+'</span></span></label>'}).join("");
