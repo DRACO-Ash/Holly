@@ -1,0 +1,10 @@
+{
+  "thread_id": "synthetic-a",
+  "channel": "SYNTHETIC-geo",
+  "posts": [
+    {"post_id": "a1", "at": "2026-01-01T17:42:00Z", "author": "northstar-analyst", "text": "SYNTHETIC. RED-1 burn looks complete. We assess a +25s period change and a 17km perigee raise, now near circular. Looks parked near BLUE-1."},
+    {"post_id": "a2", "at": "2026-01-01T15:05:00Z", "author": "kbr-analyst", "text": "SYNTHETIC. Early read on RED-1: 5s period change, apogee raise of 12 km. Will update."},
+    {"post_id": "a3", "at": "2026-01-01T16:10:00Z", "author": "watch-analyst", "text": "SYNTHETIC. My guess is the period moved about 20s."},
+    {"post_id": "a4", "at": "2026-01-01T18:02:00Z", "author": "watch-analyst", "text": "SYNTHETIC. Summary so far: NorthStar say +25s, KBR say 5s. Range to BLUE-1 about 9 km per NorthStar."}
+  ]
+}

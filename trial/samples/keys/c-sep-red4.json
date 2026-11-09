@@ -1,0 +1,4 @@
+{"thread_id": "synthetic-c", "claims": [
+  {"post_id": "c1", "provider": "KBR", "quantity": "drift_rate", "value": "0.2", "unit": "deg/day"},
+  {"post_id": "c2", "provider": "NorthStar", "quantity": "range", "value": "40", "unit": "km"}
+]}

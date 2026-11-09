@@ -1,0 +1,11 @@
+{
+  "_note": "SYNTHETIC example. The real file lists the providers the owner names, with their aliases, and maps Mattermost display names to the provider each author speaks for.",
+  "providers": {
+    "NorthStar": {"aliases": ["North Star", "NS"]},
+    "KBR": {"aliases": []}
+  },
+  "authors": {
+    "northstar-analyst": "NorthStar",
+    "kbr-analyst": "KBR"
+  }
+}

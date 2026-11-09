@@ -1,0 +1,21 @@
+{
+  "_note": "SYNTHETIC canned replies standing in for a model, built to show each check and each score at work: a made-up figure (dropped), a provider not on the list (dropped), a post outside the thread (dropped), a malformed claim (refused), a missed claim (lowers recall) and a figure swapped between two providers named in the same post (kept by the checks, caught by the answer key).",
+  "synthetic-a": {"claims": [
+    {"post_id": "a1", "provider": "NorthStar", "quantity": "period_change", "value": "+25", "unit": "s"},
+    {"post_id": "a1", "provider": "NorthStar", "quantity": "perigee_change", "value": "17", "unit": "km"},
+    {"post_id": "a1", "provider": "NorthStar", "quantity": "apogee_change", "value": "+30", "unit": "km"},
+    {"post_id": "a2", "provider": "KBR", "quantity": "period_change", "value": "5", "unit": "s"},
+    {"post_id": "a2", "provider": "KBR", "quantity": "burn_size", "value": "3", "unit": "km"},
+    {"post_id": "a3", "provider": "Watch", "quantity": "period_change", "value": "20", "unit": "s"},
+    {"post_id": "a4", "provider": "NorthStar", "quantity": "period_change", "value": "5", "unit": "s"},
+    {"post_id": "a4", "provider": "NorthStar", "quantity": "range", "value": "9", "unit": "km"},
+    {"post_id": "a9", "provider": "NorthStar", "quantity": "period_change", "value": "+25", "unit": "s"}
+  ]},
+  "synthetic-b": {"claims": [
+    {"post_id": "b1", "provider": "NorthStar", "quantity": "brightness_change", "value": "1.5", "unit": "mag"}
+  ]},
+  "synthetic-c": {"claims": [
+    {"post_id": "c1", "provider": "KBR", "quantity": "drift_rate", "value": "0.2", "unit": "deg/day"},
+    {"post_id": "c2", "provider": "NorthStar", "quantity": "range", "value": "40", "unit": "km"}
+  ]}
+}

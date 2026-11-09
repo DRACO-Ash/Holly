@@ -97,7 +97,7 @@ These come first, because each one changes what gets built.
 
 1. **No external LLM in the module (decided).** The owner decided on 6 November 2026 that the module never calls an external large language model (LLM). Mattermost threads and NOTSO content are read only by a model running inside the Holly container, so neither leaves the App Store. Inference: this turns a release decision into a question of whether the App Store environment is approved for this data. The owner and the data owner confirm that, and it is recorded in an architecture decision record (ADR-016) and a `SECURITY.md` row. A test fails the build if any module under `services/handover/` imports the Anthropic client (`services/claude.py`).
 2. **The existing assistant still sends chat.** Fact: Holly's notice evaluations already include up to 30 recent Mattermost messages in what they send to Anthropic (`services/assistant.py:261-280`, `SECURITY.md:27`). That is separate from this module. To stop it, set `MATTERMOST_MAX_MESSAGES_IN_PROMPT=0` and restart. It is the owner's call, and the decision is recorded when made.
-3. **The local-model trial (go or no-go), run before V0.20.**
+3. **The local-model trial (go or no-go), run before V0.20.** Protocol, pass marks and harness: `docs/roadmap/handover-trial-plan.md` and `trial/`.
    ■ **Where:** a container capped at 8Gi and 6 CPU, inside Bluestaq's environment. Real threads are never pasted into an external tool, including this conversation.
    ■ **What:** 2 or 3 permissively licensed models, quantised to 3 to 8 billion parameters, run on 5 real event threads.
    ■ **Measure:**
@@ -158,7 +158,7 @@ The module is one new tab and one backend package within the existing Holly cont
   ■ **No network.** The child process gets no network access and no database connection: Holly hands it the text and reads back its answer.
 ● `extract.py`: reads each confirmed thread and returns structured claims through the local model, for example provider NorthStar, quantity period change, value +25, unit s, post id. Each claim is then checked in code, and any that fails a check is dropped:
   ■ the figure must appear word for word in the post it cites;
-  ■ the provider must be in the configured list;
+  ■ the provider must be in the configured list, and either named in the post (or by alias) or the post author's company;
   ■ the post must belong to the thread being read.
 
   A made-up number cannot survive, because it is not in the source post. Results are cached per thread against its newest post id, so a rerun reads only threads that have changed.

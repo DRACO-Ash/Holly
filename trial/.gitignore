@@ -1,0 +1,4 @@
+# Trial data and outputs never enter the repository.
+trial-data/
+trial-out/
+__pycache__/

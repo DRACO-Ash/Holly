@@ -1,0 +1,5 @@
+# The trial container's one direct dependency: the CPU runtime for GGUF models (MIT licence).
+# Exact pin, released 2026-10-01, past the 15-day cooldown. The lock is requirements-trial.txt:
+#   uv pip compile requirements-trial.in --python-version 3.12 --python-platform x86_64-manylinux_2_28 --generate-hashes --exclude-newer 2026-10-25 -o requirements-trial.txt
+# Never edit the lock by hand.
+llama-cpp-python==0.3.36

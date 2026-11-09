@@ -1,0 +1,8 @@
+{
+  "thread_id": "synthetic-c",
+  "channel": "SYNTHETIC-geo",
+  "posts": [
+    {"post_id": "c1", "at": "2026-01-01T21:50:00Z", "author": "kbr-analyst", "text": "SYNTHETIC. Object separated from RED-4 around 21:30Z, drifting 0.2 deg/day west."},
+    {"post_id": "c2", "at": "2026-01-01T22:15:00Z", "author": "northstar-analyst", "text": "SYNTHETIC. Concur on the separation. We have range 40 km and opening."}
+  ]
+}
