@@ -13,7 +13,25 @@ tests/            unit tests, standard library only
 Dockerfile        the trial container, runtime pinned by hash (requirements-trial.txt)
 ```
 
-## Without Docker (checks and dry run only)
+## Windows laptop, no container (Route A)
+
+Python 3.12 for your user only, and llama.cpp's Windows CPU build unzipped into a folder. Full
+walkthrough: `docs/roadmap/handover-trial-guide.md`.
+
+```
+cd C:\handover-trial\handover-trial-kit\trial
+py -3.12 -m unittest discover -s tests
+py -3.12 -m handover_trial dry-run --out C:\handover-trial\trial-out\dry
+py -3.12 -m handover_trial run --server-exe C:\handover-trial\llama\llama-server.exe `
+  --threads <dir> --keys <dir> --providers <file> --model <file.gguf> `
+  --holly-peak-gib <measured> --shift-threads <typical> --out C:\handover-trial\trial-out\run1
+```
+
+The harness starts `llama-server.exe` per model on 127.0.0.1 only, with 2 threads, a 4,096-token
+window and below-normal priority, reads its peak memory, then stops it. Nothing caps memory, so
+the score compares the measured peak with Holly's 4 GiB.
+
+## Without a model (checks and dry run only)
 
 ```
 cd trial
@@ -21,7 +39,7 @@ python3 -m unittest discover -s tests
 python3 -m handover_trial dry-run --out /tmp/trial-dry
 ```
 
-## In the container (the real trial)
+## In a container (Route B)
 
 ```
 docker build -t holly-handover-trial trial/

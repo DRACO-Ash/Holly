@@ -71,7 +71,7 @@ def _run(args: argparse.Namespace, specs: list[ModelSpec]) -> int:
     }
     scores = []
     for spec in specs:
-        if spec.kind == "llama":
+        if spec.kind in ("llama", "server"):
             meta[f"SHA-256 of {Path(spec.path).name}"] = _sha256(Path(spec.path))
         print(f"running {spec.path} ...", flush=True)
         run = run_model(spec, threads, providers, timeout_s=args.timeout_s)
@@ -108,6 +108,10 @@ def main(argv: list[str] | None = None) -> int:
             required=not dry,
         )
         p.add_argument("--model", action="append", default=[], help="GGUF file; repeat per model")
+        p.add_argument(
+            "--server-exe",
+            help="path to llama.cpp's llama-server program: runs the models with no container",
+        )
         p.add_argument("--stub", default=str(SAMPLES / "stub-replies.json") if dry else None)
         p.add_argument(
             "--holly-peak-gib",
@@ -138,8 +142,11 @@ def main(argv: list[str] | None = None) -> int:
             json.dumps(convert_mattermost(export, args.channel, users), indent=2), encoding="utf-8"
         )
         return 0
+    kind = "server" if args.server_exe else "llama"
+    server = (args.server_exe,) if args.server_exe else ()
     specs = [
-        ModelSpec("llama", m, threads=args.cpu_threads, context=args.context) for m in args.model
+        ModelSpec(kind, m, server=server, threads=args.cpu_threads, context=args.context)
+        for m in args.model
     ]
     if args.stub:
         specs.append(ModelSpec("stub", args.stub))

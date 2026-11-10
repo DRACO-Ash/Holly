@@ -33,7 +33,7 @@ The harness is in `trial/`, outside Holly's upload and outside its verification 
   ■ a responsiveness probe: how much slower a fixed task runs at normal priority during the run.
 ● **Scoring against a mission lead's answer key**, written before anyone sees model output.
 ● **A dry run on synthetic data with a stand-in model**, which shows every check and score working.
-● **17 unit tests**, standard library only.
+● **20 unit tests**, standard library only, including the no-container route against a stand-in server.
 ● **A container whose runtime is pinned by hash:** llama-cpp-python 0.3.36, MIT licence, released 1 October 2026, past the 15-day cooldown. It is built in this sandbox and passes its tests and dry run with the network off.
 
 ## Pass marks (proposed; the owner confirms before the run)
@@ -80,7 +80,9 @@ Confirm each licence from the model card when downloading. Avoid models under us
 The full how-to for each step is in `docs/roadmap/handover-trial-guide.md`.
 
 1. **Prerequisites.**
-   ■ A Bluestaq machine with Docker, at least 2 CPU cores and 8 GB of memory.
+   ■ A Bluestaq computer approved for the data, with at least 2 CPU cores and 8 GB of memory. Either route works:
+     ● Route A: a Windows laptop with no container, using Python installed for the user only and llama.cpp's ready-built `llama-server.exe`;
+     ● Route B: a machine with Docker or Podman.
    ■ The model files downloaded and their SHA-256 recorded.
    ■ The provider list.
    ■ The data owner's approval.
@@ -95,7 +97,9 @@ The full how-to for each step is in `docs/roadmap/handover-trial-guide.md`.
    ■ Export each from Mattermost and convert it.
    ■ Keep the files on the trial machine only, outside any git repository.
 4. **Write the answer keys.** The mission lead does this without seeing model output, and a second lead spot-checks one.
-5. **Run every candidate** with the network off and the 4 GiB / 2 CPU caps.
+5. **Run every candidate** with Holly's settings: 2 CPU threads, a 4,096-token window and low priority.
+   ■ Route B enforces the 4 GiB cap and switches the network off.
+   ■ Route A binds the model to the laptop only (127.0.0.1) and scores the measured peak memory against the 4 GiB instead of enforcing it.
 6. **Review the report.** For any wrong claim kept, read the post and record why.
 7. **Decide.**
    ■ Choose the smallest model that passes every mark. If 2 pass, prefer the higher recall, then the lower memory.

@@ -201,6 +201,46 @@ class UsersFile(unittest.TestCase):
             self.assertEqual(_users(mapped), {"u2": "kbr-analyst"})
 
 
+class NoContainerRoute(unittest.TestCase):
+    def test_runs_through_a_local_server_and_scores_like_the_stub(self) -> None:
+        from handover_trial.claims import Providers
+        from handover_trial.runner import ModelSpec, run_model
+        from handover_trial.score import Load, Marks, load_keys, score
+        from handover_trial.threads import load_threads
+
+        samples = ROOT / "samples"
+        threads = load_threads(samples / "threads")
+        providers = Providers.from_json(json.loads((samples / "providers.json").read_text()))
+        with tempfile.TemporaryDirectory() as d:
+            model = Path(d) / "pretend.gguf"
+            model.write_bytes(b"not a model")
+            fake = str(ROOT / "tests" / "fake_llama_server.py")
+            spec = ModelSpec("server", str(model), server=(sys.executable, fake))
+            run = run_model(spec, threads, providers, timeout_s=60)
+        self.assertEqual(run["error"], "")
+        self.assertEqual(run["model"], "pretend.gguf")
+        self.assertGreater(run["peak_rss_mib"], 0)
+        self.assertIn("baseline_ms", run["probe"])
+        result = score(
+            run, threads, load_keys(samples / "keys"), providers, Load(4, 1, 10), Marks()
+        )
+        # The local server only sees posts that exist, so the claim citing a post outside the
+        # thread never comes back; everything else scores as the in-process stand-in does.
+        self.assertEqual(result["matched"], 7)
+        self.assertEqual(result["wrong_provider_kept"], 1)
+        self.assertEqual(result["unsupported_kept"], 0)
+
+    def test_a_server_that_will_not_start_is_reported(self) -> None:
+        from handover_trial.claims import Providers
+        from handover_trial.runner import ModelSpec, run_model
+
+        spec = ModelSpec(
+            "server", "missing.gguf", server=(sys.executable, "-c", "raise SystemExit(3)")
+        )
+        run = run_model(spec, [], Providers({}), timeout_s=30)
+        self.assertIn("stopped while loading", run["error"])
+
+
 class DryRun(unittest.TestCase):
     def test_dry_run_scores_the_synthetic_set(self) -> None:
         with tempfile.TemporaryDirectory() as out:

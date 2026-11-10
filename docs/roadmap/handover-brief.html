@@ -675,7 +675,7 @@ footer b{color:var(--bar-fg)}
       <h3 style="margin-top:26px">First: it changes nothing in Holly</h3>
       <p>The trial runs on its own machine inside Bluestaq. It never connects to Holly, and its files can never be uploaded with Holly.</p>
       <div class="gsplit">
-        <div class="card gbox"><h4>Trial machine, inside Bluestaq</h4><ul class="dots small" style="margin:0"><li>The trial container, network switched off</li><li>5 exported threads and the answer keys</li><li>The model files</li><li>The results</li></ul></div>
+        <div class="card gbox"><h4>Trial machine, inside Bluestaq</h4><ul class="dots small" style="margin:0"><li>The trial, reachable only from that computer</li><li>5 exported threads and the answer keys</li><li>The model files</li><li>The results</li></ul></div>
         <div class="gnolink" aria-label="No connection between them"><span>No connection</span></div>
         <div class="card gbox"><h4>Holly on the App Store</h4><ul class="dots small" style="margin:0"><li>Keeps running as normal</li><li>Same version, same settings, same data</li><li>Its upload never includes the trial</li></ul></div>
       </div>
@@ -685,12 +685,13 @@ footer b{color:var(--bar-fg)}
       <p>Tick each one off. Your ticks are saved in this browser only.</p>
       <div class="dec" id="gPre"></div>
 
-      <h3 style="margin-top:30px">What you need</h3>
-      <div class="grid g3">
-        <div class="card"><h4>A trial machine</h4><ul class="dots small" style="margin:0"><li>Bluestaq-managed and approved for the data</li><li>2 or more CPU cores</li><li>8 GB of memory or more</li><li>15 GB of free disk</li><li>Linux is simplest; Windows or macOS with Docker Desktop work too</li></ul></div>
-        <div class="card"><h4>Software</h4><ul class="dots small" style="margin:0"><li>Git, to fetch the code</li><li>Docker (Docker Desktop on Windows or macOS)</li><li>Internet access to PyPI while building only; running needs none</li></ul><p class="hint" style="margin:8px 0 0">Docker Desktop: in Settings, Resources, give it at least 6 GB of memory and 2 CPUs.</p></div>
-        <div class="card"><h4>Access</h4><ul class="dots small" style="margin:0"><li>Read access to the Holly repository</li><li>A Mattermost personal access token, or an administrator to export the threads (whether tokens are switched on is TBC, re-verify)</li></ul></div>
+      <h3 style="margin-top:30px">Pick your route</h3>
+      <p>Both routes run the same code, checks and scoring. If you have a Windows laptop and can't install Docker or make a virtual machine, use Route A.</p>
+      <div class="grid g2">
+        <div class="card" style="border-top:4px solid var(--accent)"><h4>Route A · Windows laptop, no container</h4><ul class="dots small" style="margin:0"><li>Windows 10 or 11, 8 GB of memory, 2 or more cores, about 10 GB free</li><li>Python 3.12, installed for your user only: no admin rights</li><li>llama.cpp's ready-built Windows programs, unzipped into a folder: no install</li><li>The model listens only on your own computer (127.0.0.1)</li><li>Memory isn't capped; the trial measures the peak and scores it against Holly's 4 GB</li></ul><p class="hint" style="margin:8px 0 0">Windows security may block the unzipped llama-server.exe. If so, IT needs to allow that one folder.</p></div>
+        <div class="card"><h4>Route B · a container</h4><ul class="dots small" style="margin:0"><li>Linux, or a machine where Docker or Podman is allowed</li><li>2 or more cores, 8 GB of memory, 15 GB free</li><li>The container caps memory at 4 GB and switches the network off</li><li>Docker Desktop's free terms cover only small organisations; Podman Desktop is free</li></ul></div>
       </div>
+      <div class="card" style="margin-top:10px"><h4>Both routes need</h4><ul class="dots small" style="margin:0"><li>A computer approved for the data: it holds 5 real threads for a day or so. This is the deciding point.</li><li>The trial kit (handover-trial-kit.zip)</li><li>Internet during setup only; the run itself needs none</li><li>A Mattermost personal access token, or an administrator to export the threads (whether tokens are switched on is TBC, re-verify)</li></ul></div>
 
       <h3 style="margin-top:30px">Where everything goes</h3>
       <p>Make one working folder, outside any code repository. Select a folder to see what goes in it.</p>
@@ -701,8 +702,8 @@ footer b{color:var(--bar-fg)}
 
       <h3 style="margin-top:30px">Step by step</h3>
       <div class="row" style="justify-content:space-between;margin-bottom:8px">
-        <p class="hint" style="margin:0">Pick your computer, then select a step. Every command has a copy button.</p>
-        <div class="row" role="group" aria-label="Your computer"><button type="button" class="btn" id="osLinux" aria-pressed="true">Linux or macOS</button><button type="button" class="btn" id="osWin" aria-pressed="false">Windows PowerShell</button></div>
+        <p class="hint" style="margin:0">Pick your route, then select a step. Every command has a copy button.</p>
+        <div class="row" role="group" aria-label="Your computer"><button type="button" class="btn" id="osWin" aria-pressed="true">Route A · Windows, no container</button><button type="button" class="btn" id="osLinux" aria-pressed="false">Route B · container</button></div>
       </div>
       <div class="tsteps" id="gSteps" role="group" aria-label="Guide steps"></div>
       <div class="card" id="gStep" aria-live="polite"></div>
@@ -714,6 +715,7 @@ footer b{color:var(--bar-fg)}
       <div class="card" id="gCol" aria-live="polite" style="margin-top:10px"></div>
 
       <h3 style="margin-top:30px">No internet on the trial machine?</h3>
+      <p>Route A: download the Python installer, the llama.cpp zip, the models and the kit on a connected Bluestaq computer, copy them across on approved media, then install and unzip them the same way. Route B:</p>
       <div class="gflow">
         <div class="card"><span class="when">1 · Connected machine</span><p class="small" style="margin:4px 0 0">Build the image, then save it to one file:</p><div class="cmdwrap"><pre class="cmd">docker save holly-handover-trial -o holly-handover-trial.tar</pre></div></div>
         <div class="card"><span class="when">2 · Approved media</span><p class="small" style="margin:4px 0 0">Copy the .tar file and the model files across, following Bluestaq's rules for removable media.</p></div>
@@ -1268,8 +1270,9 @@ $("#gPre").addEventListener("change",function(e){var i=e.target.getAttribute("da
 renderPre();
 
 var TREE=[
- ["handover-trial/",0,"Your working folder, outside any code repository. Keeping real data out of the code folder means it can never be committed by accident.","You"],
- ["holly/",1,"The code, fetched with Git in step 1. Never put data in here.","Git"],
+ ["handover-trial/",0,"Your working folder, outside any code repository: C:\\handover-trial on Windows. Keeping real data out of the code folder means it can never be committed by accident.","You"],
+ ["handover-trial-kit/",1,"The trial kit, unzipped. You run commands from its trial folder. Never put data in here.","Step 1"],
+ ["llama/",1,"Route A only: llama.cpp's Windows programs, unzipped. Holds llama-server.exe.","Step 2"],
  ["trial-data/",1,"Everything real. The trial reads it as read-only, except when converting threads.","You"],
  ["providers.json",2,"The provider list: names, other names, and which Mattermost usernames speak for each provider. Only the owner decides who is on it.","Owner, typed up by you"],
  ["users.json",2,"Mattermost user ids matched to usernames, fetched in step 7.","Step 7"],
@@ -1286,58 +1289,67 @@ $("#gTree").addEventListener("click",function(e){var b=e.target.closest("button"
 treeShow(0);
 
 var GSTEPS=[
- {t:"Get the code",d:"Fetch the code with Git into your working folder. Once this work is merged, use the main branch instead.",
-  l:"cd ~/handover-trial\ngit clone https://github.com/draco-ash/holly.git\ncd holly\ngit checkout claude/rehydrate-foundations-bundle-abogpu",
-  w:"cd C:\\handover-trial\ngit clone https://github.com/draco-ash/holly.git\ncd holly\ngit checkout claude/rehydrate-foundations-bundle-abogpu",
-  see:"A holly folder appears in your working folder."},
- {t:"Build the trial",d:"Build the trial's container image. It compiles the model runtime from source, and every download is checked against a pinned fingerprint.",
-  l:"docker build -t holly-handover-trial trial/",w:"docker build -t holly-handover-trial trial/",
-  see:"After several minutes, a line saying the image was named holly-handover-trial.",warn:"If it stops while downloading, check access to pypi.org. If a fingerprint check fails, stop and report it; never edit the lock file by hand."},
- {t:"Self-test",d:"Run the trial's own tests, with the network switched off.",
+ {t:"Get the kit",d:"Unzip the trial kit into your working folder.",
+  w:"Expand-Archive handover-trial-kit.zip -DestinationPath C:\\handover-trial",
+  l:"mkdir -p ~/handover-trial && unzip handover-trial-kit.zip -d ~/handover-trial",
+  see:"A handover-trial-kit folder, holding trial and docs."},
+ {t:"Set up the tools",
+  dw:"Install Python 3.12 from python.org: on the installer's first screen, untick \u201cUse admin privileges when installing py.exe\u201d, tick \u201cAdd python.exe to PATH\u201d, then Install Now. It installs for you only, with no admin rights. Then, from llama.cpp's GitHub Releases page, pick a release at least 15 days old, download its Windows CPU x64 zip, note its tag and fingerprint, and unzip it into C:\\handover-trial\\llama. Check Python with:",
+  d:"Build the trial's container image. It compiles the model runtime from source, and every download is checked against a pinned fingerprint.",
+  w:"py -3.12 --version\nGet-FileHash <the llama.cpp zip>",
+  l:"cd ~/handover-trial/handover-trial-kit\ndocker build -t holly-handover-trial trial/",
+  seew:"Python 3.12 and a version number, and C:\\handover-trial\\llama\\llama-server.exe in place.",
+  see:"After several minutes, a line saying the image was named holly-handover-trial.",
+  warnw:"If Windows blocks or deletes llama-server.exe, ask IT to allow that one folder. Don't work around it.",
+  warn:"If it stops while downloading, check access to pypi.org. If a fingerprint check fails, stop and report it."},
+ {t:"Self-test",d:"Run the trial's own tests. They use no model and no real data.",
+  w:"cd C:\\handover-trial\\handover-trial-kit\\trial\npy -3.12 -m unittest discover -s tests",
   l:"docker run --rm --network none --entrypoint python holly-handover-trial -m unittest discover -s tests",
-  w:"docker run --rm --network none --entrypoint python holly-handover-trial -m unittest discover -s tests",
   see:"OK on the last line."},
- {t:"Dry run",d:"Run the whole trial on made-up threads, with a stand-in instead of a model. No real data needed.",
+ {t:"Dry run",d:"Run the whole trial on made-up threads, with a stand-in instead of a model.",
+  w:"py -3.12 -m handover_trial dry-run --out C:\\handover-trial\\trial-out\\dry",
   l:"mkdir -p ~/handover-trial/trial-out && chmod 777 ~/handover-trial/trial-out\ndocker run --rm --network none --memory 4g --memory-swap 4g --cpus 2 \\\n  -v ~/handover-trial/trial-out:/out holly-handover-trial dry-run --out /out/dry",
-  w:"mkdir C:\\handover-trial\\trial-out\ndocker run --rm --network none --memory 4g --memory-swap 4g --cpus 2 `\n  -v C:\\handover-trial\\trial-out:/out holly-handover-trial dry-run --out /out/dry",
   see:"A report ending in NO-GO, with 7/10 found, 1 wrong provider and 0 unsupported kept. That is correct: the stand-in was built to make mistakes, and each is caught."},
- {t:"Get the models",d:"Download the 4-bit (Q4_K_M) GGUF file of each candidate from a source your team trusts. Check each licence is MIT or Apache-2.0, put the files in trial-data/models, and record each file's fingerprint.",
-  l:"sha256sum ~/handover-trial/trial-data/models/*.gguf",w:"Get-FileHash C:\\handover-trial\\trial-data\\models\\*.gguf",
+ {t:"Get the models",d:"Download the 4-bit (Q4_K_M) GGUF file of each candidate from a source your team trusts: Qwen2.5-1.5B-Instruct, SmolLM2-1.7B-Instruct, Qwen2.5-0.5B-Instruct, and Phi-3.5-mini-instruct as the stretch test. Check each licence is MIT or Apache-2.0, put the files in trial-data/models, and record each file's fingerprint.",
+  w:"Get-FileHash C:\\handover-trial\\trial-data\\models\\*.gguf",l:"sha256sum ~/handover-trial/trial-data/models/*.gguf",
   see:"One long code per file. Write them down; the report prints them too, so you can match them."},
  {t:"Choose the threads",d:"With a mission lead, pick 5 threads: a manoeuvre where providers disagreed, an RPO, a photometric change, a separation or other type, and the longest, noisiest thread of the last month. For each, open its first post in Mattermost, choose Copy Link, and keep the last part of the link, after /pl/. That is the thread id.",
   see:"5 thread ids written down."},
- {t:"Export the threads",d:"Put your token in a variable so it never lands in a file or your history. Export each thread, then fetch the usernames of everyone who posted (each post in the export has a user_id). Close the terminal afterwards so the token is forgotten. If personal tokens are switched off, a Mattermost administrator can export the threads instead.",
+ {t:"Export the threads",d:"Put your token in a variable so it never lands in a file or your history. Export each thread, then fetch the usernames of everyone who posted (each post in the export has a user_id). Close the window afterwards so the token is forgotten. If personal tokens are switched off, a Mattermost administrator can export the threads instead.",
+  w:"$MM_TOKEN = Read-Host -MaskInput \"Mattermost token\"\ncurl.exe -sS -H \"Authorization: Bearer $MM_TOKEN\" `\n  https://<mattermost-host>/api/v4/posts/<id>/thread `\n  -o C:\\handover-trial\\trial-data\\raw\\<id>.json\n\n'[\"<user id 1>\",\"<user id 2>\"]' | Out-File -Encoding ascii C:\\handover-trial\\trial-data\\ids.json\ncurl.exe -sS -X POST -H \"Authorization: Bearer $MM_TOKEN\" -H \"Content-Type: application/json\" `\n  --data-binary \"@C:\\handover-trial\\trial-data\\ids.json\" `\n  https://<mattermost-host>/api/v4/users/ids -o C:\\handover-trial\\trial-data\\users.json",
   l:"read -s MM_TOKEN\ncurl -sS -H \"Authorization: Bearer $MM_TOKEN\" \\\n  https://<mattermost-host>/api/v4/posts/<id>/thread \\\n  -o ~/handover-trial/trial-data/raw/<id>.json\n\ncurl -sS -X POST -H \"Authorization: Bearer $MM_TOKEN\" -H \"Content-Type: application/json\" \\\n  -d '[\"<user id 1>\",\"<user id 2>\"]' \\\n  https://<mattermost-host>/api/v4/users/ids -o ~/handover-trial/trial-data/users.json",
-  w:"$MM_TOKEN = Read-Host -MaskInput \"Mattermost token\"\ncurl.exe -sS -H \"Authorization: Bearer $MM_TOKEN\" `\n  https://<mattermost-host>/api/v4/posts/<id>/thread `\n  -o C:\\handover-trial\\trial-data\\raw\\<id>.json\n\n'[\"<user id 1>\",\"<user id 2>\"]' | Out-File -Encoding ascii ids.json\ncurl.exe -sS -X POST -H \"Authorization: Bearer $MM_TOKEN\" -H \"Content-Type: application/json\" `\n  --data-binary \"@ids.json\" https://<mattermost-host>/api/v4/users/ids `\n  -o C:\\handover-trial\\trial-data\\users.json",
-  see:"One file per thread in trial-data/raw, and users.json.",warn:"On Windows, -MaskInput needs PowerShell 7. Use curl.exe, not curl, which PowerShell treats as a different command."},
- {t:"Convert the threads",d:"Turn each export into the trial's format. This is the only command allowed to write into trial-data.",
+  see:"One file per thread in trial-data/raw, and users.json.",warnw:"-MaskInput needs PowerShell 7. In Windows PowerShell 5.1, drop it; the token then shows as you paste, so make sure nobody is watching. Always type curl.exe, not curl."},
+ {t:"Convert the threads",d:"Turn each export into the trial's format.",
+  w:"cd C:\\handover-trial\\handover-trial-kit\\trial\npy -3.12 -m handover_trial convert --export C:\\handover-trial\\trial-data\\raw\\<id>.json `\n  --channel <channel name> --users C:\\handover-trial\\trial-data\\users.json `\n  --out C:\\handover-trial\\trial-data\\threads\\<id>.json",
   l:"cd ~/handover-trial\ndocker run --rm --network none -v \"$PWD/trial-data:/data\" holly-handover-trial \\\n  convert --export /data/raw/<id>.json --channel <channel name> \\\n  --users /data/users.json --out /data/threads/<id>.json",
-  w:"docker run --rm --network none -v C:\\handover-trial\\trial-data:/data holly-handover-trial `\n  convert --export /data/raw/<id>.json --channel <channel name> `\n  --users /data/users.json --out /data/threads/<id>.json",
-  see:"One file per thread in trial-data/threads.",warn:"Permission denied? Make trial-data/threads writable, as for trial-out in the dry-run step."},
- {t:"Providers and answer keys",d:"Type up the owner's provider list as providers.json. Then the mission lead writes one answer key per thread in trial-data/keys, before seeing any model output: every figure a provider gave, copied as written, with a sign only if the post writes one. A second lead checks one key.",
+  see:"One file per thread in trial-data/threads."},
+ {t:"Providers and answer keys",d:"Type up the owner's provider list as providers.json (Notepad is fine). Then the mission lead writes one answer key per thread in trial-data/keys, before seeing any model output: every figure a provider gave, copied as written, with a sign only if the post writes one. A second lead checks one key.",
   l:"{\n  \"providers\": {\n    \"NorthStar\": {\"aliases\": [\"North Star\"]},\n    \"KBR\": {\"aliases\": []}\n  },\n  \"authors\": {\"<mattermost username>\": \"NorthStar\"}\n}\n\n{\"thread_id\": \"<thread id>\",\n \"claims\": [{\"post_id\": \"<post id>\", \"provider\": \"NorthStar\",\n             \"quantity\": \"period_change\", \"value\": \"+25\", \"unit\": \"s\"}]}",
   see:"providers.json and 5 key files. Allowed quantities: period_change (s, min); apogee_change, perigee_change, semi_major_axis_change, range (km, m); inclination_change, longitude (deg); eccentricity_change (none); delta_v (m/s, km/s, cm/s); drift_rate (deg/day); brightness_change (mag)."},
- {t:"Run the trial",d:"Run every candidate with the network off and Holly's caps. Replace the two numbers with the owner's inputs. Allow up to an hour or so; the models run one after another.",
+ {t:"Run the trial",d:"Run every candidate with Holly's settings. Replace the two numbers with the owner's inputs. Close other heavy programs first. Allow up to an hour or so; the models run one after another.",
+  w:"cd C:\\handover-trial\\handover-trial-kit\\trial\npy -3.12 -m handover_trial run `\n  --server-exe C:\\handover-trial\\llama\\llama-server.exe `\n  --threads C:\\handover-trial\\trial-data\\threads --keys C:\\handover-trial\\trial-data\\keys `\n  --providers C:\\handover-trial\\trial-data\\providers.json `\n  --model C:\\handover-trial\\trial-data\\models\\<first>.gguf `\n  --model C:\\handover-trial\\trial-data\\models\\<second>.gguf `\n  --model C:\\handover-trial\\trial-data\\models\\<third>.gguf `\n  --holly-peak-gib <Holly's peak in GB> --shift-threads <typical threads> `\n  --out C:\\handover-trial\\trial-out\\run1",
   l:"cd ~/handover-trial\ndocker run --rm --network none --memory 4g --memory-swap 4g --cpus 2 \\\n  -v \"$PWD/trial-data:/data:ro\" -v \"$PWD/trial-out:/out\" holly-handover-trial \\\n  run --threads /data/threads --keys /data/keys --providers /data/providers.json \\\n      --model /data/models/<first>.gguf --model /data/models/<second>.gguf \\\n      --model /data/models/<third>.gguf \\\n      --holly-peak-gib <Holly's peak in GB> --shift-threads <typical threads> --out /out/run1",
-  w:"docker run --rm --network none --memory 4g --memory-swap 4g --cpus 2 `\n  -v C:\\handover-trial\\trial-data:/data:ro -v C:\\handover-trial\\trial-out:/out holly-handover-trial `\n  run --threads /data/threads --keys /data/keys --providers /data/providers.json `\n      --model /data/models/<first>.gguf --model /data/models/<second>.gguf `\n      --model /data/models/<third>.gguf `\n      --holly-peak-gib <Holly's peak in GB> --shift-threads <typical threads> --out /out/run1",
-  see:"trial-out/run1/report.md, with a GO or NO-GO per model. See Reading the report below."},
+  see:"trial-out/run1/report.md, with a GO or NO-GO per model. See Reading the report below.",
+  warnw:"The trial starts llama-server.exe for each model on 127.0.0.1 only, with 2 threads and below-normal priority, then stops it. If a firewall prompt appears, choose Cancel: the trial still works."},
  {t:"Review the misses",d:"For every wrong claim a model kept, open run-<model>.json, find the claim, read its post in the thread file and note in one line why it went wrong. The mission lead helps.",
   see:"A short list of reasons, used to improve the V0.20 instructions and checks."},
- {t:"Clean up",d:"Write the short results note (models, PASS or FAIL per mark, timings, memory), with no thread text and no real figures, and send it to the owner. Then delete all the data and results, remove the image if you're finished, and revoke any Mattermost token you made.",
+ {t:"Clean up",d:"Write the short results note (models, PASS or FAIL per mark, timings, memory), with no thread text and no real figures, and send it to the owner. Then delete the data and results, remove the tools if you're finished, and revoke any Mattermost token you made.",
+  w:"Remove-Item -Recurse -Force C:\\handover-trial\\trial-data, C:\\handover-trial\\trial-out",
   l:"rm -rf ~/handover-trial/trial-data ~/handover-trial/trial-out\ndocker image rm holly-handover-trial",
-  w:"Remove-Item -Recurse -Force C:\\handover-trial\\trial-data, C:\\handover-trial\\trial-out\ndocker image rm holly-handover-trial",
   see:"Nothing real left on the machine. Only the results note remains."}
 ];
-var os=store.get("hb-os","l"),gIdx=0;
-function setOs(v){os=v;store.set("hb-os",v);$("#osLinux").setAttribute("aria-pressed",v==="l"?"true":"false");$("#osWin").setAttribute("aria-pressed",v==="w"?"true":"false");gShow(gIdx)}
+var os=store.get("hb-os2","w"),gIdx=0;
+function setOs(v){os=v;store.set("hb-os2",v);$("#osLinux").setAttribute("aria-pressed",v==="l"?"true":"false");$("#osWin").setAttribute("aria-pressed",v==="w"?"true":"false");gShow(gIdx)}
 $("#gSteps").innerHTML=GSTEPS.map(function(x,i){return '<button type="button" data-i="'+i+'" aria-pressed="false"><span>Step '+(i+1)+'</span><b>'+x.t+'</b></button>'}).join("");
 function gShow(i){gIdx=i;var x=GSTEPS[i];$$("#gSteps button").forEach(function(b){b.setAttribute("aria-pressed",+b.getAttribute("data-i")===i?"true":"false")});
- var cmd=x[os]||x.l;
- $("#gStep").innerHTML='<div class="row" style="justify-content:space-between"><h3 style="margin:0">Step '+(i+1)+' · '+x.t+'</h3><div class="row"><button type="button" class="btn" id="gPrev"'+(i===0?" disabled":"")+'>Back</button><button type="button" class="btn primary" id="gNext"'+(i===GSTEPS.length-1?" disabled":"")+'>Next step</button></div></div><p style="margin:8px 0 4px">'+x.d+'</p>'+(cmd?cmdBlock(cmd):"")+'<div class="gstep-see"><b>You should see:</b> '+esc(x.see)+'</div>'+(x.warn?'<div class="gstep-warn">'+esc(x.warn)+'</div>':"")}
+ var cmd=os==="w"?(x.w||(x.l&&!x.dw&&x.t==="Providers and answer keys"?x.l:"")):x.l;
+ if(x.t==="Providers and answer keys")cmd=x.l;
+ var desc=(os==="w"&&x.dw)?x.dw:x.d,see=(os==="w"&&x.seew)?x.seew:x.see,warn=os==="w"?(x.warnw||(x.dw?"":x.warn)):x.warn;
+ $("#gStep").innerHTML='<div class="row" style="justify-content:space-between"><h3 style="margin:0">Step '+(i+1)+' · '+x.t+'</h3><div class="row"><button type="button" class="btn" id="gPrev"'+(i===0?" disabled":"")+'>Back</button><button type="button" class="btn primary" id="gNext"'+(i===GSTEPS.length-1?" disabled":"")+'>Next step</button></div></div><p style="margin:8px 0 4px">'+esc(desc)+'</p>'+(cmd?cmdBlock(cmd):"")+'<div class="gstep-see"><b>You should see:</b> '+esc(see)+'</div>'+(warn?'<div class="gstep-warn">'+esc(warn)+'</div>':"")}
 $("#gSteps").addEventListener("click",function(e){var b=e.target.closest("button");if(b)gShow(+b.getAttribute("data-i"))});
 $("#gStep").addEventListener("click",function(e){if(e.target.id==="gNext"){gShow(Math.min(GSTEPS.length-1,gIdx+1));$("#gNext")&&$("#gNext").focus()}else if(e.target.id==="gPrev"){gShow(Math.max(0,gIdx-1));$("#gPrev")&&$("#gPrev").focus()}});
 $("#osLinux").addEventListener("click",function(){setOs("l")});$("#osWin").addEventListener("click",function(){setOs("w")});
-setOs(os==="w"?"w":"l");
+setOs(os==="l"?"l":"w");
 
 var COLS=[["Go","Did the model clear every pass mark?","GO"],["Found","The lead's figures it found, and the percentage.","80% or more"],["Precision","Of the figures it kept, how many were right.","High; anything below 100% is explained by the next two columns"],["Wrong provider","Figures it credited to the wrong provider.","0"],["Unsupported kept","Figures kept that are not written in their post.","Always 0. Anything else is a fault in the checks: stop and report it"],["Load s","Seconds to load the model.","For information"],["Mean s per thread","Average seconds to read one thread.","For information"],["Shift s","Load time plus a typical shift's threads.","300 or less"],["Peak GiB","The most memory the model used.","For information"],["Spare GiB","4 GiB, minus Holly's peak, minus the model's peak.","1 or more"],["Responsiveness","Under each model: how much slower a small fixed task ran while the model worked, a guide to how sluggish Holly would feel.","Reported, not marked, until real numbers are in"]];
 $("#gCols").innerHTML=COLS.map(function(c,i){return '<button type="button" data-i="'+i+'" aria-pressed="false">'+c[0]+'</button>'}).join("");
@@ -1347,6 +1359,10 @@ $("#gCols").addEventListener("click",function(e){var b=e.target.closest("button"
 colShow(0);
 
 $("#gTrouble").innerHTML=[
+ ["\u201cpy\u201d is not recognised (Route A)","Python is not installed, or not on the PATH.","Re-run the Python installer and tick Add python.exe to PATH, then open a new PowerShell window."],
+ ["Windows blocks llama-server.exe, or it vanishes after unzipping (Route A)","Windows security does not allow unsigned programs.","Ask IT to allow that one folder, or use another computer. Don't work around it."],
+ ["A missing .dll message, such as VCRUNTIME140.dll (Route A)","The Microsoft Visual C++ runtime is missing.","Ask IT to install the Microsoft Visual C++ Redistributable, which needs admin rights."],
+ ["\u201cllama-server stopped while loading\u201d (Route A)","A wrong model path, a damaged model file, or not enough memory.","Check the path and the fingerprint. If memory ran out, the model is too big: a valid NO-GO."],
  ["\u201crange of CPUs is from 0.01 to 1.00\u201d, or similar","The machine, or Docker Desktop, has fewer CPUs than the trial asks for.","Give Docker Desktop at least 2 CPUs, or use a machine with 2 or more cores. Don't lower --cpus, or the timings won't reflect Holly."],
  ["\u201cno result within ... or the child died (exit -9)\u201d","The model ran out of its 4 GB and was stopped.","That model is too big for Holly. It is a valid NO-GO: record it and carry on."],
  ["\u201cPermission denied\u201d writing to /out","The trial runs as an ordinary user and cannot write to the output folder.","Make trial-out writable: chmod 777 on Linux or macOS, or check the folder's sharing in Docker Desktop."],

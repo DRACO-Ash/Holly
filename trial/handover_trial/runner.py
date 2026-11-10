@@ -14,7 +14,6 @@ import hashlib
 import json
 import multiprocessing as mp
 import os
-import resource
 import statistics
 import threading
 import time
@@ -24,13 +23,15 @@ from typing import Any
 
 from .backend import Backend, LlamaBackend, StubBackend
 from .claims import Providers, Thread, check, parse_claims
+from .server import ServerBackend, ServerProcess
 from .threads import chunks
 
 
 @dataclass
 class ModelSpec:
-    kind: str  # "llama" or "stub"
+    kind: str  # "llama" (in the container), "server" (llama-server, no container) or "stub"
     path: str
+    server: tuple[str, ...] = ()  # the command that starts llama-server, for kind "server"
     threads: int = 2
     context: int = 4096
     max_tokens: int = 768
@@ -88,18 +89,54 @@ def _read_thread(
 
 def _child(spec: ModelSpec, threads: list[Thread], providers: Providers, out: Any) -> None:
     try:
-        if spec.nice:
+        if spec.nice and hasattr(os, "nice"):
             os.nice(spec.nice)  # yield the CPUs to Holly's own work, as the run would in Holly
         started = time.monotonic()
         backend = _build(spec)
         load = round(time.monotonic() - started, 2)
         results = [_read_thread(backend, t, providers, spec) for t in threads]
-        peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024  # KiB on Linux
+        peak = _own_peak_mib()
         out.put(asdict(RunResult(backend.name, load, round(peak, 1), results)))
     except Exception as exc:  # noqa: BLE001  any failure is reported, never hidden
         out.put(
             asdict(RunResult(Path(spec.path).name, 0.0, 0.0, [], f"{type(exc).__name__}: {exc}"))
         )
+
+
+def _own_peak_mib() -> float:
+    try:
+        import resource  # noqa: PLC0415  not on Windows
+
+        return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024  # KiB on Linux
+    except ImportError:
+        return 0.0
+
+
+def _run_server(
+    spec: ModelSpec, threads: list[Thread], providers: Providers, timeout_s: float
+) -> dict[str, Any]:
+    """The no-container route: start llama-server, read every thread through it, stop it."""
+    name = Path(spec.path).name
+    server = None
+    probe = None
+    try:
+        started = time.monotonic()
+        server = ServerProcess(list(spec.server), Path(spec.path), spec.threads, spec.context)
+        server.wait_ready(min(timeout_s, 600))
+        load = round(time.monotonic() - started, 2)
+        probe = _Probe()
+        probe.start()
+        backend = ServerBackend(server.url, name, spec.max_tokens)
+        results = [_read_thread(backend, t, providers, spec) for t in threads]
+        peak = server.peak_mib()
+        result = asdict(RunResult(name, load, round(peak, 1), results))
+    except Exception as exc:  # noqa: BLE001  any failure is reported, never hidden
+        result = asdict(RunResult(name, 0.0, 0.0, [], f"{type(exc).__name__}: {exc}"))
+    finally:
+        if server is not None:
+            server.stop()
+    result["probe"] = probe.stop() if probe else {}
+    return result
 
 
 _PROBE_DATA = b"\x00" * (256 * 1024)
@@ -147,6 +184,8 @@ def run_model(
 ) -> dict[str, Any]:
     """The child's results, or an error when it crashed or overran `timeout_s`, with how much
     slower the parent's fixed task ran meanwhile."""
+    if spec.kind == "server":
+        return _run_server(spec, threads, providers, timeout_s)
     ctx = mp.get_context("spawn")
     out = ctx.Queue()
     probe = _Probe()
