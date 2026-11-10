@@ -80,3 +80,5 @@ review security-reviewer FAIL 7fa3c019104ec280280df32d6be9ca835ea21b41 # V0.19, 
 review engineering-reviewer PASS 7fa3c019104ec280280df32d6be9ca835ea21b41 # V0.19, round 3: 4 minor (failed-load guard untested, one error slot, timers in the manual, all-blank key)
 review security-reviewer PASS 74e2c54d8c4451703874f621f8a6bc0cb84f465c # V0.19, round 4: 2 minor (shared-module check missed relative and dynamic imports, control-character key)
 review engineering-reviewer FAIL 74e2c54d8c4451703874f621f8a6bc0cb84f465c # V0.19, round 4: stale load alert, key storability and own-id branch unpinned
+review engineering-reviewer PASS 644213d805d1f6aae552c5a52cea75dc46ee5e26 # V0.19, round 5: 3 minor (DEL unpinned, dead alias clause, exec and eval not followed)
+review security-reviewer PASS 644213d805d1f6aae552c5a52cea75dc46ee5e26 # V0.19, round 5: 2 minor (from-importlib not flagged, dead alias clause)
