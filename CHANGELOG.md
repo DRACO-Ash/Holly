@@ -19,7 +19,7 @@ The first release of the Handover module (`docs/roadmap/handover-module.md`): ea
 ● **Suggested threads.** Holly offers chat threads, in channels not switched off, that mention one of the object's NOTSO numbers or its catalogue number. A lead confirms or rejects each; only a confirmed thread joins the story, and a decided thread is not offered again. Decisions are audited.
 ● **Notes on an object**, added and deleted from the Handover page, both audited.
 ● Routes under `/api/v1/handover`, signed-in users only.
-● Migration `0020_handover_story`: the thread each chat post belongs to (copied from each stored post where it is a plain id), an index on notices' satellite lists, and the `handover_thread_link` and `handover_note` tables.
+● Migration `0020_handover_story`: the thread each chat post belongs to (copied from each stored post where it is a plain id), indexes on notices' satellite lists and event ids, and the `handover_thread_link` and `handover_note` tables.
 
 ### Security
 

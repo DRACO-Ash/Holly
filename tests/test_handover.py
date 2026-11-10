@@ -469,6 +469,8 @@ class TestTheStory:
         assert body["truncated"] is False
         posts_sql = sent(session, 3)
         assert "row_number() OVER (PARTITION BY coalesce(" in posts_sql
+        assert "anon_1.rank <=" in posts_sql
+        assert story.POSTS_PER_THREAD + 1 in params(session, 3).values()
         assert "mattermost_message.root_id IN" in posts_sql
         assert "mattermost_channel.following IS false" in posts_sql
         assert "event_timer.dismissed_at IS NULL" in sent(session, 5)
@@ -576,6 +578,10 @@ class TestTheLinkDecisions:
             "event_key": "EVT-1",
             "decision": "confirmed",
         }
+        notice_sql = sent(session, 0)
+        assert "notification.event_id =" in notice_sql
+        assert "LIMIT" in notice_sql
+        assert 50 in params(session, 0).values()
         assert "mattermost_channel.following IS false" in sent(session, 1)
         assert "mattermost_message.root_id IN" in sent(session, 1)
         upsert = sent(session, 2)
@@ -601,7 +607,11 @@ class TestTheLinkDecisions:
         session = use_session(FakeSession([MagicMock()]))
         body = {"thread_id": "gone", "event_key": "EVT-GONE", "decision": "clear"}
         assert (await api.post(LINKS, json=body)).status_code == 200
-        assert sent(session, 0).startswith("DELETE FROM handover_thread_link")
+        delete_sql = sent(session, 0)
+        assert delete_sql.startswith("DELETE FROM handover_thread_link")
+        assert "handover_thread_link.thread_id =" in delete_sql
+        assert "handover_thread_link.event_key =" in delete_sql
+        assert set(params(session, 0).values()) == {"gone", "EVT-GONE"}
         assert audits[0].after_commit is False
 
     @pytest.mark.parametrize(
@@ -714,14 +724,30 @@ class TestTheNotes:
         assert (await api.delete(f"/api/v1/handover/notes/{uuid.uuid4()}")).status_code == 404
 
 
-HANDOVER_MODULES = ["app.api.v1.routes.handover", "app.services.handover.story"]
-BANNED = ("app.services.claude", "app.services.assistant", "anthropic")
+HANDOVER_FILES = sorted(
+    [
+        ROOT / "src/app/api/v1/routes/handover.py",
+        *(ROOT / "src/app/services/handover").glob("*.py"),
+    ]
+)
+HANDOVER_MODULES = [
+    ".".join(path.relative_to(ROOT / "src").with_suffix("").parts) for path in HANDOVER_FILES
+]
+BANNED = (
+    "app.services.claude",
+    "app.services.assistant",
+    "app.services.event_summary",
+    "app.api.v1.routes.assistant",
+    "anthropic",
+)
 
 
-def test_loading_the_handover_modules_loads_no_assistant() -> None:
+def test_loading_every_handover_module_loads_no_assistant() -> None:
     """Handover reads chat; the assistant sends text to an outside AI service. The two never
     meet: importing every Handover module, in a fresh interpreter, must load none of the
-    assistant, its client or the Anthropic library, however they are reached."""
+    assistant, its client or the Anthropic library, however they are reached. With every
+    import at module level (the test below), loading is the whole of what a module imports."""
+    assert "app.services.handover.story" in HANDOVER_MODULES
     script = (
         "import sys\n"
         + "".join(f"import {m}\n" for m in HANDOVER_MODULES)
@@ -738,22 +764,57 @@ def test_loading_the_handover_modules_loads_no_assistant() -> None:
     assert result.stdout.strip() == "[]", result.stderr
 
 
-def test_no_handover_module_imports_by_any_other_route() -> None:
-    """No relative import, importlib or __import__ in a Handover module, so the check above
-    sees everything it loads."""
-    files = [
-        ROOT / "src/app/api/v1/routes/handover.py",
-        *(ROOT / "src/app/services/handover").glob("*.py"),
-    ]
-    assert len(files) >= 4
-    for path in files:
-        source = path.read_text(encoding="utf-8")
-        assert "importlib" not in source, path
-        assert "__import__" not in source, path
-        for node in ast.walk(ast.parse(source)):
-            if isinstance(node, ast.ImportFrom):
-                assert node.level == 0, path
-            names = [a.name for a in node.names] if isinstance(node, ast.Import) else []
-            if isinstance(node, ast.ImportFrom) and node.module:
-                names = [node.module]
-            assert not any(n == b or n.startswith(f"{b}.") for n in names for b in BANNED), path
+def _imported_names(node: ast.AST) -> list[str]:
+    if isinstance(node, ast.Import):
+        return [a.name for a in node.names]
+    if isinstance(node, ast.ImportFrom) and node.module:
+        return [node.module, *(f"{node.module}.{a.name}" for a in node.names)]
+    return []
+
+
+def import_problems(source: str) -> list[str]:
+    """What is wrong with how a Handover module imports: an import inside a function or class,
+    which loading would not run; a relative import, importlib or __import__; or a banned module
+    named directly, as a module or as a name imported from its package."""
+    problems = [word for word in ("importlib", "__import__") if word in source]
+    tree = ast.parse(source)
+    top_level = {id(node) for node in tree.body}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Import | ast.ImportFrom):
+            continue
+        if id(node) not in top_level:
+            problems.append(f"line {node.lineno}: not at module level")
+        if isinstance(node, ast.ImportFrom) and node.level:
+            problems.append(f"line {node.lineno}: relative import")
+        names = _imported_names(node)
+        if any(n == b or n.startswith(f"{b}.") for n in names for b in BANNED):
+            problems.append(f"line {node.lineno}: banned import")
+    return problems
+
+
+def test_every_handover_import_is_at_module_level_and_plain() -> None:
+    assert len(HANDOVER_FILES) >= 4
+    for path in HANDOVER_FILES:
+        assert import_problems(path.read_text(encoding="utf-8")) == [], path
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "def f():\n    from app.services import assistant\n",
+        "def f():\n    import json\n",
+        "from app.services import assistant\n",
+        "from app.services import event_summary\n",
+        "from app.api.v1.routes import assistant\n",
+        "from . import story\n",
+        "import anthropic\n",
+        "import importlib\n",
+        "x = __import__('json')\n",
+    ],
+)
+def test_the_import_guard_refuses_each_way_round_it(source: str) -> None:
+    assert import_problems(source) != []
+
+
+def test_the_import_guard_allows_a_plain_module_level_import() -> None:
+    assert import_problems("import json\nfrom app.models.handover import HandoverNote\n") == []

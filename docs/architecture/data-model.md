@@ -122,6 +122,7 @@ UDL re-publishes the same logical notice many times, and each publication is its
 ● `ix_notification_notice_id`, `ix_notification_msg_type`, `ix_notification_effective_from`, `ix_notification_sat_no`: the original query indexes.
 ● `ix_notification_notso_identifier`, `ix_notification_status`, `ix_notification_event_type`, `ix_notification_publish_date`: added at migration `0006`.
 ● `ix_notification_sat_ids`: a GIN index (`jsonb_path_ops`) on `sat_ids`, for finding an object's notices by containment on the Handover page; added at migration `0020`.
+● `ix_notification_event_id`: on `event_id`, so a Handover link decision finds its notice without a scan; added at migration `0020`.
 
 **Querying `sat_ids`**
 

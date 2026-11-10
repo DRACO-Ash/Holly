@@ -134,6 +134,7 @@ def test_the_handover_story_adds_thread_ids_links_and_notes() -> None:
         "CREATE INDEX ix_notification_sat_ids ON notification USING gin (sat_ids jsonb_path_ops)"
         in sql
     )
+    assert "CREATE INDEX ix_notification_event_id ON notification (event_id)" in sql
     assert "CONSTRAINT uq_handover_thread_link UNIQUE (thread_id, event_key)" in sql
     assert (
         "CONSTRAINT ck_handover_thread_link_decision CHECK (decision IN ('confirmed', 'rejected'))"
@@ -142,6 +143,7 @@ def test_the_handover_story_adds_thread_ids_links_and_notes() -> None:
     assert "CREATE TABLE handover_note (" in sql
     down = offline_sql("downgrade", "0020_handover_story:0019_mattermost_channel")
     assert "DROP TABLE handover_thread_link" in down
+    assert "DROP INDEX ix_notification_event_id" in down
     assert "ALTER TABLE mattermost_message DROP COLUMN root_id" in down
 
 

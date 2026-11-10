@@ -108,7 +108,7 @@ From V0.19 back to V0.18, migration 0020 is undone the same way, in the running 
 python -c "from alembic import command; from app.migrate import alembic_config; command.downgrade(alembic_config(), '0019_mattermost_channel')"
 ```
 
-It drops `handover_thread_link` and `handover_note`, every link decision and Handover note, and the thread ids on chat posts, and keeps every post. The page has no export: copy any note the team needs from the page first, or, with database access, dump the two tables (`pg_dump --table=handover_note --table=handover_thread_link`). V0.18 has no Handover page, so nothing else changes.
+It drops `handover_thread_link` and `handover_note`, every link decision and Handover note, the thread ids on chat posts and the two new notification indexes, and keeps every post. The page has no export: copy any note the team needs from the page first, or, with database access, dump the two tables (`pg_dump --table=handover_note --table=handover_thread_link`). V0.18 has no Handover page, so nothing else changes.
 
 ### Deployment parameters
 
@@ -237,7 +237,7 @@ Since V0.19 the **Handover** page tells each object's story from what Holly alre
 ● `POST /api/v1/handover/thread-links` records a lead's decision on a thread and a notice (`confirmed` or `rejected`), or forgets one (`clear`). To decide, Holly must hold the notice and a post of the thread in a channel not switched off; clearing needs neither, so a decision can be undone after its notice or thread is gone. Audit action `handover.thread_link`.
 ● `POST /api/v1/handover/objects/{catalogue number}/notes` and `DELETE /api/v1/handover/notes/{id}` add and delete analysts' notes. Audit actions `handover.note.create`, with the note's length but not its text, and `handover.note.delete`. Any signed-in user may delete any note, as with shift log entries.
 
-Migration `0020_handover_story` adds `mattermost_message.root_id`, the thread a reply belongs to, and copies it from each stored post's payload where it is a plain id; it also indexes `notification.sat_ids` and creates `handover_thread_link` and `handover_note`. The story query reads the notices in the window with no index on `udl_created_at`, like the activity overview; measured load `TBC, re-verify`.
+Migration `0020_handover_story` adds `mattermost_message.root_id`, the thread a reply belongs to, and copies it from each stored post's payload where it is a plain id; it also indexes `notification.sat_ids` and `notification.event_id`, and creates `handover_thread_link` and `handover_note`. The story query reads the notices in the window with no index on `udl_created_at`, like the activity overview; measured load `TBC, re-verify`.
 
 ## Accounts
 

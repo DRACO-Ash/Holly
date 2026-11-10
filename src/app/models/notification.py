@@ -69,6 +69,7 @@ class Notification(Base, UUIDPrimaryKeyMixin, UDLEnvelopeMixin, TimestampMixin):
     __table_args__ = (
         UniqueConstraint("udl_id", name="uq_notification_udl_id"),
         Index("ix_notification_notice_id", "notice_id"),
+        Index("ix_notification_event_id", "event_id"),
         Index("ix_notification_msg_type", "msg_type"),
         Index("ix_notification_effective_from", "effective_from"),
         Index("ix_notification_sat_no", "sat_no"),

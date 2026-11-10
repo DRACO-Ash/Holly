@@ -5,7 +5,8 @@ proposal, docs/roadmap/handover-module.md). Four changes:
 
 - `mattermost_message.root_id`, the Mattermost thread a reply belongs to, so posts group into
   threads. It was only inside `raw`; posts already held get it from there when it is a plain id.
-- A GIN index on `notification.sat_ids`, so an object's notices are found by containment.
+- A GIN index on `notification.sat_ids`, so an object's notices are found by containment, and an
+  index on `notification.event_id`, so a link decision finds its notice without a scan.
 - `handover_thread_link`: a mission lead's decision that a chat thread is, or is not, about a
   logical notice (its group key). Holly only suggests a link; only a confirmed one is used.
 - `handover_note`: an analyst's free-text note on an object, by catalogue number.
@@ -64,6 +65,7 @@ def upgrade() -> None:
         postgresql_using="gin",
         postgresql_ops={"sat_ids": "jsonb_path_ops"},
     )
+    op.create_index("ix_notification_event_id", "notification", ["event_id"])
     op.create_table(
         "handover_thread_link",
         sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True),
@@ -95,6 +97,7 @@ def downgrade() -> None:
     op.drop_table("handover_note")
     op.drop_index("ix_handover_thread_link_event_key", table_name="handover_thread_link")
     op.drop_table("handover_thread_link")
+    op.drop_index("ix_notification_event_id", table_name="notification")
     op.drop_index("ix_notification_sat_ids", table_name="notification")
     op.drop_index("ix_mattermost_message_root_id", table_name="mattermost_message")
     op.drop_column("mattermost_message", "root_id")
