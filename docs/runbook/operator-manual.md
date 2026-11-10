@@ -4,8 +4,8 @@
 
 **Data classification:** Unclassified (per ADR-006)
 **Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned the edition this one replaces)
-**Version:** 0.8
-**Last updated:** 2026-10-20
+**Version:** 0.9
+**Last updated:** 2026-11-10
 **Audience:** Operators and on-call engineers responsible for keeping Holly healthy on the Bluestaq App Store.
 
 > **BLUF**
@@ -101,6 +101,14 @@ python -c "from alembic import command; from app.migrate import alembic_config; 
 ```
 
 It drops `mattermost_channel`, the channel list and who followed what, and keeps every message. V0.11 then pulls the channels `MATTERMOST_CHANNEL_IDS` names, so set it to the channels to keep first. Both releases check the token version, so this step needs no key rotation.
+
+From V0.19 back to V0.18, migration 0020 is undone the same way, in the running V0.19 container, immediately before V0.18 is deployed:
+
+```sh
+python -c "from alembic import command; from app.migrate import alembic_config; command.downgrade(alembic_config(), '0019_mattermost_channel')"
+```
+
+It drops `handover_thread_link` and `handover_note`, every link decision and Handover note, and the thread ids on chat posts, and keeps every post. Export anything the team needs from the Handover page first. V0.18 has no Handover page, so nothing else changes.
 
 ### Deployment parameters
 
@@ -219,6 +227,17 @@ The Dashboard, Notifications, a notice's page and Maneuvers draw from one read-o
 Each list is capped: the newest 1,000 notices and 2,000 maneuvers, and element sets for 2,000 satellites, those with the lowest catalogue numbers. When a cap is reached the answer says so and the views say what they left out. A notice's satellite list is cut to 50 ids of 32 characters each. Each open console view asks for it once a minute, so its database load grows with the number of open browsers. Inference: four queries each time, the notices' one scanning the window without an index on `udl_created_at` (as the Dashboard feed already does); measured load `TBC, re-verify`. If it shows, an index on `notification.udl_created_at` is the remedy, in a later release.
 
 Maneuver values beyond the typed columns (status, characterisation, end time, delta-v and position, orbit before and after) are read from each stored record's raw UDL payload with the UDL maneuver schema's field names, at read time, so no migration is needed. Those names and their units are `TBC, re-verify` against a KBR or NorthStar record: open a maneuver on the Maneuvers page and compare its values with its raw record.
+
+## The Handover tab
+
+Since V0.19 the **Handover** page tells each object's story from what Holly already holds. Its routes sit under `/api/v1/handover`, signed-in users only, and none calls the assistant or anything outside Holly; a test fails the build if a Handover module imports the assistant (`tests/test_handover.py`).
+
+● `GET /api/v1/handover/objects?hours=` lists the objects the notices in the window name (default `BACKGROUND_NOTIFICATION_WINDOW_HOURS`, 1 to 336), from the latest publication of the newest 1,000 notices, with each object's provider record count.
+● `GET /api/v1/handover/objects/{catalogue number}` tells one object's story: up to 500 notice publications and 300 maneuver records in the window, up to 20 confirmed threads of 100 posts each, the timers on its notices and up to 200 notes. It also searches up to 500 posts in the window, in channels not switched off, for the object's NOTSO numbers (4 characters or more) or its catalogue number as a whole number, and offers up to 20 undecided threads. When a cap is reached the answer says so.
+● `POST /api/v1/handover/thread-links` records a lead's decision on a thread and a notice (`confirmed`, `rejected`, or `clear` to forget it); both must be ones Holly holds. Audit action `handover.thread_link`.
+● `POST /api/v1/handover/objects/{catalogue number}/notes` and `DELETE /api/v1/handover/notes/{id}` add and delete analysts' notes. Audit actions `handover.note.create`, with the note's length but not its text, and `handover.note.delete`. Any signed-in user may delete any note, as with shift log entries.
+
+Migration `0020_handover_story` adds `mattermost_message.root_id`, the thread a reply belongs to, and copies it from each stored post's payload where it is a plain id; it also indexes `notification.sat_ids` and creates `handover_thread_link` and `handover_note`. The story query reads the notices in the window with no index on `udl_created_at`, like the activity overview; measured load `TBC, re-verify`.
 
 ## Accounts
 

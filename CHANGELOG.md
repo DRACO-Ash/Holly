@@ -9,6 +9,22 @@
 
 All notable changes to Holly are recorded here, newest first. Holly V0.2 is the Daily Operations Dashboard fused into the Holly App Store project and renamed; the sections after it are the Daily Operations Dashboard's own record, kept as written. Holly's releases are numbered V<major>.<minor>, and each has a row in `docs/AUDIT-LOG.md` with the checks that ran.
 
+## Holly V0.19 (2026-11-10)
+
+The first release of the Handover module (`docs/roadmap/handover-module.md`): each object's story, told from what Holly already holds. The owner decided on 10 November 2026 to skip the Phase 0 local-model trial and go straight to this release, which uses no language model.
+
+### Added
+
+● **The Handover page.** A list of the objects the notices in the window name, newest first, with a search. Picking one tells its story oldest first, grouped by UTC day: every notice publication, each provider's maneuver record with the period, apogee, perigee, delta-v and longitude changes it states, every post of each confirmed chat thread, and analysts' notes, each with its source. Timers set against its notices are listed.
+● **Suggested threads.** Holly offers chat threads, in channels not switched off, that mention one of the object's NOTSO numbers or its catalogue number. A lead confirms or rejects each; only a confirmed thread joins the story, and a decided thread is not offered again. Decisions are audited.
+● **Notes on an object**, added and deleted from the Handover page, both audited.
+● Routes under `/api/v1/handover`, signed-in users only.
+● Migration `0020_handover_story`: the thread each chat post belongs to (copied from each stored post where it is a plain id), an index on notices' satellite lists, and the `handover_thread_link` and `handover_note` tables.
+
+### Security
+
+● Nothing on the Handover page calls the assistant or anything outside Holly. A test fails the build if a Handover module imports the assistant, its client or the Anthropic library.
+
 ## Holly V0.18 (2026-11-03)
 
 A fix for V0.17's failed upload: the Code Quality stage found 2 new code smells in the dashboard's lint configuration.

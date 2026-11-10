@@ -4,12 +4,12 @@
 
 **Data classification:** Unclassified (per ADR-006)
 **Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned the edition this one replaces)
-**Version:** 0.5
-**Last updated:** 2026-10-20
+**Version:** 0.6
+**Last updated:** 2026-11-10
 
 > **BLUF**
 >
-> Two PostgreSQL schemas. `public` holds Holly's operational data in 12 tables. `audit` holds the hash-chained audit trail, which a trigger keeps append-only. The 17 Alembic migrations in `src/app/migrations` define every table, and the container applies them automatically when it starts.
+> Two PostgreSQL schemas. `public` holds Holly's operational data in 15 tables. `audit` holds the hash-chained audit trail, which a trigger keeps append-only. The 20 Alembic migrations in `src/app/migrations` define every table, and the container applies them automatically when it starts.
 
 **SECTION 01**
 
@@ -121,6 +121,7 @@ UDL re-publishes the same logical notice many times, and each publication is its
 ● `uq_notification_udl_id`: unique constraint on `udl_id`, the upsert's conflict target.
 ● `ix_notification_notice_id`, `ix_notification_msg_type`, `ix_notification_effective_from`, `ix_notification_sat_no`: the original query indexes.
 ● `ix_notification_notso_identifier`, `ix_notification_status`, `ix_notification_event_type`, `ix_notification_publish_date`: added at migration `0006`.
+● `ix_notification_sat_ids`: a GIN index (`jsonb_path_ops`) on `sat_ids`, for finding an object's notices by containment on the Handover page; added at migration `0020`.
 
 **Querying `sat_ids`**
 
@@ -186,11 +187,12 @@ Posts from the Mattermost channels Holly follows (`mattermost_channel`, below), 
 | `posted_at` | timestamptz | no | The post's `create_at`. Indexed. |
 | `message` | text | no | The post text. |
 | `post_type` | varchar(50) | yes | Mattermost post type. |
+| `root_id` | varchar(64) | yes | The root post of the thread a reply belongs to; null on a root post. A plain id only (migration `0020`, which copied it from `raw` for posts already held). Indexed. |
 | `raw` | jsonb | no | The post as Mattermost returned it. |
 | `created_at` | timestamptz | no | Row creation time. |
 | `updated_at` | timestamptz | no | Row update time. |
 
-**Constraints and indexes:** `uq_mattermost_message_post_id` (unique on `mm_post_id`), `ix_mattermost_message_channel_id`, `ix_mattermost_message_posted_at`, `ix_mattermost_message_user_id`.
+**Constraints and indexes:** `uq_mattermost_message_post_id` (unique on `mm_post_id`), `ix_mattermost_message_channel_id`, `ix_mattermost_message_posted_at`, `ix_mattermost_message_user_id`, `ix_mattermost_message_root_id`.
 
 ### `mattermost_channel`
 
@@ -336,6 +338,38 @@ Countdown timers analysts set for upcoming events, with a pre-alert and an optio
 
 **Indexes:** `ix_event_timer_target_time`, `ix_event_timer_dismissed_at`, `ix_event_timer_event_key`.
 
+### `handover_thread_link`
+
+A mission lead's decision that a chat thread is, or is not, about a logical notice, from the Handover page (migration `0020`). Holly only suggests links; a thread joins an object's story only once confirmed, and a decided thread is not suggested again.
+
+| Column | Type | Nullable | Notes |
+|--------|------|----------|-------|
+| `id` | UUID | no | Primary key. |
+| `thread_id` | varchar(64) | no | The thread's root post id (`mattermost_message.root_id`, else the post's own id). |
+| `event_key` | varchar(200) | no | The notice's group key: event id, else NOTSO number, else UDL id. Indexed. |
+| `decision` | varchar(16) | no | `confirmed` or `rejected` (check constraint). |
+| `decided_by` | UUID | yes | Foreign key to `app_user.id`, `ON DELETE SET NULL`. |
+| `decided_at` | timestamptz | no | When the latest decision was made. |
+| `created_at` | timestamptz | no | Row creation time. |
+| `updated_at` | timestamptz | no | Row update time. |
+
+**Constraints and indexes:** `uq_handover_thread_link` (unique on `thread_id`, `event_key`), `ck_handover_thread_link_decision`, `ix_handover_thread_link_event_key`.
+
+### `handover_note`
+
+An analyst's note on one object, by catalogue number, from the Handover page (migration `0020`).
+
+| Column | Type | Nullable | Notes |
+|--------|------|----------|-------|
+| `id` | UUID | no | Primary key. |
+| `sat_no` | integer | no | The object's catalogue number. Indexed. |
+| `author_id` | UUID | yes | Foreign key to `app_user.id`, `ON DELETE SET NULL`. |
+| `text` | text | no | Stored trimmed; 1 to 4,000 characters PostgreSQL can store. |
+| `created_at` | timestamptz | no | Row creation time. |
+| `updated_at` | timestamptz | no | Row update time. |
+
+**Indexes:** `ix_handover_note_sat_no`.
+
 **SECTION 05**
 
 ## Tables in `public`: identity
@@ -404,7 +438,7 @@ The hash chain, the advisory-lock concurrency control, the action types and the 
 All schema changes are Alembic migrations, packaged with the application:
 
 ● [src/app/migrations/env.py](../../src/app/migrations/env.py): async-aware. It imports every model, reads the database URL from the settings, and runs each migration session under a PostgreSQL advisory lock (`0x484F4C4C`), so two containers starting together cannot migrate at once.
-● [src/app/migrations/versions/](../../src/app/migrations/versions/): one file per migration, `0001_create_elset` to `0019_mattermost_channel`, in one linear history.
+● [src/app/migrations/versions/](../../src/app/migrations/versions/): one file per migration, `0001_create_elset` to `0020_handover_story`, in one linear history.
 ● [src/app/migrations/columns.py](../../src/app/migrations/columns.py): column groups the migrations share. Frozen, because migrations that have already run import it; a new shape gets a new function.
 ● [alembic.ini](../../alembic.ini) at the repository root serves the developer's `alembic` command line: `script_location = %(here)s/src/app/migrations` and `prepend_sys_path = %(here)s/src`. The container does not use it.
 

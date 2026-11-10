@@ -4,13 +4,13 @@
 
 **Data classification:** Unclassified (per ADR-006)
 **Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned the edition this one replaces)
-**Version:** 0.7
-**Last updated:** 2026-10-20
+**Version:** 0.8
+**Last updated:** 2026-11-10
 **Audience:** Watch analysts new to Holly, plus the trainers delivering induction. Sections labelled **Trainer note** are for delivery, not for the trainee handout.
 
 > **BLUF**
 >
-> Holly pulls UDL notifications and manoeuvre records and the team's Mattermost chat in the background, has an assistant evaluate each new notice cleared for it against your uploaded procedures, and shows what needs your attention first. This manual walks the trainee through signing in, the Dashboard, Notifications, Maneuvers, Comms and Procedures pages, the shift log and event timers, common workflows, and what to do when something goes wrong.
+> Holly pulls UDL notifications and manoeuvre records and the team's Mattermost chat in the background, has an assistant evaluate each new notice cleared for it against your uploaded procedures, and shows what needs your attention first. This manual walks the trainee through signing in, the Dashboard, Notifications, Maneuvers, Comms, Handover and Procedures pages, the shift log and event timers, common workflows, and what to do when something goes wrong.
 
 **SECTION 01**
 
@@ -70,7 +70,7 @@ You stay signed in while you use Holly: your 30-minute access renews itself in t
 
 ● **The header** shows Holly, two screen effects, your username, **Help** and **Sign out**. **Help** opens this manual in Holly, with its contents beside it: type in **Find a section** to narrow them, select a section to jump to it, and select **Print or save as PDF** for a paper or PDF copy, which your browser's print dialogue saves. Operators and administrators can switch to the operator manual there too. **Scanlines** gives the screen the fine horizontal lines of an old cathode ray tube (CRT) monitor: behind the text, and across the page titles and the dashboard's counts. **CRT flicker** makes the screen flicker faintly. Scanlines start on and flicker starts off; each choice is kept in your browser only. If your computer is set to reduce motion, flicker stays off and its box is greyed out.
 ● **The timer banner**, under the header, appears on every page while an event timer is firing, and when sound alerts are not yet enabled.
-● **The side navigation** lists **Dashboard**, **Notifications**, **Maneuvers**, **Comms**, **Procedures**, **Shift log** and **Password**. Operators and administrators also see **Audit log**, and administrators **Users**.
+● **The side navigation** lists **Dashboard**, **Notifications**, **Maneuvers**, **Comms**, **Handover**, **Procedures**, **Shift log** and **Password**. Operators and administrators also see **Audit log**, and administrators **Users**.
 
 Times are shown in UTC unless a field says otherwise.
 
@@ -184,6 +184,27 @@ The assistant reads up to 30 messages from the last 6 hours as soft context when
 
 **SECTION 09**
 
+## The Handover page
+
+The Handover page helps you hand an event over with its whole story, not a one-line "NOTSO released". It reads only what Holly already holds and sends nothing outside Holly: no assistant, no outside AI service.
+
+**The object list**, on the left, shows every object a notice in the last 120 hours names, newest first: its name and catalogue number, the kinds of event, how many notices and provider records Holly holds, and when the latest notice arrived. Type in **Find an object** to narrow it by name, number or kind. An object counts when a notice lists it among its satellites or names it in brackets in its event class, so both objects of an RPO appear.
+
+**The story**, on the right, opens when you select an object. It shows, oldest first and grouped by UTC day:
+
+● every publication of every notice about the object, so you can see how the event developed;
+● each provider's manoeuvre record, with the changes it states: period, apogee, perigee, delta-v and longitude;
+● every post of each chat thread a lead has confirmed belongs to the object;
+● the notes analysts have added.
+
+Each item says where it came from under **Source**, such as `NOTSO · UDL` with the record's UDL id, `Provider record · UDL`, `Mattermost` with its channel, or `Analyst note`. Timers set against the object's notices are listed above the story.
+
+**Threads that may belong here** lists chat threads that mention one of the object's NOTSO numbers, or its catalogue number as a whole number, in a followed channel. Holly only suggests them: read the first matching post, then select **Confirm this thread** if it is about this object, or **Not this one** if it is not. Only a confirmed thread joins the story, and a thread you have decided on is not suggested again. Your decision is recorded in the audit log with your name.
+
+**Notes:** type in **Add a note to this object's story** and select **Add note**. The note joins the story with your username. **Delete note** asks you to confirm first; the audit log records both.
+
+**SECTION 10**
+
 ## The Procedures page
 
 Your team's procedures, which the assistant reads every time it evaluates a notice.
@@ -201,7 +222,7 @@ A file can be at most 10 MB. Holly refuses an empty file, and a file whose conte
 ● **Download** saves the file under its original name.
 ● **Delete** removes the procedure and its file, after you confirm. This cannot be undone, and any signed-in user can delete any procedure.
 
-**SECTION 10**
+**SECTION 11**
 
 ## The Shift log
 
@@ -215,7 +236,7 @@ Capture observations as you go; the assistant tidies your words into a professio
 
 New entries, re-polishes and narratives each count towards your assistant allowance of 30 requests in any 10 minutes. Once it is spent, a new entry is still saved, without the tidy-up, and says how many seconds to wait before you **Re-polish** it.
 
-**SECTION 11**
+**SECTION 12**
 
 ## Event timers
 
@@ -239,7 +260,7 @@ Select **Add timer**.
 
 Browsers play sound only after you interact with the page: each time Holly loads, sound starts after your first click or key press, and until then the banner offers **Enable alerts**. The same first interaction asks permission for browser notifications. If notifications are refused, the banner says the alerts are audio only.
 
-**SECTION 12**
+**SECTION 13**
 
 ## Common analyst workflows
 
@@ -264,11 +285,12 @@ Browsers play sound only after you interact with the page: each time Holly loads
 
 ### Workflow 4: shift handover
 
-1. Check that the day's entries are complete and read well.
-2. Select **Generate** under **End-of-shift narrative** and review the draft.
-3. Export it as `.md` or `.html` for the incoming crew.
+1. On the **Handover** page, open each object with a live event. Confirm or reject its suggested threads, read its story and add a note on anything the incoming crew must know.
+2. Check that the day's shift log entries are complete and read well.
+3. Select **Generate** under **End-of-shift narrative** and review the draft.
+4. Export it as `.md` or `.html` for the incoming crew.
 
-**SECTION 13**
+**SECTION 14**
 
 ## What Holly does not do (yet)
 
@@ -281,7 +303,7 @@ Browsers play sound only after you interact with the page: each time Holly loads
 
 If you find yourself wishing Holly did something it does not, tell the team.
 
-**SECTION 14**
+**SECTION 15**
 
 ## When something goes wrong
 
@@ -299,7 +321,7 @@ If you find yourself wishing Holly did something it does not, tell the team.
 
 The operator-facing playbook for these is in [docs/runbook/operator-manual.md](../runbook/operator-manual.md).
 
-**SECTION 15**
+**SECTION 16**
 
 ## Trainer notes: delivering this material
 
@@ -317,7 +339,7 @@ The operator-facing playbook for these is in [docs/runbook/operator-manual.md](.
   | "Should I trust the assistant?" | Treat it as a quick first read. Check its actions against the procedure and the source before you act. |
   | "Is anyone watching what I do?" | The audit log records your state changes, not your page views. Use Holly accordingly. |
 
-**SECTION 16**
+**SECTION 17**
 
 ## Feedback
 
