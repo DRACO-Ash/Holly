@@ -34,6 +34,7 @@ from app.models import (  # noqa: F401  registers every model on Base.metadata
     elset,
     event_summary,
     event_timer,
+    handover,
     maneuver,
     mattermost_message,
     notification,
@@ -59,7 +60,7 @@ def test_there_is_one_linear_history_with_one_head() -> None:
     scripts = ScriptDirectory.from_config(alembic_config())
     assert len(scripts.get_heads()) == 1
     revisions = list(scripts.walk_revisions())
-    assert len(revisions) == 19
+    assert len(revisions) == 20
     # The container smoke rung reads the head from the newest file's name.
     newest = sorted(path.stem for path in (MIGRATIONS_DIR / "versions").glob("0*.py"))[-1]
     assert scripts.get_current_head() == newest
@@ -119,6 +120,29 @@ def test_channels_get_a_table_of_their_own_followed_and_new_by_default() -> None
     assert "following BOOLEAN DEFAULT true NOT NULL" in sql
     assert "reviewed BOOLEAN DEFAULT false NOT NULL" in sql
     assert "CONSTRAINT uq_mattermost_channel_mm_channel_id UNIQUE (mm_channel_id)" in sql
+
+
+def test_the_handover_story_adds_thread_ids_links_and_notes() -> None:
+    sql = offline_sql("upgrade", "head")
+    assert "ALTER TABLE mattermost_message ADD COLUMN root_id VARCHAR(64)" in sql
+    # Posts already held take their thread from the stored payload, only when it is a plain id.
+    assert (
+        "UPDATE mattermost_message SET root_id = raw->>'root_id' "
+        "WHERE raw->>'root_id' ~ '^[A-Za-z0-9_-]{1,64}$'"
+    ) in sql
+    assert (
+        "CREATE INDEX ix_notification_sat_ids ON notification USING gin (sat_ids jsonb_path_ops)"
+        in sql
+    )
+    assert "CONSTRAINT uq_handover_thread_link UNIQUE (thread_id, event_key)" in sql
+    assert (
+        "CONSTRAINT ck_handover_thread_link_decision CHECK (decision IN ('confirmed', 'rejected'))"
+        in sql
+    )
+    assert "CREATE TABLE handover_note (" in sql
+    down = offline_sql("downgrade", "0020_handover_story:0019_mattermost_channel")
+    assert "DROP TABLE handover_thread_link" in down
+    assert "ALTER TABLE mattermost_message DROP COLUMN root_id" in down
 
 
 def test_the_developer_ini_points_at_the_packaged_migrations() -> None:

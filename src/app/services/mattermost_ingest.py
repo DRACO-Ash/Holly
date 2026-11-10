@@ -146,6 +146,8 @@ async def _row_for_post(
     user_id = _text(post.get("user_id"))
     if not PLAIN_ID.fullmatch(user_id):
         user_id = ""
+    # A reply names its thread's root post; a root post, or a malformed id, stores none.
+    root_id = _text(post.get("root_id"))
     return {
         "mm_post_id": post_id,
         "channel_id": channel_id,
@@ -155,6 +157,7 @@ async def _row_for_post(
         "posted_at": posted_at,
         "message": text,
         "post_type": post_type[:_POST_TYPE_LENGTH] or None,
+        "root_id": root_id if PLAIN_ID.fullmatch(root_id) else None,
         "raw": post,
     }
 

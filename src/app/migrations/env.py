@@ -14,6 +14,7 @@ from app.models import (  # noqa: F401  registers every model on Base.metadata
     elset,
     event_summary,
     event_timer,
+    handover,
     maneuver,
     mattermost_channel,
     mattermost_message,

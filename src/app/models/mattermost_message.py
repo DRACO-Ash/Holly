@@ -27,6 +27,8 @@ class MattermostMessage(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     posted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     message: Mapped[str] = mapped_column(Text, nullable=False)
     post_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    # The root post of the thread a reply belongs to; None on a root post itself (migration 0020).
+    root_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     raw: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 
     __table_args__ = (
@@ -34,4 +36,5 @@ class MattermostMessage(Base, UUIDPrimaryKeyMixin, TimestampMixin):
         Index("ix_mattermost_message_channel_id", "channel_id"),
         Index("ix_mattermost_message_posted_at", "posted_at"),
         Index("ix_mattermost_message_user_id", "user_id"),
+        Index("ix_mattermost_message_root_id", "root_id"),
     )

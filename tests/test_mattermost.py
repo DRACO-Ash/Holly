@@ -409,6 +409,7 @@ class TestTheIngest:
                 "posted_at": datetime(2026, 6, 5, 12, 1, 30, tzinfo=UTC),
                 "message": "message post-2",
                 "post_type": "custom_example",
+                "root_id": None,
                 "raw": newer,
             },
             {
@@ -420,6 +421,7 @@ class TestTheIngest:
                 "posted_at": NOW,
                 "message": "message post-1",
                 "post_type": None,
+                "root_id": None,
                 "raw": older,
             },
         ]
@@ -576,6 +578,26 @@ class TestTheIngest:
         await run_ingest(session, channel_ids=["chan-1"])
         [row] = stored_rows(session)
         assert (row["channel_name"], row["user_display_name"]) == ("ops", "analyst")
+
+    @pytest.mark.parametrize(
+        ("root", "stored"),
+        [("root-post", "root-post"), ("", None), ("not a plain id", None), (42, None)],
+    )
+    async def test_a_reply_keeps_its_threads_root_post_when_it_is_a_plain_id(
+        self, serve_mattermost: ServeMattermost, root: object, stored: str | None
+    ) -> None:
+        reply = post("post-1") | {"root_id": root}
+        serve_mattermost(
+            {
+                posts_path("chan-1"): posts_page(reply),
+                f"{API}/channels/chan-1": (200, {"display_name": "Example Channel"}),
+                f"{API}/users/user-1": (200, {"nickname": "Example Analyst"}),
+            }
+        )
+        session = FakeSession([scalar_result(None), inserted(1)])
+        await run_ingest(session, channel_ids=["chan-1"])
+        [row] = stored_rows(session)
+        assert row["root_id"] == stored
 
     async def test_long_names_are_cut_to_fit_their_columns(
         self, serve_mattermost: ServeMattermost

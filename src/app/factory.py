@@ -25,6 +25,7 @@ from app.api.v1.routes import (
     auth,
     elsets,
     event_timers,
+    handover,
     health,
     maneuvers,
     manuals,
@@ -263,6 +264,7 @@ def create_app(static_dir: Path = STATIC_DIR) -> FastAPI:
         users,
         manuals,
         activity,
+        handover,
     ):
         app.include_router(module.router, prefix="/api/v1")
     _mount_dashboard(app, static_dir)

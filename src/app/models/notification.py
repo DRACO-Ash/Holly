@@ -76,4 +76,10 @@ class Notification(Base, UUIDPrimaryKeyMixin, UDLEnvelopeMixin, TimestampMixin):
         Index("ix_notification_status", "status"),
         Index("ix_notification_event_type", "event_type"),
         Index("ix_notification_publish_date", "publish_date"),
+        Index(
+            "ix_notification_sat_ids",
+            "sat_ids",
+            postgresql_using="gin",
+            postgresql_ops={"sat_ids": "jsonb_path_ops"},
+        ),
     )

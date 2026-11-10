@@ -21,6 +21,7 @@ from app.api.v1.common import Offset, fetch_page, present_filters
 from app.config import get_settings
 from app.core.net import client_ip
 from app.core.rate_limit import MATTERMOST_SWEEP_LIMIT
+from app.db.like import contains_pattern
 from app.dependencies import CurrentUser, DbSession
 from app.models.mattermost_channel import MattermostChannel
 from app.models.mattermost_message import MattermostMessage
@@ -60,12 +61,6 @@ def _any_of(ids: Sequence[str]) -> ColumnElement[bool]:
     return MattermostMessage.channel_id == any_(literal(list(ids), ARRAY(String)))
 
 
-def _contains(text: str) -> str:
-    """A LIKE pattern matching `text` anywhere, its own wildcards taken literally."""
-    escaped = text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-    return f"%{escaped}%"
-
-
 @router.get("/messages")
 async def list_messages(
     db: DbSession,
@@ -99,7 +94,7 @@ async def list_messages(
         )
         conditions.append(MattermostMessage.channel_id.in_(followed_open))
     if q and q.strip():
-        conditions.append(MattermostMessage.message.ilike(_contains(q.strip()), escape="\\"))
+        conditions.append(MattermostMessage.message.ilike(contains_pattern(q.strip()), escape="\\"))
     base = select(MattermostMessage).where(*conditions)
     order = [MattermostMessage.posted_at.desc()]
     items, total = await fetch_page(db, base, order, limit, offset)
