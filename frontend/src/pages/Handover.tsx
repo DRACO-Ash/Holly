@@ -27,6 +27,8 @@ export default function Handover() {
   const [selected, setSelected] = useState<number | null>(null);
   const [story, setStory] = useState<HandoverStory | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // A save's failure has its own slot, so it and a failed load are both told.
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   // The object whose story was asked for last, so a slower answer for another is dropped.
   const wanted = useRef<number | null>(null);
@@ -59,6 +61,7 @@ export default function Handover() {
     setSelected(satNo);
     setStory(null);
     setError(null);
+    setSaveError(null);
     void loadStory(satNo);
   };
 
@@ -67,13 +70,13 @@ export default function Handover() {
   // always told, naming the object once another is picked.
   const act = async (satNo: number, work: () => Promise<unknown>) => {
     setBusy(true);
-    setError(null);
+    setSaveError(null);
     try {
       await work();
       if (wanted.current === satNo) await loadStory(satNo);
       return true;
     } catch {
-      setError(wanted.current === satNo ? SAVE_FAILED : savedElsewhereFailed(satNo));
+      setSaveError(wanted.current === satNo ? SAVE_FAILED : savedElsewhereFailed(satNo));
       return false;
     } finally {
       setBusy(false);
@@ -109,6 +112,11 @@ export default function Handover() {
       {error && (
         <div className="form-error" role="alert">
           {error}
+        </div>
+      )}
+      {saveError && (
+        <div className="form-error" role="alert">
+          {saveError}
         </div>
       )}
       {list?.truncated && (

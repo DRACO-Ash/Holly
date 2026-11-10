@@ -3,10 +3,10 @@ told from what Holly already holds, with where every item came from."""
 
 import unicodedata
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
 from app.schemas.common import StorableText
 from app.schemas.maneuver import ManeuverFacts
@@ -121,7 +121,12 @@ class ThreadLinkDecision(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     thread_id: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
-    event_key: StorableText = Field(min_length=1, max_length=200)
+    # Stripped before its length is checked, so a key of spaces alone is refused.
+    event_key: Annotated[
+        str,
+        StringConstraints(strip_whitespace=True, min_length=1, max_length=200),
+        *StorableText.__metadata__,
+    ]
     decision: Literal["confirmed", "rejected", "clear"]
 
 

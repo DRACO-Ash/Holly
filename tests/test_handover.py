@@ -9,6 +9,7 @@ in Handover sends data outside Holly).
 
 import ast
 import itertools
+import json
 import os
 import subprocess
 import sys
@@ -603,11 +604,12 @@ class TestTheLinkDecisions:
         blank = "(notification.{0} IS NULL OR notification.{0} = %({0}_{1})s::VARCHAR)"
         assert f"OR {blank.format('event_id', 2)} AND notification.notso_identifier =" in notice_sql
         assert (
-            f"OR {blank.format('event_id', 3)} AND {blank.format('notso_identifier', 2)}"
+            f"OR {blank.format('event_id', 2)} AND {blank.format('notso_identifier', 2)}"
             " AND notification.udl_id =" in notice_sql
         )
         sent_values = params(session, 0)
         assert sent_values["event_id_2"] == sent_values["notso_identifier_2"] == ""
+        assert "notification.id =" not in notice_sql
         assert "LIMIT" in notice_sql
         assert 1 in params(session, 0).values()
         assert "mattermost_channel.following IS false" in sent(session, 1)
@@ -669,12 +671,32 @@ class TestTheLinkDecisions:
         assert audits == []
         session.commit.assert_not_awaited()
 
+    async def test_a_notice_with_no_other_key_is_found_by_its_own_id(
+        self, api: httpx2.AsyncClient, use_session: UseSession, sign_in: SignIn
+    ) -> None:
+        sign_in(make_user())
+        held = notice(event_id=None, notso_identifier="", udl_id=None)
+        key = str(held.id)
+        session = use_session(
+            FakeSession([rows_result([held]), scalar_result(uuid.uuid4()), MagicMock()])
+        )
+        body = {"thread_id": "t1", "event_key": key, "decision": "confirmed"}
+        assert (await api.post(LINKS, json=body)).status_code == 200
+        notice_sql = sent(session, 0)
+        assert (
+            "(notification.udl_id IS NULL OR notification.udl_id = %(udl_id_2)s::VARCHAR)"
+            " AND notification.id = %(id_1)s::UUID" in notice_sql
+        )
+        assert params(session, 0)["id_1"] == held.id
+
     @pytest.mark.parametrize(
         "body",
         [
             {"thread_id": "has space", "event_key": "EVT-1", "decision": "confirmed"},
             {"thread_id": "t" * 65, "event_key": "EVT-1", "decision": "confirmed"},
             {"thread_id": "t", "event_key": "", "decision": "confirmed"},
+            {"thread_id": "t", "event_key": "   ", "decision": "clear"},
+            {"thread_id": "t", "event_key": "k" * 201, "decision": "confirmed"},
             {"thread_id": "t", "event_key": "EVT-1", "decision": "maybe"},
             {"thread_id": "t", "event_key": "EVT-1", "decision": "confirmed", "extra": 1},
         ],
@@ -755,12 +777,9 @@ class TestTheNotes:
         assert (await api.delete(f"/api/v1/handover/notes/{uuid.uuid4()}")).status_code == 404
 
 
-HANDOVER_FILES = sorted(
-    [
-        ROOT / "src/app/api/v1/routes/handover.py",
-        *(ROOT / "src/app/services/handover").glob("*.py"),
-    ]
-)
+APP = ROOT / "src/app"
+# Every Handover module: a handover.py in any package, and every file of a handover package.
+HANDOVER_FILES = sorted({*APP.rglob("handover.py"), *APP.rglob("handover/*.py")})
 HANDOVER_MODULES = [
     ".".join(path.relative_to(ROOT / "src").with_suffix("").parts) for path in HANDOVER_FILES
 ]
@@ -780,9 +799,11 @@ def test_loading_every_handover_module_loads_no_assistant() -> None:
     import at module level (the test below), loading is the whole of what a module imports."""
     assert "app.services.handover.story" in HANDOVER_MODULES
     script = (
-        "import sys\n"
+        "import json, sys\n"
         + "".join(f"import {m}\n" for m in HANDOVER_MODULES)
-        + f"print([m for m in {BANNED!r} if m in sys.modules])"
+        + f"print(json.dumps([m for m in {BANNED!r} if m in sys.modules]))\n"
+        + "print(json.dumps(sorted(getattr(m, '__file__', None) or '' for n, m in"
+        + " list(sys.modules.items()) if n == 'app' or n.startswith('app.'))))"
     )
     result = subprocess.run(  # noqa: S603  a fixed interpreter and script
         [sys.executable, "-c", script],
@@ -792,7 +813,25 @@ def test_loading_every_handover_module_loads_no_assistant() -> None:
         check=True,
         env={**os.environ, "PYTHONPATH": str(ROOT / "src")},
     )
-    assert result.stdout.strip() == "[]", result.stderr
+    banned_line, files_line = result.stdout.strip().splitlines()
+    assert json.loads(banned_line) == [], result.stderr
+    # A shared module Handover loads could still reach the assistant from inside a function,
+    # which loading does not run: no module Handover loads may name it anywhere.
+    loaded = [Path(f) for f in json.loads(files_line) if f]
+    assert APP / "services/notification_query.py" in loaded
+    for path in loaded:
+        assert banned_imports(path.read_text(encoding="utf-8")) == [], path
+
+
+def test_every_file_named_for_handover_is_guarded() -> None:
+    """A new Handover file joins the guard by its name; one named otherwise fails here."""
+    named = {
+        p
+        for p in APP.rglob("*.py")
+        if "handover" in str(p.relative_to(APP)) and "migrations" not in p.parts
+    }
+    assert named == set(HANDOVER_FILES)
+    assert len(HANDOVER_FILES) >= 6
 
 
 def _imported_names(node: ast.AST) -> list[str]:
@@ -801,6 +840,20 @@ def _imported_names(node: ast.AST) -> list[str]:
     if isinstance(node, ast.ImportFrom) and node.module:
         return [node.module, *(f"{node.module}.{a.name}" for a in node.names)]
     return []
+
+
+def _is_banned(node: ast.Import | ast.ImportFrom) -> bool:
+    names = _imported_names(node)
+    return any(n == b or n.startswith(f"{b}.") for n in names for b in BANNED)
+
+
+def banned_imports(source: str) -> list[int]:
+    """The lines, at any depth, that import a banned module."""
+    return [
+        node.lineno
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Import | ast.ImportFrom) and _is_banned(node)
+    ]
 
 
 def import_problems(source: str) -> list[str]:
@@ -817,14 +870,14 @@ def import_problems(source: str) -> list[str]:
             problems.append(f"line {node.lineno}: not at module level")
         if isinstance(node, ast.ImportFrom) and node.level:
             problems.append(f"line {node.lineno}: relative import")
-        names = _imported_names(node)
-        if any(n == b or n.startswith(f"{b}.") for n in names for b in BANNED):
+        if _is_banned(node):
             problems.append(f"line {node.lineno}: banned import")
     return problems
 
 
 def test_every_handover_import_is_at_module_level_and_plain() -> None:
-    assert len(HANDOVER_FILES) >= 4
+    assert APP / "schemas/handover.py" in HANDOVER_FILES
+    assert APP / "models/handover.py" in HANDOVER_FILES
     for path in HANDOVER_FILES:
         assert import_problems(path.read_text(encoding="utf-8")) == [], path
 
@@ -845,6 +898,11 @@ def test_every_handover_import_is_at_module_level_and_plain() -> None:
 )
 def test_the_import_guard_refuses_each_way_round_it(source: str) -> None:
     assert import_problems(source) != []
+
+
+def test_a_banned_import_is_found_at_any_depth() -> None:
+    assert banned_imports("import json\ndef f():\n    import anthropic\n") == [3]
+    assert banned_imports("def f():\n    from app.services import json\n") == []
 
 
 def test_the_import_guard_allows_a_plain_module_level_import() -> None:

@@ -293,6 +293,35 @@ describe("the Handover tab", () => {
     await waitFor(() => expect(addHandoverNote).toHaveBeenCalledWith(90002, "On B."));
   });
 
+  it("drops a slower failed load for an object no longer wanted", async () => {
+    const first = held<HandoverStory>();
+    vi.mocked(getHandoverStory)
+      .mockImplementationOnce(() => first.promise)
+      .mockResolvedValueOnce(aStory({ sat_no: 90002, name: "OTHER-SAT" }));
+    renderAt(<Handover />, "/handover");
+    fireEvent.click(await screen.findByRole("button", { name: /TEST-SAT 1/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Unnamed object/ }));
+    await screen.findByRole("heading", { name: /OTHER-SAT/ });
+    first.reject(new Error("down"));
+    await act(async () => {});
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("tells a failed load and a failed save elsewhere together", async () => {
+    const decision = held<ThreadLinkDecision>();
+    vi.mocked(decideThreadLink).mockReturnValue(decision.promise);
+    vi.mocked(getHandoverStory)
+      .mockResolvedValueOnce(aFullStory())
+      .mockRejectedValueOnce(new Error("down"));
+    await openFirstObject();
+    fireEvent.click(screen.getByRole("button", { name: "Not this one" }));
+    fireEvent.click(screen.getByRole("button", { name: /Unnamed object/ }));
+    await screen.findByText(/could not load this object/);
+    decision.reject(new Error("down"));
+    await screen.findByText(/could not save that on object 90001/);
+    expect(screen.getAllByRole("alert")).toHaveLength(2);
+  });
+
   it("names the object when a save fails once another is on screen", async () => {
     const decision = held<ThreadLinkDecision>();
     vi.mocked(decideThreadLink).mockReturnValue(decision.promise);

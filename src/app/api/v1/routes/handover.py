@@ -205,25 +205,31 @@ def _blank(column: Any) -> ColumnElement[bool]:
     return or_(column.is_(None), column == "")
 
 
+def _has_key(event_key: str) -> ColumnElement[bool]:
+    """Notices whose group key is this one, in the key's own order: event id, else NOTSO
+    number, else UDL id, else the notice's own id."""
+    no_event = _blank(Notification.event_id)
+    no_notso = and_(no_event, _blank(Notification.notso_identifier))
+    branches = [
+        Notification.event_id == event_key,
+        and_(no_event, Notification.notso_identifier == event_key),
+        and_(no_notso, Notification.udl_id == event_key),
+    ]
+    try:
+        own_id = UUID(event_key)
+    except ValueError:
+        return or_(*branches)
+    if str(own_id) != event_key:
+        return or_(*branches)
+    return or_(*branches, and_(no_notso, _blank(Notification.udl_id), Notification.id == own_id))
+
+
 async def _holds(db: DbSession, event_key: str, thread_id: str) -> bool:
     """True when Holly holds a notice with this group key and a post of this thread in a
     channel not switched off. The notice lookup follows the key's own order (event id, else
-    NOTSO number, else UDL id), so any row it finds has the key; Python confirms it."""
-    notice_stmt = (
-        select(Notification)
-        .where(
-            or_(
-                Notification.event_id == event_key,
-                and_(_blank(Notification.event_id), Notification.notso_identifier == event_key),
-                and_(
-                    _blank(Notification.event_id),
-                    _blank(Notification.notso_identifier),
-                    Notification.udl_id == event_key,
-                ),
-            )
-        )
-        .limit(1)
-    )
+    NOTSO number, else UDL id, else its own id), so any row it finds has the key; Python
+    confirms it."""
+    notice_stmt = select(Notification).where(_has_key(event_key)).limit(1)
     held = (await db.execute(notice_stmt)).scalars().first()
     if held is None or compute_event_key(held) != event_key:
         return False
