@@ -1,14 +1,14 @@
 # The Handover local-model trial container. Trial only: never part of Holly's image or upload.
 #
 # Build:  docker build -t holly-handover-trial trial/
-# Run:    docker run --rm --network none --memory 8g --memory-swap 8g --cpus 6 \
+# Run:    docker run --rm --network none --memory 4g --memory-swap 4g --cpus 2 \
 #           -v "$PWD/trial-data:/data:ro" -v "$PWD/trial-out:/out" holly-handover-trial \
 #           run --threads /data/threads --keys /data/keys --providers /data/providers.json \
 #               --model /data/models/<file>.gguf --holly-peak-gib <measured> \
 #               --shift-threads <typical> --out /out
 #
-# --network none and the 8Gi / 6 CPU caps mirror where the model would run in Holly: the App
-# Store's ceiling per app, with no network. The data volume is read-only.
+# --network none and the 4 GiB / 2 CPU caps mirror where the model would run: inside Holly's own
+# allocation on the App Store (4Gi memory, 2000m CPU), with no network. The data volume is read-only.
 
 # python:3.12 (Debian trixie), the full image: it carries the C++ compiler llama.cpp needs, so the
 # build installs no OS packages and needs only PyPI (cmake arrives as a build dependency).

@@ -21,7 +21,7 @@ class Marks:
     min_recall: float = 0.8
     max_wrong_provider: int = 0
     budget_s: float = BUDGET_S
-    min_headroom_gib: float = 2.0
+    min_headroom_gib: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -143,6 +143,7 @@ def score(
         "projected_shift_s": round(projected_s, 1),
         "peak_gib": round(peak_gib, 2),
         "headroom_gib": round(headroom, 2),
+        "probe": run.get("probe", {}),
         "tests": tests,
         "go": all(tests.values()),
     }
@@ -173,6 +174,13 @@ def report(scores: list[dict[str, Any]], load: Load, marks: Marks, meta: dict[st
         if s["error"]:
             lines.append(f"Error: {s['error']}")
         lines += [f"- {'PASS' if ok else 'FAIL'}: {name}" for name, ok in s["tests"].items()]
+        probe = s.get("probe") or {}
+        if "slowdown" in probe:
+            lines.append(
+                f"- Responsiveness (reported, not a pass mark): a fixed task took "
+                f"{probe['baseline_ms']} ms before the run and {probe['p95_ms']} ms (95th "
+                f"percentile) during it, {probe['slowdown']} times slower"
+            )
         lines.append(f"- Dropped by the checks: {s['dropped'] or 'none'}")
         lines.append(
             f"- Malformed claims refused: {s['refused_malformed']}; unreadable replies: {s['unparsed_replies']}"

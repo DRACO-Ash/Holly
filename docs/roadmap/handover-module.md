@@ -1,6 +1,6 @@
 # Holly handover module: description and implementation plan
 
-Status: proposal, not built. Working title "Handover" (the owner has not named it yet). Decision of the owner, 6 November 2026: the module uses no external LLM. Its language model runs inside the Holly container as a batch job of up to 5 minutes near the end of each shift; it is not a chat assistant. Prepared on 6 November 2026 from the owner's dictated memo (`Holly_advancements_memo.txt`) and a survey of the Holly V0.18 code. A fact read in the code carries its file reference; an inference or an assumption says so; anything not yet verified is marked `TBC, re-verify`.
+Status: proposal, not built. Working title "Handover" (the owner has not named it yet). Decision of the owner, 6 November 2026: the module uses no external LLM. Its language model runs inside the Holly container as a batch job of up to 5 minutes near the end of each shift; it is not a chat assistant. Decision of the owner, 10 November 2026: Holly stays at its current allocation of 4Gi memory and 2000m CPU, so the model must be small and share those resources with Holly. Prepared on 6 November 2026 from the owner's dictated memo (`Holly_advancements_memo.txt`) and a survey of the Holly V0.18 code. A fact read in the code carries its file reference; an inference or an assumption says so; anything not yet verified is marked `TBC, re-verify`.
 
 ## Part 1: The module, described
 
@@ -98,8 +98,8 @@ These come first, because each one changes what gets built.
 1. **No external LLM in the module (decided).** The owner decided on 6 November 2026 that the module never calls an external large language model (LLM). Mattermost threads and NOTSO content are read only by a model running inside the Holly container, so neither leaves the App Store. Inference: this turns a release decision into a question of whether the App Store environment is approved for this data. The owner and the data owner confirm that, and it is recorded in an architecture decision record (ADR-016) and a `SECURITY.md` row. A test fails the build if any module under `services/handover/` imports the Anthropic client (`services/claude.py`).
 2. **The existing assistant still sends chat.** Fact: Holly's notice evaluations already include up to 30 recent Mattermost messages in what they send to Anthropic (`services/assistant.py:261-280`, `SECURITY.md:27`). That is separate from this module. To stop it, set `MATTERMOST_MAX_MESSAGES_IN_PROMPT=0` and restart. It is the owner's call, and the decision is recorded when made.
 3. **The local-model trial (go or no-go), run before V0.20.** Protocol, pass marks and harness: `docs/roadmap/handover-trial-plan.md` and `trial/`.
-   ■ **Where:** a container capped at 8Gi and 6 CPU, inside Bluestaq's environment. Real threads are never pasted into an external tool, including this conversation.
-   ■ **What:** 2 or 3 permissively licensed models, quantised to 3 to 8 billion parameters, run on 5 real event threads.
+   ■ **Where:** a container capped at 4 GiB and 2 CPUs, Holly's own allocation, inside Bluestaq's environment. Real threads are never pasted into an external tool, including this conversation.
+   ■ **What:** 3 permissively licensed models of about 0.5 to 2 billion parameters, plus one larger stretch model, quantised and run on 5 real event threads.
    ■ **Measure:**
      ● extraction accuracy against a mission lead's own reading;
      ● time per thread;
@@ -107,7 +107,8 @@ These come first, because each one changes what gets built.
    ■ **Go criteria (proposed):**
      ● no unsupported figure gets through the checks;
      ● the threads for a typical shift's live events fit in the 5-minute run;
-     ● peak memory leaves Holly at least 2Gi of headroom.
+     ● Holly's peak and the model's peak leave at least 1 GiB of the 4 GiB spare (proposed, down from 2 GiB);
+     ● reported, not a mark: how much slower Holly's own work runs during the run.
 4. **A real record from each source**, checked before code is written against it:
    ■ a stored KBR and a stored NorthStar manoeuvre record, to confirm the key names and units in `maneuver_facts.py` (`TBC, re-verify`);
    ■ a Mattermost event thread, to confirm how threads cite NOTSOs (NOTSO number, catalogue number, channel per event?) and whether providers post under their own accounts;
@@ -152,7 +153,7 @@ The module is one new tab and one backend package within the existing Holly cont
   ■ **A child process per run.** The model runs in a child process started for the end-of-shift run and ended when the run finishes. That gives 3 things:
     ● a crash in native code takes down only the child process, not Holly's background loops;
     ● the model's memory is freed between runs;
-    ● a thread cap stops it starving the web app of CPU.
+    ● it runs at the lowest priority on Holly's 2 CPUs, so Holly's pages and loops always come first.
 
     It departs from Holly's one-process rule, so it is recorded in ADR-016.
   ■ **No network.** The child process gets no network access and no database connection: Holly hands it the text and reads back its answer.
@@ -197,7 +198,7 @@ Each release is a version bump and goes through the verification loop, both gate
 ● The Handover tab with the object rail, the story timeline, provenance chips and free-text notes.
 ● Acceptance: a lead can open any object named in a NOTSO in the last 120 hours. They see its NOTSOs, provider records and confirmed threads in time order, each with its source.
 
-**V0.20: guided flows, the template synopsis and the end-of-shift run (size L).** It needs the local-model trial (phase 0, item 3) to have passed, and Holly raised to 8Gi and 6 CPU.
+**V0.20: guided flows, the template synopsis and the end-of-shift run (size L).** It needs the local-model trial (phase 0, item 3) to have passed. It stays within Holly's 4Gi and 2000m: the model runs at the lowest priority so Holly's pages and loops come first.
 ● Flow definitions for manoeuvre, RPO, photometric change and separation.
 ● The flow renderer, with answers filled from data, and the template synopsis.
 ● The local model, the extraction checks and the end-of-shift run, with provider claims from Mattermost.
@@ -229,7 +230,7 @@ Each release is a version bump and goes through the verification loop, both gate
 | Element-set accuracy at GEO | Fact: TLE and SGP4 positions carry errors of the order of kilometres. Inference: an RPO box computed from TLEs is indicative only | Label every computed figure "from element set [epoch], indicative". Prefer provider state vectors if the UDL offers them (`TBC, re-verify`). Never present a computed figure as observed |
 | The local model makes up a figure | A wrong number reaches a handover | Only claims whose figure appears word for word in the cited post are kept. The lead sees the source post for every claim |
 | The local model is too slow | The run does not cover every live event in 5 minutes | Priority order, cache per thread, and "template only" marked on what was not read. The trial sets the model size |
-| Memory | Holly is stopped for running out of memory, taking the loops with it | 8Gi allocation; the model runs in a child process that ends after the run; peak memory measured in the trial |
+| Memory | Holly is stopped for running out of memory, taking the loops with it | A small model only (about 2 billion parameters or fewer) within Holly's fixed 4Gi; the model runs in a child process that ends after the run; peak memory measured in the trial |
 | A bigger image and native code | Longer builds, a larger container scan, new CVEs to answer | Weights pinned by SHA-256; toolchain only in the build stage; the binding version pinned and audited like any dependency |
 | The App Store is not approved for this data | Running the model inside Holly does not settle the question | The owner and the data owner confirm it, recorded in ADR-016 |
 | Wrong thread-to-NOTSO links | A synopsis cites chat about a different event | Suggest, never assume; only a lead-confirmed link counts |
@@ -244,7 +245,7 @@ Each release is a version bump and goes through the verification loop, both gate
 1. Confirm the readings in the table under "How I read the dictated memo".
 2. Confirm the App Store environment is approved to hold and process the JCO data and the threads the local model reads (phase 0, item 1).
 3. Whether to stop the existing assistant sending chat to Anthropic (phase 0, item 2).
-4. Agreement to raise Holly to 8Gi memory and 6 CPU, and the platform team's answers: will the build accept an image several GB larger, and may it fetch the model weights from outside?
+4. Holly's own peak memory from the App Store metrics, which decides how much of the 4Gi is left for the model, and the platform team's answers: will the build accept an image about 1 GB larger, and may it fetch the model weights from outside?
 5. 1 stored KBR record, 1 NorthStar record and 1 example Mattermost event thread, for phase 0 item 4, checked inside Bluestaq's environment.
 6. The provider names and aliases to recognise.
 7. Which event types get a guided flow first, and the full list.

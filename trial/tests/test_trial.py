@@ -188,6 +188,19 @@ class Threads(unittest.TestCase):
         self.assertTrue(all(len(r) >= 1 for r in runs))
 
 
+class UsersFile(unittest.TestCase):
+    def test_reads_a_map_or_mattermosts_user_list(self) -> None:
+        from handover_trial.__main__ import _users
+
+        with tempfile.TemporaryDirectory() as d:
+            listed = Path(d) / "list.json"
+            listed.write_text(json.dumps([{"id": "u1", "username": "ns-analyst"}]))
+            mapped = Path(d) / "map.json"
+            mapped.write_text(json.dumps({"u2": "kbr-analyst"}))
+            self.assertEqual(_users(listed), {"u1": "ns-analyst"})
+            self.assertEqual(_users(mapped), {"u2": "kbr-analyst"})
+
+
 class DryRun(unittest.TestCase):
     def test_dry_run_scores_the_synthetic_set(self) -> None:
         with tempfile.TemporaryDirectory() as out:
@@ -207,6 +220,7 @@ class DryRun(unittest.TestCase):
             },
         )
         self.assertFalse(score["go"])
+        self.assertIn("baseline_ms", score["probe"])
 
 
 if __name__ == "__main__":

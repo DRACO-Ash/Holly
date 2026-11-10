@@ -41,6 +41,15 @@ def _versions() -> str:
         return "llama-cpp-python not installed"
 
 
+def _users(path: Path) -> dict[str, str]:
+    """User ids to names: either a {id: name} map, or the list Mattermost's
+    POST /api/v4/users/ids returns, read as id to username."""
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if isinstance(data, list):
+        return {str(u["id"]): str(u.get("username", u["id"])) for u in data if isinstance(u, dict)}
+    return {str(k): str(v) for k, v in data.items()}
+
+
 def _run(args: argparse.Namespace, specs: list[ModelSpec]) -> int:
     threads = load_threads(Path(args.threads))
     keys = load_keys(Path(args.keys))
@@ -50,7 +59,7 @@ def _run(args: argparse.Namespace, specs: list[ModelSpec]) -> int:
         print(f"answer keys with no thread file: {missing}", file=sys.stderr)
         return 2
     load = Load(args.limit_gib, args.holly_peak_gib, args.shift_threads)
-    marks = Marks()
+    marks = Marks(min_headroom_gib=args.min_spare_gib)
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     meta = {
@@ -114,15 +123,16 @@ def main(argv: list[str] | None = None) -> int:
             default=10 if dry else None,
             help="threads in a typical shift's end-of-shift run (dry run: 10, a placeholder)",
         )
-        p.add_argument("--limit-gib", type=float, default=8.0)
-        p.add_argument("--cpu-threads", type=int, default=6)
-        p.add_argument("--context", type=int, default=8192)
+        p.add_argument("--limit-gib", type=float, default=4.0, help="Holly's memory limit")
+        p.add_argument("--cpu-threads", type=int, default=2, help="Holly's CPUs (2000m is 2)")
+        p.add_argument("--context", type=int, default=4096)
+        p.add_argument("--min-spare-gib", type=float, default=1.0, help="the memory pass mark")
         p.add_argument("--timeout-s", type=float, default=3600.0)
         p.add_argument("--out", required=True)
 
     args = parser.parse_args(argv)
     if args.cmd == "convert":
-        users = json.loads(Path(args.users).read_text(encoding="utf-8")) if args.users else {}
+        users = _users(Path(args.users)) if args.users else {}
         export = json.loads(Path(args.export).read_text(encoding="utf-8"))
         Path(args.out).write_text(
             json.dumps(convert_mattermost(export, args.channel, users), indent=2), encoding="utf-8"

@@ -51,7 +51,7 @@ python3 -m handover_trial convert --export raw/<id>.json --channel <channel> \
 Run every candidate with the network off and Holly's caps:
 
 ```
-docker run --rm --network none --memory 8g --memory-swap 8g --cpus 6 \
+docker run --rm --network none --memory 4g --memory-swap 4g --cpus 2 \
   -v "$PWD/trial-data:/data:ro" -v "$PWD/trial-out:/out" holly-handover-trial \
   run --threads /data/threads --keys /data/keys --providers /data/providers.json \
       --model /data/models/<first>.gguf --model /data/models/<second>.gguf \

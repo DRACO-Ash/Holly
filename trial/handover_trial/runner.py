@@ -3,11 +3,20 @@ it pulled out, what the checks kept, how long each thread took and the child's p
 
 The child gets text in and hands results back; it opens no database. Run the trial container with
 `--network none` so it has no network either, as the Handover design requires.
+
+Holly has 4 GiB and 2 CPUs in all (2000m), shared with its web app and background loops. So the
+child lowers its own priority, as it would in Holly, and while it runs the parent times a small
+fixed task at normal priority: how much slower that task gets is a guide to how sluggish Holly's
+pages would feel during the run.
 """
 
+import hashlib
 import json
 import multiprocessing as mp
+import os
 import resource
+import statistics
+import threading
 import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -22,10 +31,11 @@ from .threads import chunks
 class ModelSpec:
     kind: str  # "llama" or "stub"
     path: str
-    threads: int = 6
-    context: int = 8192
-    max_tokens: int = 1024
-    chunk_chars: int = 12000
+    threads: int = 2
+    context: int = 4096
+    max_tokens: int = 768
+    chunk_chars: int = 8000
+    nice: int = 19
 
 
 @dataclass
@@ -45,6 +55,7 @@ class RunResult:
     peak_rss_mib: float
     threads: list[ThreadResult]
     error: str = ""
+    probe: dict[str, float] = field(default_factory=dict)
 
 
 def _build(spec: ModelSpec) -> Backend:
@@ -77,6 +88,8 @@ def _read_thread(
 
 def _child(spec: ModelSpec, threads: list[Thread], providers: Providers, out: Any) -> None:
     try:
+        if spec.nice:
+            os.nice(spec.nice)  # yield the CPUs to Holly's own work, as the run would in Holly
         started = time.monotonic()
         backend = _build(spec)
         load = round(time.monotonic() - started, 2)
@@ -89,17 +102,61 @@ def _child(spec: ModelSpec, threads: list[Thread], providers: Providers, out: An
         )
 
 
+_PROBE_DATA = b"\x00" * (256 * 1024)
+
+
+def _probe_ms() -> float:
+    """Milliseconds for a small fixed piece of work, standing in for one of Holly's requests."""
+    started = time.perf_counter()
+    for _ in range(8):
+        hashlib.sha256(_PROBE_DATA).digest()
+    return (time.perf_counter() - started) * 1000
+
+
+class _Probe:
+    """Times the fixed task twice a second at normal priority while the child runs."""
+
+    def __init__(self) -> None:
+        self.baseline = statistics.median(_probe_ms() for _ in range(15))
+        self.samples: list[float] = []
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._loop, daemon=True)
+
+    def _loop(self) -> None:
+        while not self._stop.wait(0.5):
+            self.samples.append(_probe_ms())
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def stop(self) -> dict[str, float]:
+        self._stop.set()
+        self._thread.join(5)
+        if not self.samples:
+            return {"baseline_ms": round(self.baseline, 2)}
+        p95 = sorted(self.samples)[max(0, int(len(self.samples) * 0.95) - 1)]
+        return {
+            "baseline_ms": round(self.baseline, 2),
+            "p95_ms": round(p95, 2),
+            "slowdown": round(p95 / self.baseline, 2) if self.baseline else 0.0,
+        }
+
+
 def run_model(
     spec: ModelSpec, threads: list[Thread], providers: Providers, timeout_s: float
 ) -> dict[str, Any]:
-    """The child's results, or an error when it crashed or overran `timeout_s`."""
+    """The child's results, or an error when it crashed or overran `timeout_s`, with how much
+    slower the parent's fixed task ran meanwhile."""
     ctx = mp.get_context("spawn")
     out = ctx.Queue()
+    probe = _Probe()
     child = ctx.Process(target=_child, args=(spec, threads, providers, out))
     child.start()
+    probe.start()
     try:
         result: dict[str, Any] = out.get(timeout=timeout_s)
     except Exception:  # noqa: BLE001  queue.Empty on timeout, or the child died
+        probe.stop()
         child.terminate()
         child.join(5)
         return asdict(
@@ -112,4 +169,5 @@ def run_model(
             )
         )
     child.join(30)
+    result["probe"] = probe.stop()
     return result
