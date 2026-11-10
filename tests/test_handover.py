@@ -469,7 +469,14 @@ class TestTheStory:
         assert body["truncated"] is False
         posts_sql = sent(session, 3)
         assert "row_number() OVER (PARTITION BY coalesce(" in posts_sql
+        assert (
+            "ORDER BY mattermost_message.posted_at, mattermost_message.mm_post_id) AS rank"
+            in posts_sql
+        )
         assert "anon_1.rank <=" in posts_sql
+        assert (
+            "mattermost_message.root_id IS NULL AND mattermost_message.mm_post_id IN" in posts_sql
+        )
         assert story.POSTS_PER_THREAD + 1 in params(session, 3).values()
         assert "mattermost_message.root_id IN" in posts_sql
         assert "mattermost_channel.following IS false" in posts_sql
@@ -509,7 +516,17 @@ class TestTheStory:
         else:
             assert [m["udl_id"] for m in body["maneuvers"]] == ["NEW"]
 
-    @pytest.mark.parametrize("cap", ["TIMER_CAP", "NOTE_CAP", "SUGGESTION_CAP", "THREAD_CAP"])
+    @pytest.mark.parametrize(
+        "cap",
+        [
+            "TIMER_CAP",
+            "NOTE_CAP",
+            "SUGGESTION_CAP",
+            "THREAD_CAP",
+            "CANDIDATE_POST_CAP",
+            "POSTS_PER_THREAD",
+        ],
+    )
     async def test_every_other_cap_is_told_too(
         self,
         api: httpx2.AsyncClient,
@@ -529,7 +546,9 @@ class TestTheStory:
                     rows_result([notice(event_id="EVT-1", notso_identifier="ABC-0001")]),
                     rows_result([]),
                     rows_result([link("t1", "EVT-1"), link("t2", "EVT-1")]),
-                    rows_result([message("t1", "kept"), message("t2", "kept")]),
+                    rows_result(
+                        [message("t1", "kept"), message("t1", "also"), message("t2", "kept")]
+                    ),
                     rows_result([message("s1", "ABC-0001"), message("s2", "ABC-0001")]),
                     rows_result([timer, timer]),
                     rows_result([note_row(), note_row()]),
@@ -580,10 +599,22 @@ class TestTheLinkDecisions:
         }
         notice_sql = sent(session, 0)
         assert "notification.event_id =" in notice_sql
+        # The key's own order: a NOTSO number or UDL id counts only where nothing precedes it.
+        blank = "(notification.{0} IS NULL OR notification.{0} = %({0}_{1})s::VARCHAR)"
+        assert f"OR {blank.format('event_id', 2)} AND notification.notso_identifier =" in notice_sql
+        assert (
+            f"OR {blank.format('event_id', 3)} AND {blank.format('notso_identifier', 2)}"
+            " AND notification.udl_id =" in notice_sql
+        )
+        sent_values = params(session, 0)
+        assert sent_values["event_id_2"] == sent_values["notso_identifier_2"] == ""
         assert "LIMIT" in notice_sql
-        assert 50 in params(session, 0).values()
+        assert 1 in params(session, 0).values()
         assert "mattermost_channel.following IS false" in sent(session, 1)
         assert "mattermost_message.root_id IN" in sent(session, 1)
+        assert "mattermost_message.root_id IS NULL AND mattermost_message.mm_post_id IN" in sent(
+            session, 1
+        )
         upsert = sent(session, 2)
         assert "ON CONFLICT ON CONSTRAINT uq_handover_thread_link DO UPDATE SET" in upsert
         updated = upsert.split("DO UPDATE SET", 1)[1]

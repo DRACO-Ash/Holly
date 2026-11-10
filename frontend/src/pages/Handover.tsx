@@ -15,6 +15,8 @@ import type { HandoverObjectList, HandoverStory, LinkDecision, ThreadSuggestion 
 const LOAD_FAILED = "Holly could not load the objects. Try again in a moment.";
 const STORY_FAILED = "Holly could not load this object's story. Try again in a moment.";
 const SAVE_FAILED = "Holly could not save that. Try again in a moment.";
+const savedElsewhereFailed = (satNo: number) =>
+  `Holly could not save that on object ${satNo}. Open it and try again.`;
 
 // Handover: pick an object with a live event and read its whole story, from what Holly already
 // holds, with where every item came from. Nothing here is sent outside Holly.
@@ -61,7 +63,8 @@ export default function Handover() {
   };
 
   // Acts on the object whose story is on screen. Its story is read again afterwards only if it
-  // is still the one wanted, so picking another object meanwhile is never undone.
+  // is still the one wanted, so picking another object meanwhile is never undone; a failure is
+  // always told, naming the object once another is picked.
   const act = async (satNo: number, work: () => Promise<unknown>) => {
     setBusy(true);
     setError(null);
@@ -70,7 +73,7 @@ export default function Handover() {
       if (wanted.current === satNo) await loadStory(satNo);
       return true;
     } catch {
-      if (wanted.current === satNo) setError(SAVE_FAILED);
+      setError(wanted.current === satNo ? SAVE_FAILED : savedElsewhereFailed(satNo));
       return false;
     } finally {
       setBusy(false);

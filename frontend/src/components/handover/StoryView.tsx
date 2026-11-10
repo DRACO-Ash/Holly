@@ -123,14 +123,14 @@ export default function StoryView({
           {story.name ?? "Unnamed object"} <span className="mono">({story.sat_no})</span>
         </h2>
         <p className="console-hint">
-          {story.notices.length} notice publications, {story.maneuvers.length} provider records,{" "}
-          {story.threads.length} confirmed threads, {story.notes.length} notes in the last{" "}
-          {story.window_hours} hours.
+          {story.notices.length} notice publications, {story.maneuvers.length} provider records in
+          the last {story.window_hours} hours; {story.threads.length} confirmed threads and{" "}
+          {story.notes.length} notes.
         </p>
       </header>
       {story.truncated && (
         <p className="console-truncated">
-          The window holds more than this view carries: it shows the newest of each kind.
+          Holly holds more about this object than this view carries: part of it is shown.
         </p>
       )}
       {story.suggestions.length > 0 && (

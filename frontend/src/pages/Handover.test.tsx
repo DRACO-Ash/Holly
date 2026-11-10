@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   addHandoverNote,
@@ -180,7 +180,7 @@ describe("the Handover tab", () => {
     renderAt(<Handover />, "/handover");
     fireEvent.click(await screen.findByRole("button", { name: /TEST-SAT 1/ }));
     expect(await screen.findByText("Nothing held about this object in the window.")).toBeTruthy();
-    expect(screen.getByText(/it shows the newest of each kind/)).toBeTruthy();
+    expect(screen.getByText(/part of it is shown/)).toBeTruthy();
     expect(screen.getByRole("heading", { name: /Unnamed object/ })).toBeTruthy();
   });
 
@@ -262,7 +262,9 @@ describe("the Handover tab", () => {
     fireEvent.click(screen.getByRole("button", { name: /Unnamed object/ }));
     expect((await screen.findByRole("alert")).textContent).toMatch(/could not load this object/);
     answerFirst(aFullStory());
-    await waitFor(() => expect(screen.queryByText("Maneuver · ABC-0001")).toBeNull());
+    await act(async () => {});
+    expect(screen.queryByText("Maneuver · ABC-0001")).toBeNull();
+    expect(screen.getByRole("alert").textContent).toMatch(/could not load this object/);
   });
 
   it("keeps the object picked during a save, and files a note on the object on screen", async () => {
@@ -291,7 +293,7 @@ describe("the Handover tab", () => {
     await waitFor(() => expect(addHandoverNote).toHaveBeenCalledWith(90002, "On B."));
   });
 
-  it("says nothing about a failed save once another object is on screen", async () => {
+  it("names the object when a save fails once another is on screen", async () => {
     const decision = held<ThreadLinkDecision>();
     vi.mocked(decideThreadLink).mockReturnValue(decision.promise);
     vi.mocked(getHandoverStory).mockImplementation(async (satNo) =>
@@ -307,6 +309,9 @@ describe("the Handover tab", () => {
         true,
       ),
     );
-    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByRole("alert").textContent).toBe(
+      "Holly could not save that on object 90001. Open it and try again.",
+    );
+    expect(screen.getByRole("heading", { name: /OTHER-SAT/ })).toBeTruthy();
   });
 });

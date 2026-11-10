@@ -197,7 +197,7 @@ The Handover page helps you hand an event over with its whole story, not a one-l
 ● the posts of each chat thread a lead has confirmed belongs to the object, up to 100 a thread;
 ● the notes analysts have added.
 
-When an object has more than the page can show, it shows the newest and says so above the story.
+When Holly holds more about an object than the page can show, it shows part of it and says so above the story: the newest notices, provider records and notes, and the first posts of a long thread.
 
 Each item says where it came from under **Source**, such as `NOTSO · UDL` with the record's UDL id, `Provider record · UDL`, `Mattermost` with its channel, or `Analyst note`. Timers set against the object's notices are listed above the story.
 

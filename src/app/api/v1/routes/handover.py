@@ -8,7 +8,7 @@ from typing import Annotated, Any
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException, Path, Query, Request, Response, status
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import ColumnElement, and_, delete, func, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.config import get_settings
@@ -201,22 +201,31 @@ async def object_story(
     )
 
 
+def _blank(column: Any) -> ColumnElement[bool]:
+    return or_(column.is_(None), column == "")
+
+
 async def _holds(db: DbSession, event_key: str, thread_id: str) -> bool:
     """True when Holly holds a notice with this group key and a post of this thread in a
-    channel not switched off. Each lookup can use an index; the key is confirmed in Python."""
+    channel not switched off. The notice lookup follows the key's own order (event id, else
+    NOTSO number, else UDL id), so any row it finds has the key; Python confirms it."""
     notice_stmt = (
         select(Notification)
         .where(
             or_(
                 Notification.event_id == event_key,
-                Notification.notso_identifier == event_key,
-                Notification.udl_id == event_key,
+                and_(_blank(Notification.event_id), Notification.notso_identifier == event_key),
+                and_(
+                    _blank(Notification.event_id),
+                    _blank(Notification.notso_identifier),
+                    Notification.udl_id == event_key,
+                ),
             )
         )
-        .limit(50)
+        .limit(1)
     )
-    notices = (await db.execute(notice_stmt)).scalars().all()
-    if not any(compute_event_key(n) == event_key for n in notices):
+    held = (await db.execute(notice_stmt)).scalars().first()
+    if held is None or compute_event_key(held) != event_key:
         return False
     thread_stmt = (
         select(MattermostMessage.id).where(s.in_threads([thread_id]), s.not_switched_off()).limit(1)
