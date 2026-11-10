@@ -31,9 +31,8 @@ from app.services.assistant import (
     write_evaluation_audit,
 )
 from app.services.disclosure import is_cleared
-from app.services.event_summary import compute_event_key
 from app.services.feed_rollup import UNRANKED, URGENCY_RANK, latest_by_notification, rollup_urgency
-from app.services.notification_query import aliased_deduped_notifications
+from app.services.notification_query import aliased_deduped_notifications, compute_event_key
 
 router = APIRouter(prefix="/assistant", tags=["assistant"])
 

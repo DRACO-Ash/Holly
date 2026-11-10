@@ -49,7 +49,8 @@ export interface StoryPost {
 
 export interface StoryThread {
   thread_id: string;
-  event_key: string;
+  // Every notice of the object the thread was confirmed against.
+  event_keys: string[];
   channel_name: string | null;
   confirmed_at: string;
   posts: StoryPost[];

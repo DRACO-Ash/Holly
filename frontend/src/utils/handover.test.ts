@@ -64,7 +64,7 @@ describe("the story's entries", () => {
       threads: [
         {
           thread_id: "t-1",
-          event_key: "EVT-1",
+          event_keys: ["EVT-1"],
           channel_name: null,
           confirmed_at: "2026-01-05T12:00:00Z",
           posts: [
@@ -101,5 +101,42 @@ describe("the story's entries", () => {
     expect(entries[1].detail).toBe("POSSIBLE");
     expect(entries[4].detail).toBeNull();
     expect(entries[4].at).toBeNull();
+  });
+});
+
+describe("the story's entries, at the edges", () => {
+  it("tells a post once even when two threads carry it, and keeps untimed items in order", () => {
+    const post = {
+      post_id: "p-1",
+      posted_at: "2026-01-05T11:00:00Z",
+      author: "A",
+      message: "Once.",
+    };
+    const thread = {
+      thread_id: "t-1",
+      event_keys: ["EVT-1"],
+      channel_name: "C",
+      confirmed_at: "2026-01-05T12:00:00Z",
+      posts: [post],
+      truncated: false,
+    };
+    const untimed = (id: string) => ({
+      id,
+      event_key: id,
+      notice: id,
+      event_class: null,
+      kind: null,
+      status: null,
+      udl_created_at: null,
+      source: null,
+      udl_id: null,
+    });
+    const entries = storyEntries(
+      aStory({
+        threads: [thread, { ...thread, thread_id: "t-2" }],
+        notices: [untimed("N-1"), untimed("N-2")],
+      }),
+    );
+    expect(entries.map((e) => e.key)).toEqual(["post-p-1", "notice-N-1", "notice-N-2"]);
   });
 });

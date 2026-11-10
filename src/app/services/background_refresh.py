@@ -42,7 +42,6 @@ from app.services.assistant import EvaluationRun, evaluate_once, write_evaluatio
 from app.services.audit import write_audit
 from app.services.disclosure import cleared_condition, cleared_markings
 from app.services.event_summary import (
-    compute_event_key,
     generate_event_summary,
     publication_order,
 )
@@ -51,6 +50,7 @@ from app.services.mattermost_ingest import MattermostIngestResult, ingest_matter
 from app.services.notification_ingest import ingest_notifications
 from app.services.notification_query import (
     aliased_deduped_notifications,
+    compute_event_key,
     notification_group_key,
 )
 from app.services.udl_client import UDLAuthError, UDLClient, UDLClientError

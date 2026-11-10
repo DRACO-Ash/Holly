@@ -192,14 +192,16 @@ The Handover page helps you hand an event over with its whole story, not a one-l
 
 **The story**, on the right, opens when you select an object. It shows, oldest first and grouped by UTC day:
 
-● every publication of every notice about the object, so you can see how the event developed;
+● each publication of each notice about the object, so you can see how the event developed;
 ● each provider's manoeuvre record, with the changes it states: period, apogee, perigee, delta-v and longitude;
-● every post of each chat thread a lead has confirmed belongs to the object;
+● the posts of each chat thread a lead has confirmed belongs to the object, up to 100 a thread;
 ● the notes analysts have added.
+
+When an object has more than the page can show, it shows the newest and says so above the story.
 
 Each item says where it came from under **Source**, such as `NOTSO · UDL` with the record's UDL id, `Provider record · UDL`, `Mattermost` with its channel, or `Analyst note`. Timers set against the object's notices are listed above the story.
 
-**Threads that may belong here** lists chat threads that mention one of the object's NOTSO numbers, or its catalogue number as a whole number, in a followed channel. Holly only suggests them: read the first matching post, then select **Confirm this thread** if it is about this object, or **Not this one** if it is not. Only a confirmed thread joins the story, and a thread you have decided on is not suggested again. Your decision is recorded in the audit log with your name.
+**Threads that may belong here** lists chat threads that mention one of the object's NOTSO numbers, or its catalogue number as a whole number, in a followed channel. Holly only suggests them: read the first matching post, then select **Confirm this thread** if it is about this object, or **Not this one** if it is not. Only a confirmed thread joins the story, and a thread you have decided on is not suggested again. A thread in a channel someone has switched off on the Comms page is neither suggested nor shown. Your decision is recorded in the audit log with your name.
 
 **Notes:** type in **Add a note to this object's story** and select **Add note**. The note joins the story with your username. **Delete note** asks you to confirm first; the audit log records both.
 

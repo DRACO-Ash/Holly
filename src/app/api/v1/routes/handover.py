@@ -8,14 +8,14 @@ from typing import Annotated, Any
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException, Path, Query, Request, Response, status
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.config import get_settings
 from app.core.net import client_ip
 from app.dependencies import CurrentUser, DbSession
 from app.models.event_timer import EventTimer
-from app.models.handover import CONFIRMED, HandoverNote, HandoverThreadLink
+from app.models.handover import HandoverNote, HandoverThreadLink
 from app.models.maneuver import Maneuver
 from app.models.mattermost_message import MattermostMessage
 from app.models.notification import Notification
@@ -27,11 +27,10 @@ from app.schemas.handover import (
     ThreadLinkDecision,
 )
 from app.services.audit import write_audit
-from app.services.event_summary import compute_event_key
 from app.services.handover import story as s
 from app.services.notification_query import (
     aliased_deduped_notifications,
-    notification_group_key,
+    compute_event_key,
 )
 
 router = APIRouter(prefix="/handover", tags=["handover"])
@@ -78,6 +77,38 @@ async def list_objects(
     )
 
 
+def _newest_kept(rows: Any, cap: int) -> tuple[list[Any], bool]:
+    """Rows read newest first and one past the cap: the newest `cap`, oldest first, and
+    whether any were left out."""
+    rows = list(rows)
+    return list(reversed(rows[:cap])), len(rows) > cap
+
+
+async def _confirmed_posts(db: DbSession, thread_ids: list[str]) -> list[MattermostMessage]:
+    """Up to one more post than a thread shows, per thread, oldest first, from channels not
+    switched off; the extra one tells the thread it was cut."""
+    rank = (
+        func.row_number()
+        .over(
+            partition_by=s.thread_key(),
+            order_by=(MattermostMessage.posted_at, MattermostMessage.mm_post_id),
+        )
+        .label("rank")
+    )
+    ranked = (
+        select(MattermostMessage.id, rank)
+        .where(s.in_threads(thread_ids), s.not_switched_off())
+        .subquery()
+    )
+    stmt = (
+        select(MattermostMessage)
+        .join(ranked, ranked.c.id == MattermostMessage.id)
+        .where(ranked.c.rank <= s.POSTS_PER_THREAD + 1)
+        .order_by(MattermostMessage.posted_at)
+    )
+    return list((await db.execute(stmt)).scalars().all())
+
+
 async def _threads(
     db: DbSession, keys: set[str], mentions: s.Mentions, start: datetime
 ) -> tuple[list[Any], list[Any], bool]:
@@ -85,76 +116,74 @@ async def _threads(
     if keys:
         link_stmt = select(HandoverThreadLink).where(HandoverThreadLink.event_key.in_(keys))
         links = list((await db.execute(link_stmt)).scalars().all())
-    confirmed = sorted({ln.thread_id for ln in links if ln.decision == CONFIRMED})[: s.THREAD_CAP]
-    posts: list[MattermostMessage] = []
-    if confirmed:
-        post_stmt = (
-            select(MattermostMessage)
-            .where(s.thread_key().in_(confirmed))
-            .order_by(MattermostMessage.posted_at)
-            .limit(s.THREAD_CAP * s.POSTS_PER_THREAD)
-        )
-        posts = list((await db.execute(post_stmt)).scalars().all())
+    confirmed, threads_cut = s.newest_confirmed(links)
+    posts = await _confirmed_posts(db, confirmed) if confirmed else []
     candidate_stmt = (
         select(MattermostMessage)
         .where(MattermostMessage.posted_at >= start, s.not_switched_off(), mentions.condition())
         .order_by(MattermostMessage.posted_at.desc())
         .limit(s.CANDIDATE_POST_CAP + 1)
     )
-    candidates, cut = _capped(
+    candidates, candidates_cut = _capped(
         (await db.execute(candidate_stmt)).scalars().all(), s.CANDIDATE_POST_CAP
     )
     decided = {ln.thread_id for ln in links}
-    shown_links = [ln for ln in links if ln.thread_id in confirmed]
-    return (
-        s.threads_from(shown_links, posts),
-        s.suggestions_from(candidates, mentions, decided),
-        cut,
+    shown = [ln for ln in links if ln.thread_id in confirmed]
+    suggestions, suggestions_cut = _capped(
+        s.suggestions_from(candidates, mentions, decided), s.SUGGESTION_CAP
     )
+    threads = s.threads_from(shown, posts)
+    cut = threads_cut or candidates_cut or suggestions_cut or any(t.truncated for t in threads)
+    return threads, suggestions, cut
 
 
 @router.get("/objects/{sat_no}")
 async def object_story(
     sat_no: SatNo, db: DbSession, _current_user: CurrentUser, hours: Hours = None
 ) -> HandoverStory:
+    """Everything Holly holds about one object in the window, oldest first. Over a cap the
+    newest are kept and the answer says so."""
     window_hours, start, now = _window(hours)
     notice_stmt = (
         select(Notification)
         .where(Notification.udl_created_at >= start, s.names_object(sat_no))
-        .order_by(Notification.udl_created_at, Notification.created_at)
+        .order_by(Notification.udl_created_at.desc(), Notification.created_at.desc())
         .limit(s.STORY_NOTICE_CAP + 1)
     )
-    notices, notices_cut = _capped(
+    read, notices_cut = _newest_kept(
         (await db.execute(notice_stmt)).scalars().all(), s.STORY_NOTICE_CAP
     )
+    notices = [n for n in read if s.names(n, sat_no)]
     maneuver_stmt = (
         select(Maneuver)
         .where(Maneuver.sat_no == sat_no, Maneuver.event_start_time >= start)
-        .order_by(Maneuver.event_start_time)
+        .order_by(Maneuver.event_start_time.desc())
         .limit(s.STORY_MANEUVER_CAP + 1)
     )
-    maneuvers, maneuvers_cut = _capped(
+    maneuvers, maneuvers_cut = _newest_kept(
         (await db.execute(maneuver_stmt)).scalars().all(), s.STORY_MANEUVER_CAP
     )
     keys = {compute_event_key(n) for n in notices}
-    threads, suggestions, posts_cut = await _threads(
+    threads, suggestions, threads_cut = await _threads(
         db, keys, s.mentions_for(sat_no, notices), start
     )
     timers: list[EventTimer] = []
+    timers_cut = False
     if keys:
         timer_stmt = (
             select(EventTimer)
             .where(EventTimer.event_key.in_(keys), EventTimer.dismissed_at.is_(None))
             .order_by(EventTimer.target_time)
+            .limit(s.TIMER_CAP + 1)
         )
-        timers = list((await db.execute(timer_stmt)).scalars().all())
+        timers, timers_cut = _capped((await db.execute(timer_stmt)).scalars().all(), s.TIMER_CAP)
     note_stmt = (
         select(HandoverNote)
         .where(HandoverNote.sat_no == sat_no)
         .order_by(HandoverNote.created_at.desc())
-        .limit(s.NOTE_CAP)
+        .limit(s.NOTE_CAP + 1)
     )
-    notes = list((await db.execute(note_stmt)).scalars().all())
+    notes, notes_cut = _capped((await db.execute(note_stmt)).scalars().all(), s.NOTE_CAP)
     names = {n: t.name for n, t in s.tally_objects(notices).items()}
     return HandoverStory(
         sat_no=sat_no,
@@ -168,25 +197,41 @@ async def object_story(
         suggestions=suggestions,
         timers=[s.story_timer(t) for t in timers],
         notes=s.story_notes(notes, await s.author_names(db, notes)),
-        truncated=notices_cut or maneuvers_cut or posts_cut,
+        truncated=notices_cut or maneuvers_cut or threads_cut or timers_cut or notes_cut,
     )
+
+
+async def _holds(db: DbSession, event_key: str, thread_id: str) -> bool:
+    """True when Holly holds a notice with this group key and a post of this thread in a
+    channel not switched off. Each lookup can use an index; the key is confirmed in Python."""
+    notice_stmt = (
+        select(Notification)
+        .where(
+            or_(
+                Notification.event_id == event_key,
+                Notification.notso_identifier == event_key,
+                Notification.udl_id == event_key,
+            )
+        )
+        .limit(50)
+    )
+    notices = (await db.execute(notice_stmt)).scalars().all()
+    if not any(compute_event_key(n) == event_key for n in notices):
+        return False
+    thread_stmt = (
+        select(MattermostMessage.id).where(s.in_threads([thread_id]), s.not_switched_off()).limit(1)
+    )
+    return (await db.execute(thread_stmt)).scalar_one_or_none() is not None
 
 
 @router.post("/thread-links")
 async def decide_thread_link(
     payload: ThreadLinkDecision, request: Request, db: DbSession, current_user: CurrentUser
 ) -> ThreadLinkDecision:
-    """Confirm or reject a suggested link, or clear an earlier decision. The notice and the
-    thread must both be ones Holly holds."""
+    """Confirm or reject a suggested link, or clear an earlier decision. To decide, the notice
+    and a post of the thread in a channel not switched off must be ones Holly holds; clearing
+    needs neither, so a decision can be undone after its notice or thread is gone."""
     event_key = payload.event_key.strip()
-    notice = await db.execute(
-        select(Notification.id).where(notification_group_key() == event_key).limit(1)
-    )
-    thread = await db.execute(
-        select(MattermostMessage.id).where(s.thread_key() == payload.thread_id).limit(1)
-    )
-    if notice.scalar_one_or_none() is None or thread.scalar_one_or_none() is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="No such notice or thread.")
     if payload.decision == "clear":
         await db.execute(
             delete(HandoverThreadLink).where(
@@ -194,6 +239,8 @@ async def decide_thread_link(
                 HandoverThreadLink.event_key == event_key,
             )
         )
+    elif not await _holds(db, event_key, payload.thread_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="No such notice or thread.")
     else:
         now = datetime.now(UTC)
         values = {"decision": payload.decision, "decided_by": current_user.id, "decided_at": now}

@@ -72,3 +72,5 @@ review engineering-reviewer FAIL 601c1e5a6e7a8c91d334c9d052e1dff75f49c874 # V0.1
 review engineering-reviewer PASS 8adac50f6613c1a78245ea088a956da3821e745a # V0.17, round 5 (scripts only; upload as at 2c5000a)
 review engineering-reviewer PASS 4a0bbd8ccf90783fab114a1b71b4f815cb2a80a6 # V0.18, round 1
 review security-reviewer PASS 4a0bbd8ccf90783fab114a1b71b4f815cb2a80a6 # V0.18, round 1
+review engineering-reviewer FAIL 4d48c443442e8d18fe1ada62a440c2a0f4ceae1a # V0.19, round 1: save race, oldest kept over caps, silent caps, duplicate threads, unasserted controls
+review security-reviewer FAIL 4d48c443442e8d18fe1ada62a440c2a0f4ceae1a # V0.19, round 1: no-outside-AI test bypassable, switched-off thread shown when confirmed

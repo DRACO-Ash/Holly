@@ -247,4 +247,60 @@ describe("the Handover tab", () => {
     answerFirst(aFullStory());
     await waitFor(() => expect(screen.queryByText("Maneuver · ABC-0001")).toBeNull());
   });
+
+  it("keeps the object picked during a save, and files a note on the object on screen", async () => {
+    let finishDecision: () => void = () => undefined;
+    vi.mocked(decideThreadLink).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishDecision = () =>
+            resolve({ thread_id: "t-9", event_key: "EVT-1", decision: "confirmed" });
+        }),
+    );
+    vi.mocked(getHandoverStory).mockImplementation(async (satNo) =>
+      satNo === 90001 ? aFullStory() : aStory({ sat_no: 90002, name: "OTHER-SAT" }),
+    );
+    vi.mocked(addHandoverNote).mockResolvedValue({
+      id: "note-9",
+      author_id: "u-1",
+      author: "example-lead",
+      text: "On B.",
+      created_at: "2026-01-06T10:00:00Z",
+    });
+    await openFirstObject();
+    fireEvent.click(screen.getByRole("button", { name: "Confirm this thread" }));
+    fireEvent.click(screen.getByRole("button", { name: /Unnamed object/ }));
+    await screen.findByRole("heading", { name: /OTHER-SAT/ });
+    finishDecision();
+    await waitFor(() => expect(getHandoverStory).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole("heading", { name: /OTHER-SAT/ })).toBeTruthy();
+    const box = screen.getByLabelText<HTMLTextAreaElement>("Add a note to this object's story");
+    fireEvent.change(box, { target: { value: "On B." } });
+    fireEvent.click(screen.getByRole("button", { name: "Add note" }));
+    await waitFor(() => expect(addHandoverNote).toHaveBeenCalledWith(90002, "On B."));
+  });
+
+  it("says nothing about a failed save once another object is on screen", async () => {
+    let failDecision: () => void = () => undefined;
+    vi.mocked(decideThreadLink).mockImplementation(
+      () =>
+        new Promise((_resolve, reject) => {
+          failDecision = () => reject(new Error("down"));
+        }),
+    );
+    vi.mocked(getHandoverStory).mockImplementation(async (satNo) =>
+      satNo === 90001 ? aFullStory() : aStory({ sat_no: 90002, name: "OTHER-SAT" }),
+    );
+    await openFirstObject();
+    fireEvent.click(screen.getByRole("button", { name: "Not this one" }));
+    fireEvent.click(screen.getByRole("button", { name: /Unnamed object/ }));
+    await screen.findByRole("heading", { name: /OTHER-SAT/ });
+    failDecision();
+    await waitFor(() =>
+      expect((screen.getByRole("button", { name: "Add note" }) as HTMLButtonElement).disabled).toBe(
+        true,
+      ),
+    );
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
 });

@@ -1,11 +1,12 @@
 """The Handover tab's reads and writes: the objects with live events, and one object's story
 told from what Holly already holds, with where every item came from."""
 
+import unicodedata
 from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.schemas.common import StorableText
 from app.schemas.maneuver import ManeuverFacts
@@ -64,7 +65,7 @@ class StoryThread(BaseModel):
     """A chat thread a mission lead confirmed is about one of the object's notices."""
 
     thread_id: str
-    event_key: str
+    event_keys: list[str]
     channel_name: str | None
     confirmed_at: datetime
     posts: list[StoryPost]
@@ -128,3 +129,10 @@ class HandoverNoteCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     text: StorableText = Field(min_length=1, max_length=4000)
+
+    @field_validator("text")
+    @classmethod
+    def _no_format_characters(cls, value: str) -> str:
+        """Drops Unicode format characters (bidirectional overrides, zero-width spaces), so a
+        note cannot show in another order than it is stored."""
+        return "".join(ch for ch in value if unicodedata.category(ch) != "Cf")

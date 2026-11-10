@@ -108,7 +108,7 @@ From V0.19 back to V0.18, migration 0020 is undone the same way, in the running 
 python -c "from alembic import command; from app.migrate import alembic_config; command.downgrade(alembic_config(), '0019_mattermost_channel')"
 ```
 
-It drops `handover_thread_link` and `handover_note`, every link decision and Handover note, and the thread ids on chat posts, and keeps every post. Export anything the team needs from the Handover page first. V0.18 has no Handover page, so nothing else changes.
+It drops `handover_thread_link` and `handover_note`, every link decision and Handover note, and the thread ids on chat posts, and keeps every post. The page has no export: copy any note the team needs from the page first, or, with database access, dump the two tables (`pg_dump --table=handover_note --table=handover_thread_link`). V0.18 has no Handover page, so nothing else changes.
 
 ### Deployment parameters
 
@@ -230,11 +230,11 @@ Maneuver values beyond the typed columns (status, characterisation, end time, de
 
 ## The Handover tab
 
-Since V0.19 the **Handover** page tells each object's story from what Holly already holds. Its routes sit under `/api/v1/handover`, signed-in users only, and none calls the assistant or anything outside Holly; a test fails the build if a Handover module imports the assistant (`tests/test_handover.py`).
+Since V0.19 the **Handover** page tells each object's story from what Holly already holds. Its routes sit under `/api/v1/handover`, signed-in users only, and none calls the assistant or anything outside Holly: a test imports every Handover module in a fresh interpreter and fails the build if that loads the assistant, its client or the Anthropic library (`tests/test_handover.py`).
 
 ● `GET /api/v1/handover/objects?hours=` lists the objects the notices in the window name (default `BACKGROUND_NOTIFICATION_WINDOW_HOURS`, 1 to 336), from the latest publication of the newest 1,000 notices, with each object's provider record count.
-● `GET /api/v1/handover/objects/{catalogue number}` tells one object's story: up to 500 notice publications and 300 maneuver records in the window, up to 20 confirmed threads of 100 posts each, the timers on its notices and up to 200 notes. It also searches up to 500 posts in the window, in channels not switched off, for the object's NOTSO numbers (4 characters or more) or its catalogue number as a whole number, and offers up to 20 undecided threads. When a cap is reached the answer says so.
-● `POST /api/v1/handover/thread-links` records a lead's decision on a thread and a notice (`confirmed`, `rejected`, or `clear` to forget it); both must be ones Holly holds. Audit action `handover.thread_link`.
+● `GET /api/v1/handover/objects/{catalogue number}` tells one object's story. A notice counts when it names the number, as written or zero-padded, in its satellite list, its `sat_no` or the last brackets of its event class. The story holds the newest 500 notice publications and 300 maneuver records in the window, the 20 confirmed threads decided most recently with up to 100 posts each from channels not switched off, up to 100 open timers on its notices and the newest 200 notes. It also searches the newest 500 posts in the window, in channels not switched off, for the object's NOTSO numbers (4 characters or more) or its catalogue number as a whole number, and offers up to 20 undecided threads. When any of these caps is reached, `truncated` is true and the page says so.
+● `POST /api/v1/handover/thread-links` records a lead's decision on a thread and a notice (`confirmed` or `rejected`), or forgets one (`clear`). To decide, Holly must hold the notice and a post of the thread in a channel not switched off; clearing needs neither, so a decision can be undone after its notice or thread is gone. Audit action `handover.thread_link`.
 ● `POST /api/v1/handover/objects/{catalogue number}/notes` and `DELETE /api/v1/handover/notes/{id}` add and delete analysts' notes. Audit actions `handover.note.create`, with the note's length but not its text, and `handover.note.delete`. Any signed-in user may delete any note, as with shift log entries.
 
 Migration `0020_handover_story` adds `mattermost_message.root_id`, the thread a reply belongs to, and copies it from each stored post's payload where it is a plain id; it also indexes `notification.sat_ids` and creates `handover_thread_link` and `handover_note`. The story query reads the notices in the window with no index on `udl_created_at`, like the activity overview; measured load `TBC, re-verify`.

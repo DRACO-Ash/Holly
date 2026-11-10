@@ -9,6 +9,9 @@ in Handover sends data outside Holly).
 
 import ast
 import itertools
+import os
+import subprocess
+import sys
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -249,14 +252,33 @@ class TestTheSuggestions:
         assert found[0].reason == "Mentions NOTSO ABC-0002"
         assert found[0].first_post.post_id == "p1"
 
-    def test_suggestions_stop_at_the_cap(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_suggestions_stop_one_past_the_cap_so_the_cut_can_be_told(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.setattr(story, "SUGGESTION_CAP", 1)
-        posts = [message("p1", "90001", minutes=1), message("p2", "90001", minutes=2)]
-        assert len(story.suggestions_from(posts, self.mentions(), set())) == 1
+        posts = [message(f"p{i}", "90001", minutes=i) for i in range(4)]
+        assert len(story.suggestions_from(posts, self.mentions(), set())) == 2
+
+
+class TestWhichNoticesNameTheObject:
+    def test_the_database_cut_reads_the_number_as_written_or_zero_padded(self) -> None:
+        compiled = story.names_object(123).compile(dialect=POSTGRESQL)
+        values = list(compiled.params.values())
+        assert ["123"] in values
+        assert ["000000123"] in values
+        assert "%(000123)%" in values
+        assert "notification.sat_no =" in str(compiled)
+        assert story.written_forms(123456789) == ["123456789"]
+
+    def test_only_a_notice_the_parser_reads_as_naming_it_counts(self) -> None:
+        padded = notice(sat_ids=["090001"], event_class=None)
+        loose = notice(sat_ids=[], event_class="Maneuver / OTHER (90001) said once")
+        assert story.names(padded, 90001) is True
+        assert story.names(loose, 90001) is False
 
 
 class TestTheThreads:
-    def test_only_confirmed_threads_are_told_with_their_posts_in_order(
+    def test_a_thread_confirmed_against_two_notices_is_told_once_newest_first(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr(story, "POSTS_PER_THREAD", 2)
@@ -264,14 +286,38 @@ class TestTheThreads:
             message("r2", "third", root="t1", minutes=3),
             message("t1", "first", minutes=1),
             message("r1", "second", root="t1", minutes=2),
+            message("t3", "only", minutes=4),
         ]
-        links = [link("t1", "EVT-1"), link("t2", "EVT-1", "rejected"), link("t3", "EVT-2")]
+        newer = link("t3", "EVT-2")
+        newer.decided_at = NOW
+        links = [
+            link("t1", "EVT-2"),
+            link("t1", "EVT-1"),
+            link("t2", "EVT-1", "rejected"),
+            newer,
+            link("t4", "EVT-1"),  # confirmed, but none of its posts were read
+        ]
         threads = story.threads_from(links, posts)
-        assert [(t.thread_id, t.truncated) for t in threads] == [("t1", True), ("t3", False)]
-        assert [p.post_id for p in threads[0].posts] == ["t1", "r1"]
-        assert threads[0].channel_name == "Example Channel"
-        assert threads[1].posts == []
-        assert threads[1].channel_name is None
+        assert [(t.thread_id, t.event_keys, t.truncated) for t in threads] == [
+            ("t3", ["EVT-2"], False),
+            ("t1", ["EVT-1", "EVT-2"], True),
+        ]
+        assert [p.post_id for p in threads[1].posts] == ["t1", "r1"]
+        assert threads[1].channel_name == "Example Channel"
+
+    def test_the_newest_confirmed_threads_are_read_and_the_cut_told(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(story, "THREAD_CAP", 1)
+        old, new = link("old", "EVT-1"), link("new", "EVT-1")
+        new.decided_at = NOW
+        again = link("old", "EVT-2")
+        again.decided_at = NOW - timedelta(hours=5)
+        assert story.newest_confirmed([old, new, again, link("no", "EVT-1", "rejected")]) == (
+            ["new"],
+            True,
+        )
+        assert story.newest_confirmed([old]) == (["old"], False)
 
 
 async def test_the_handover_routes_need_sign_in(
@@ -302,7 +348,7 @@ class TestTheObjectList:
         assert (body["objects"], body["window_hours"], body["truncated"]) == ([], 24, False)
         assert session.execute.await_count == 1
 
-    async def test_objects_carry_their_maneuver_counts(
+    async def test_objects_carry_their_maneuver_counts_in_the_window(
         self, api: httpx2.AsyncClient, use_session: UseSession, sign_in: SignIn
     ) -> None:
         sign_in(make_user())
@@ -322,6 +368,7 @@ class TestTheObjectList:
             }
         ]
         assert "DISTINCT ON" in sent(session, 0)
+        assert "maneuver.event_start_time >=" in sent(session, 1)
         assert "GROUP BY maneuver.sat_no" in sent(session, 1)
 
     async def test_more_notices_than_the_cap_is_reported(
@@ -346,35 +393,47 @@ class TestTheObjectList:
         assert (await api.get(OBJECTS, params={"hours": 337})).status_code == 422
 
 
+def note_row(author_id: uuid.UUID | None = None, text: str = "Watch the approach.") -> HandoverNote:
+    return HandoverNote(
+        id=synthetic_id(), sat_no=90001, author_id=author_id, text=text, created_at=NOW
+    )
+
+
 class TestTheStory:
     async def test_an_object_with_nothing_held_has_an_empty_story(
         self, api: httpx2.AsyncClient, use_session: UseSession, sign_in: SignIn
     ) -> None:
         sign_in(make_user())
-        session = use_session(
-            FakeSession([rows_result([]), rows_result([]), rows_result([]), rows_result([])])
-        )
+        session = use_session(FakeSession([rows_result([])] * 4))
         body = (await api.get(f"{OBJECTS}/90001")).json()
         assert body["notices"] == body["threads"] == body["suggestions"] == body["notes"] == []
         assert body["name"] is None
+        assert body["truncated"] is False
         # Notices, maneuvers, suggestion candidates and notes: no links or timers without notices.
         assert session.execute.await_count == 4
-        assert "notification.sat_ids @>" in sent(session, 0)
-        assert "LIKE" in sent(session, 0)
+        notices_sql = sent(session, 0)
+        assert "notification.udl_created_at >=" in notices_sql
+        assert "notification.sat_no =" in notices_sql
+        assert "notification.sat_ids @>" in notices_sql
+        assert "ORDER BY notification.udl_created_at DESC" in notices_sql
+        assert "ORDER BY maneuver.event_start_time DESC" in sent(session, 1)
+        candidates_sql = sent(session, 2)
+        assert "mattermost_message.posted_at >=" in candidates_sql
+        assert "mattermost_channel.following IS false" in candidates_sql
+        assert "ORDER BY handover_note.created_at DESC" in sent(session, 3)
 
     async def test_the_story_brings_every_source_together(
         self, api: httpx2.AsyncClient, use_session: UseSession, sign_in: SignIn
     ) -> None:
         author = sign_in(make_user(username="example-lead"))
         first = notice(event_id="EVT-1", notso_identifier="ABC-0001")
-        later = notice(event_id="EVT-1", notso_identifier="ABC-0001", status="VERIFIED")
-        note = HandoverNote(
-            id=synthetic_id(),
-            sat_no=90001,
-            author_id=author.id,
-            text="Watch the approach.",
-            created_at=NOW,
+        later = notice(
+            event_id="EVT-1",
+            notso_identifier="ABC-0001",
+            status="VERIFIED",
+            udl_created_at=NOW - timedelta(hours=1),
         )
+        other = notice(sat_ids=[], event_class="Maneuver / ELSE (90001) aside")
         timer = EventTimer(
             id=synthetic_id(), label="Closest approach", target_time=NOW, event_key="EVT-1"
         )
@@ -383,7 +442,7 @@ class TestTheStory:
         session = use_session(
             FakeSession(
                 [
-                    rows_result([first, later]),
+                    rows_result([later, other, first]),
                     rows_result([maneuver()]),
                     rows_result([link("t1", "EVT-1"), link("t2", "EVT-1", "rejected")]),
                     rows_result([message("t1", "ABC-0001 confirmed thread")]),
@@ -391,38 +450,98 @@ class TestTheStory:
                         [message("t2", "ABC-0001 rejected"), message("t5", "ABC-0001 new")]
                     ),
                     rows_result([timer]),
-                    rows_result([note]),
+                    rows_result([note_row(author.id)]),
                     names,
                 ]
             )
         )
         body = (await api.get(f"{OBJECTS}/90001")).json()
         assert body["name"] == "TEST-SAT 1"
+        # Read newest first, told oldest first; the notice the parser does not read is left out.
         assert [n["status"] for n in body["notices"]] == ["OPEN", "VERIFIED"]
         assert body["notices"][0]["event_key"] == "EVT-1"
         assert body["notices"][0]["kind"] == "Maneuver"
         assert body["maneuvers"][0]["facts"]["delta_vel_kms"] == 0.002
-        assert [t["thread_id"] for t in body["threads"]] == ["t1"]
+        assert [(t["thread_id"], t["event_keys"]) for t in body["threads"]] == [("t1", ["EVT-1"])]
         assert [s["thread_id"] for s in body["suggestions"]] == ["t5"]
         assert body["timers"][0]["label"] == "Closest approach"
         assert body["notes"][0]["author"] == "example-lead"
         assert body["truncated"] is False
-        assert "coalesce(mattermost_message.root_id, mattermost_message.mm_post_id) IN" in sent(
-            session, 3
-        )
-        assert "mattermost_channel.following IS false" in sent(session, 4)
+        posts_sql = sent(session, 3)
+        assert "row_number() OVER (PARTITION BY coalesce(" in posts_sql
+        assert "mattermost_message.root_id IN" in posts_sql
+        assert "mattermost_channel.following IS false" in posts_sql
         assert "event_timer.dismissed_at IS NULL" in sent(session, 5)
+
+    @pytest.mark.parametrize("cap", ["STORY_NOTICE_CAP", "STORY_MANEUVER_CAP"])
+    async def test_over_a_cap_the_newest_are_kept_and_the_cut_told(
+        self,
+        api: httpx2.AsyncClient,
+        use_session: UseSession,
+        sign_in: SignIn,
+        monkeypatch: pytest.MonkeyPatch,
+        cap: str,
+    ) -> None:
+        sign_in(make_user())
+        monkeypatch.setattr(story, cap, 1)
+        newest = notice(event_id="EVT-NEW", udl_created_at=NOW - timedelta(hours=1))
+        oldest = notice(event_id="EVT-OLD", udl_created_at=NOW - timedelta(hours=9))
+        new_m = maneuver(udl_id="NEW", event_start_time=NOW - timedelta(hours=1))
+        old_m = maneuver(udl_id="OLD", event_start_time=NOW - timedelta(hours=9))
+        use_session(
+            FakeSession(
+                [
+                    rows_result([newest, oldest]),
+                    rows_result([new_m, old_m]),
+                    rows_result([]),
+                    rows_result([]),
+                    rows_result([]),
+                    rows_result([]),
+                ]
+            )
+        )
+        body = (await api.get(f"{OBJECTS}/90001")).json()
+        assert body["truncated"] is True
+        if cap == "STORY_NOTICE_CAP":
+            assert [n["event_key"] for n in body["notices"]] == ["EVT-NEW"]
+        else:
+            assert [m["udl_id"] for m in body["maneuvers"]] == ["NEW"]
+
+    @pytest.mark.parametrize("cap", ["TIMER_CAP", "NOTE_CAP", "SUGGESTION_CAP", "THREAD_CAP"])
+    async def test_every_other_cap_is_told_too(
+        self,
+        api: httpx2.AsyncClient,
+        use_session: UseSession,
+        sign_in: SignIn,
+        monkeypatch: pytest.MonkeyPatch,
+        cap: str,
+    ) -> None:
+        sign_in(make_user())
+        monkeypatch.setattr(story, cap, 1)
+        timer = EventTimer(id=synthetic_id(), label="T", target_time=NOW, event_key="EVT-1")
+        names = MagicMock()
+        names.all.return_value = []
+        use_session(
+            FakeSession(
+                [
+                    rows_result([notice(event_id="EVT-1", notso_identifier="ABC-0001")]),
+                    rows_result([]),
+                    rows_result([link("t1", "EVT-1"), link("t2", "EVT-1")]),
+                    rows_result([message("t1", "kept"), message("t2", "kept")]),
+                    rows_result([message("s1", "ABC-0001"), message("s2", "ABC-0001")]),
+                    rows_result([timer, timer]),
+                    rows_result([note_row(), note_row()]),
+                    names,
+                ]
+            )
+        )
+        assert (await api.get(f"{OBJECTS}/90001")).json()["truncated"] is True
 
     async def test_a_note_author_who_is_gone_is_left_unnamed(
         self, api: httpx2.AsyncClient, use_session: UseSession, sign_in: SignIn
     ) -> None:
         sign_in(make_user())
-        note = HandoverNote(
-            id=synthetic_id(), sat_no=90001, author_id=None, text="Old.", created_at=NOW
-        )
-        use_session(
-            FakeSession([rows_result([]), rows_result([]), rows_result([]), rows_result([note])])
-        )
+        use_session(FakeSession([rows_result([])] * 3 + [rows_result([note_row(text="Old.")])]))
         body = (await api.get(f"{OBJECTS}/90001")).json()
         assert body["notes"][0]["author"] is None
 
@@ -437,7 +556,8 @@ class TestTheStory:
 
 class TestTheLinkDecisions:
     def found(self, *more: Any) -> FakeSession:
-        return FakeSession([scalar_result(uuid.uuid4()), scalar_result(uuid.uuid4()), *more])
+        held = notice(event_id="EVT-1")
+        return FakeSession([rows_result([held]), scalar_result(uuid.uuid4()), *more])
 
     async def test_a_confirmation_is_stored_and_audited_before_the_commit(
         self,
@@ -456,7 +576,13 @@ class TestTheLinkDecisions:
             "event_key": "EVT-1",
             "decision": "confirmed",
         }
-        assert "ON CONFLICT ON CONSTRAINT uq_handover_thread_link DO UPDATE" in sent(session, 2)
+        assert "mattermost_channel.following IS false" in sent(session, 1)
+        assert "mattermost_message.root_id IN" in sent(session, 1)
+        upsert = sent(session, 2)
+        assert "ON CONFLICT ON CONSTRAINT uq_handover_thread_link DO UPDATE SET" in upsert
+        updated = upsert.split("DO UPDATE SET", 1)[1]
+        for column in ("decision", "decided_by", "decided_at", "updated_at"):
+            assert f"{column} =" in updated
         assert params(session, 2)["decided_by"] == user.id
         [call] = audits
         assert call.after_commit is False
@@ -464,23 +590,30 @@ class TestTheLinkDecisions:
         assert call.fields["detail"] == {"event_key": "EVT-1", "decision": "confirmed"}
         session.commit.assert_awaited_once()
 
-    async def test_clearing_deletes_the_decision(
-        self, api: httpx2.AsyncClient, use_session: UseSession, sign_in: SignIn
+    async def test_clearing_needs_no_notice_or_thread_still_held(
+        self,
+        api: httpx2.AsyncClient,
+        use_session: UseSession,
+        sign_in: SignIn,
+        audits: list[AuditCall],
     ) -> None:
         sign_in(make_user())
-        session = use_session(self.found(MagicMock()))
-        body = {"thread_id": "thread-1", "event_key": "EVT-1", "decision": "clear"}
+        session = use_session(FakeSession([MagicMock()]))
+        body = {"thread_id": "gone", "event_key": "EVT-GONE", "decision": "clear"}
         assert (await api.post(LINKS, json=body)).status_code == 200
-        assert sent(session, 2).startswith("DELETE FROM handover_thread_link")
+        assert sent(session, 0).startswith("DELETE FROM handover_thread_link")
+        assert audits[0].after_commit is False
 
     @pytest.mark.parametrize(
         "answers",
         [
-            [scalar_result(None), scalar_result(uuid.uuid4())],
-            [scalar_result(uuid.uuid4()), scalar_result(None)],
+            [rows_result([])],
+            # Found by its NOTSO number, but its group key is its event id.
+            [rows_result([notice(event_id="EVT-9", notso_identifier="EVT-1")])],
+            [rows_result([notice(event_id="EVT-1")]), scalar_result(None)],
         ],
     )
-    async def test_an_unknown_notice_or_thread_is_refused(
+    async def test_an_unknown_notice_or_thread_or_one_switched_off_is_refused(
         self,
         api: httpx2.AsyncClient,
         use_session: UseSession,
@@ -533,9 +666,8 @@ class TestTheNotes:
             note.created_at = NOW
 
         session.refresh.side_effect = stamp
-        response = await api.post(
-            f"{OBJECTS}/90001/notes", json={"text": "  Watch the approach.  "}
-        )
+        text = "  Watch the " + chr(0x202E) + "approach." + chr(0x200B) + "  "
+        response = await api.post(f"{OBJECTS}/90001/notes", json={"text": text})
         assert response.status_code == 201
         [note] = session.added
         assert (note.sat_no, note.text, note.author_id) == (90001, "Watch the approach.", user.id)
@@ -544,8 +676,9 @@ class TestTheNotes:
         assert call.fields["action_type"] == "handover.note.create"
         assert call.fields["detail"] == {"sat_no": 90001, "length": 19}
         assert call.after_commit is False
+        session.commit.assert_awaited_once()
 
-    @pytest.mark.parametrize("text", ["   ", "", "x" * 4001, "bad\x00text"])
+    @pytest.mark.parametrize("text", ["   ", "", "x" * 4001, "bad\x00text", chr(0x202E)])
     async def test_a_blank_long_or_unstorable_note_is_refused(
         self, api: httpx2.AsyncClient, use_session: UseSession, sign_in: SignIn, text: str
     ) -> None:
@@ -555,7 +688,7 @@ class TestTheNotes:
         assert response.status_code in {400, 422}
         assert session.added == []
 
-    async def test_a_note_is_deleted_and_audited(
+    async def test_a_note_is_deleted_and_audited_before_the_commit(
         self,
         api: httpx2.AsyncClient,
         use_session: UseSession,
@@ -563,13 +696,15 @@ class TestTheNotes:
         audits: list[AuditCall],
     ) -> None:
         sign_in(make_user())
-        note = HandoverNote(
-            id=synthetic_id(), sat_no=90001, author_id=None, text="Old.", created_at=NOW
-        )
+        note = note_row(text="Old.")
         session = use_session(FakeSession([scalar_result(note)]))
         assert (await api.delete(f"/api/v1/handover/notes/{note.id}")).status_code == 204
         session.delete.assert_awaited_once_with(note)
-        assert audits[0].fields["detail"] == {"sat_no": 90001}
+        [call] = audits
+        assert call.fields["action_type"] == "handover.note.delete"
+        assert call.fields["detail"] == {"sat_no": 90001}
+        assert call.after_commit is False
+        session.commit.assert_awaited_once()
 
     async def test_an_unknown_note_is_not_found(
         self, api: httpx2.AsyncClient, use_session: UseSession, sign_in: SignIn
@@ -579,21 +714,46 @@ class TestTheNotes:
         assert (await api.delete(f"/api/v1/handover/notes/{uuid.uuid4()}")).status_code == 404
 
 
-def test_no_handover_module_imports_the_assistant() -> None:
+HANDOVER_MODULES = ["app.api.v1.routes.handover", "app.services.handover.story"]
+BANNED = ("app.services.claude", "app.services.assistant", "anthropic")
+
+
+def test_loading_the_handover_modules_loads_no_assistant() -> None:
     """Handover reads chat; the assistant sends text to an outside AI service. The two never
-    meet: a Handover module that imports the assistant or its client fails the build."""
+    meet: importing every Handover module, in a fresh interpreter, must load none of the
+    assistant, its client or the Anthropic library, however they are reached."""
+    script = (
+        "import sys\n"
+        + "".join(f"import {m}\n" for m in HANDOVER_MODULES)
+        + f"print([m for m in {BANNED!r} if m in sys.modules])"
+    )
+    result = subprocess.run(  # noqa: S603  a fixed interpreter and script
+        [sys.executable, "-c", script],
+        cwd=ROOT / "src",
+        capture_output=True,
+        text=True,
+        check=True,
+        env={**os.environ, "PYTHONPATH": str(ROOT / "src")},
+    )
+    assert result.stdout.strip() == "[]", result.stderr
+
+
+def test_no_handover_module_imports_by_any_other_route() -> None:
+    """No relative import, importlib or __import__ in a Handover module, so the check above
+    sees everything it loads."""
     files = [
         ROOT / "src/app/api/v1/routes/handover.py",
         *(ROOT / "src/app/services/handover").glob("*.py"),
     ]
-    banned = {"app.services.claude", "app.services.assistant", "anthropic"}
-    for path in files:
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        for node in ast.walk(tree):
-            names: list[str] = []
-            if isinstance(node, ast.Import):
-                names = [alias.name for alias in node.names]
-            elif isinstance(node, ast.ImportFrom) and node.module:
-                names = [node.module, *(f"{node.module}.{a.name}" for a in node.names)]
-            assert not any(n == b or n.startswith(f"{b}.") for n in names for b in banned), path
     assert len(files) >= 4
+    for path in files:
+        source = path.read_text(encoding="utf-8")
+        assert "importlib" not in source, path
+        assert "__import__" not in source, path
+        for node in ast.walk(ast.parse(source)):
+            if isinstance(node, ast.ImportFrom):
+                assert node.level == 0, path
+            names = [a.name for a in node.names] if isinstance(node, ast.Import) else []
+            if isinstance(node, ast.ImportFrom) and node.module:
+                names = [node.module]
+            assert not any(n == b or n.startswith(f"{b}.") for n in names for b in BANNED), path

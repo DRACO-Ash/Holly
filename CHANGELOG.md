@@ -15,7 +15,7 @@ The first release of the Handover module (`docs/roadmap/handover-module.md`): ea
 
 ### Added
 
-● **The Handover page.** A list of the objects the notices in the window name, newest first, with a search. Picking one tells its story oldest first, grouped by UTC day: every notice publication, each provider's maneuver record with the period, apogee, perigee, delta-v and longitude changes it states, every post of each confirmed chat thread, and analysts' notes, each with its source. Timers set against its notices are listed.
+● **The Handover page.** A list of the objects the notices in the window name, newest first, with a search. Picking one tells its story oldest first, grouped by UTC day: its notice publications, each provider's maneuver record with the period, apogee, perigee, delta-v and longitude changes it states, the posts of each confirmed chat thread, and analysts' notes, each with its source. Over a cap the newest are kept and the page says so. Timers set against its notices are listed.
 ● **Suggested threads.** Holly offers chat threads, in channels not switched off, that mention one of the object's NOTSO numbers or its catalogue number. A lead confirms or rejects each; only a confirmed thread joins the story, and a decided thread is not offered again. Decisions are audited.
 ● **Notes on an object**, added and deleted from the Handover page, both audited.
 ● Routes under `/api/v1/handover`, signed-in users only.
@@ -23,7 +23,7 @@ The first release of the Handover module (`docs/roadmap/handover-module.md`): ea
 
 ### Security
 
-● Nothing on the Handover page calls the assistant or anything outside Holly. A test fails the build if a Handover module imports the assistant, its client or the Anthropic library.
+● Nothing on the Handover page calls the assistant or anything outside Holly. A test fails the build if importing the Handover modules loads the assistant, its client or the Anthropic library. A thread in a channel switched off on the Comms page is neither suggested, shown nor linked.
 
 ## Holly V0.18 (2026-11-03)
 

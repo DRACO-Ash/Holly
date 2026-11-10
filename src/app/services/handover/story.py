@@ -16,7 +16,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-from sqlalchemy import ColumnElement, func, or_, select
+from sqlalchemy import ColumnElement, and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.like import contains_pattern
@@ -38,9 +38,9 @@ from app.schemas.handover import (
     ThreadSuggestion,
 )
 from app.schemas.maneuver import ManeuverFacts
-from app.services.event_summary import compute_event_key
 from app.services.handover.taxonomy import parse_event_class
 from app.services.maneuver_facts import fact_text, maneuver_facts
+from app.services.notification_query import compute_event_key
 
 OBJECT_NOTICE_CAP = 1000
 STORY_NOTICE_CAP = 500
@@ -50,6 +50,7 @@ THREAD_CAP = 20
 POSTS_PER_THREAD = 100
 SUGGESTION_CAP = 20
 NOTE_CAP = 200
+TIMER_CAP = 100
 # A NOTSO number shorter than this matches too much chat to be a useful suggestion.
 _MIN_NOTICE_ID = 4
 _NOTICE_ID_CAP = 20
@@ -127,13 +128,25 @@ def objects_from(tallies: dict[int, _Tally], maneuvers: dict[int, int]) -> list[
     return objects
 
 
+def written_forms(sat_no: int) -> list[str]:
+    """The catalogue number as a notice may write it: as it is, or zero-padded to nine digits."""
+    plain = str(sat_no)
+    return [plain.zfill(width) for width in range(len(plain), 10)]
+
+
 def names_object(sat_no: int) -> ColumnElement[bool]:
-    """A notice that names the object anywhere Holly can see it."""
+    """A notice that may name the object: the database's coarse cut, which `names` confirms."""
+    forms = written_forms(sat_no)
     return or_(
         Notification.sat_no == sat_no,
-        Notification.sat_ids.contains([str(sat_no)]),
-        Notification.event_class.like(f"%({sat_no})%"),
+        *(Notification.sat_ids.contains([form]) for form in forms),
+        *(Notification.event_class.like(f"%({form})%") for form in forms),
     )
+
+
+def names(notice: Notification, sat_no: int) -> bool:
+    """True when the notice names the object as the object list reads it."""
+    return sat_no in catalogue_numbers(notice)
 
 
 def story_notice(notice: Notification) -> StoryNotice:
@@ -164,6 +177,14 @@ def story_maneuver(row: Maneuver) -> StoryManeuver:
 def thread_key() -> ColumnElement[str]:
     """A post's thread: its root post's id, or its own when it is the root."""
     return func.coalesce(MattermostMessage.root_id, MattermostMessage.mm_post_id)
+
+
+def in_threads(thread_ids: Sequence[str]) -> ColumnElement[bool]:
+    """Posts of these threads, written so the root_id and post id indexes serve it."""
+    return or_(
+        MattermostMessage.root_id.in_(thread_ids),
+        and_(MattermostMessage.root_id.is_(None), MattermostMessage.mm_post_id.in_(thread_ids)),
+    )
 
 
 def _thread_of(post: MattermostMessage) -> str:
@@ -238,7 +259,8 @@ def suggestions_from(
     mentions: Mentions,
     decided_threads: set[str],
 ) -> list[ThreadSuggestion]:
-    """One suggestion per undecided thread, from its earliest matching post."""
+    """One suggestion per undecided thread, from its earliest matching post; one more than the
+    cap at most, so the caller can tell the list was cut."""
     found: dict[str, ThreadSuggestion] = {}
     for post in sorted(posts, key=lambda p: p.posted_at):
         thread = _thread_of(post)
@@ -248,7 +270,7 @@ def suggestions_from(
             found[thread].matching_posts += 1
             continue
         hit = mentions.match(post.message)
-        if hit is None or len(found) >= SUGGESTION_CAP:
+        if hit is None or len(found) > SUGGESTION_CAP:
             continue
         found[thread] = ThreadSuggestion(
             thread_id=thread,
@@ -264,25 +286,45 @@ def suggestions_from(
 def threads_from(
     links: Sequence[HandoverThreadLink], posts: Sequence[MattermostMessage]
 ) -> list[StoryThread]:
+    """One thread per confirmed thread id, however many of the object's notices it was
+    confirmed against, newest decision first. A thread none of whose posts were read (its
+    channel switched off, or its posts gone) is left out."""
     by_thread: dict[str, list[MattermostMessage]] = {}
     for post in posts:
         by_thread.setdefault(_thread_of(post), []).append(post)
-    threads = []
+    decided: dict[str, list[HandoverThreadLink]] = {}
     for link in links:
-        if link.decision != CONFIRMED:
+        if link.decision == CONFIRMED:
+            decided.setdefault(link.thread_id, []).append(link)
+    threads = []
+    for thread_id, its_links in decided.items():
+        held = sorted(by_thread.get(thread_id, []), key=lambda p: p.posted_at)
+        if not held:
             continue
-        held = sorted(by_thread.get(link.thread_id, []), key=lambda p: p.posted_at)
         threads.append(
             StoryThread(
-                thread_id=link.thread_id,
-                event_key=link.event_key,
-                channel_name=held[0].channel_name if held else None,
-                confirmed_at=link.decided_at,
+                thread_id=thread_id,
+                event_keys=sorted({ln.event_key for ln in its_links}),
+                channel_name=held[0].channel_name,
+                confirmed_at=max(ln.decided_at for ln in its_links),
                 posts=[story_post(p) for p in held[:POSTS_PER_THREAD]],
                 truncated=len(held) > POSTS_PER_THREAD,
             )
         )
+    threads.sort(key=lambda t: t.confirmed_at, reverse=True)
     return threads
+
+
+def newest_confirmed(links: Sequence[HandoverThreadLink]) -> tuple[list[str], bool]:
+    """The confirmed thread ids to read, newest decision first, and whether the cap cut any."""
+    latest: dict[str, datetime] = {}
+    for link in links:
+        if link.decision == CONFIRMED:
+            latest[link.thread_id] = max(
+                link.decided_at, latest.get(link.thread_id, link.decided_at)
+            )
+    ordered = sorted(latest, key=lambda t: latest[t], reverse=True)
+    return ordered[:THREAD_CAP], len(ordered) > THREAD_CAP
 
 
 def story_timer(timer: EventTimer) -> StoryTimer:

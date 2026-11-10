@@ -77,19 +77,6 @@ def publication_order(n: Notification) -> tuple[datetime, str]:
     return (n.udl_created_at or n.created_at, str(n.id))
 
 
-def compute_event_key(n: Notification) -> str:
-    """Python mirror of the SQL COALESCE in notification_query.
-
-    The SQL groups on COALESCE(event_id, notso_identifier, udl_id). The same key is computed
-    here, so the summariser can group publications and the dashboard can join notifications
-    to their summary.
-    """
-    for value in (n.event_id, n.notso_identifier, n.udl_id):
-        if value:
-            return str(value)
-    return str(n.id)
-
-
 def _format_publication(index: int, n: Notification) -> str:
     head = [f"Publication {index + 1}"]
     for label, attribute in _HEAD_FIELDS:

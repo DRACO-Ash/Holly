@@ -60,28 +60,34 @@ export default function Handover() {
     void loadStory(satNo);
   };
 
-  const act = async (work: () => Promise<unknown>) => {
-    if (selected === null) return false;
+  // Acts on the object whose story is on screen. Its story is read again afterwards only if it
+  // is still the one wanted, so picking another object meanwhile is never undone.
+  const act = async (satNo: number, work: () => Promise<unknown>) => {
     setBusy(true);
     setError(null);
     try {
       await work();
-      await loadStory(selected);
+      if (wanted.current === satNo) await loadStory(satNo);
       return true;
     } catch {
-      setError(SAVE_FAILED);
+      if (wanted.current === satNo) setError(SAVE_FAILED);
       return false;
     } finally {
       setBusy(false);
     }
   };
 
-  const decide = (s: ThreadSuggestion, decision: LinkDecision) =>
-    void act(() => decideThreadLink({ thread_id: s.thread_id, event_key: s.event_key, decision }));
-  const addNote = (text: string) => act(() => addHandoverNote(selected ?? 0, text.trim()));
+  const onScreen = story?.sat_no ?? null;
+  const decide = (s: ThreadSuggestion, decision: LinkDecision) => {
+    if (onScreen === null) return;
+    const body = { thread_id: s.thread_id, event_key: s.event_key, decision };
+    void act(onScreen, () => decideThreadLink(body));
+  };
+  const addNote = async (text: string) =>
+    onScreen !== null && act(onScreen, () => addHandoverNote(onScreen, text.trim()));
   const deleteNote = (noteId: string) => {
-    if (!globalThis.confirm("Delete this note?")) return;
-    void act(() => deleteHandoverNote(noteId));
+    if (onScreen === null || !globalThis.confirm("Delete this note?")) return;
+    void act(onScreen, () => deleteHandoverNote(noteId));
   };
 
   return (

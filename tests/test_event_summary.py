@@ -16,7 +16,8 @@ from app.models.notification import Notification
 from app.services import event_summary
 from app.services.claude import AssistantError, ClaudeReply
 from app.services.disclosure import NOT_CLEARED
-from app.services.event_summary import SummaryOutcome, compute_event_key, generate_event_summary
+from app.services.event_summary import SummaryOutcome, generate_event_summary
+from app.services.notification_query import compute_event_key
 from fakes import NOW, FakeSession, scalar_result
 
 # One PostgreSQL dialect compiles every statement here. SQLAlchemy leaves its constructor

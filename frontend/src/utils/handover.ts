@@ -80,19 +80,27 @@ function maneuverEntries(story: HandoverStory): StoryEntry[] {
   });
 }
 
+// Each post once, even if a thread were ever told twice.
 function threadEntries(story: HandoverStory): StoryEntry[] {
-  return story.threads.flatMap((t) =>
-    t.posts.map((p) => ({
-      key: `post-${p.post_id}`,
-      type: "post" as const,
-      at: time(p.posted_at),
-      title: p.author ?? "Unknown author",
-      detail: p.message,
-      source: `Mattermost · ${t.channel_name ?? "channel"} · confirmed thread`,
-      kind: null,
-      author: p.author,
-    })),
-  );
+  const seen = new Set<string>();
+  const entries: StoryEntry[] = [];
+  for (const t of story.threads) {
+    for (const p of t.posts) {
+      if (seen.has(p.post_id)) continue;
+      seen.add(p.post_id);
+      entries.push({
+        key: `post-${p.post_id}`,
+        type: "post",
+        at: time(p.posted_at),
+        title: p.author ?? "Unknown author",
+        detail: p.message,
+        source: `Mattermost · ${t.channel_name ?? "channel"} · confirmed thread`,
+        kind: null,
+        author: p.author,
+      });
+    }
+  }
+  return entries;
 }
 
 function noteEntries(story: HandoverStory): StoryEntry[] {
@@ -108,6 +116,14 @@ function noteEntries(story: HandoverStory): StoryEntry[] {
   }));
 }
 
+// Oldest first; an item with no time goes last, and two with none keep their order.
+function byTime(a: StoryEntry, b: StoryEntry): number {
+  if (a.at === b.at) return 0;
+  if (a.at === null) return 1;
+  if (b.at === null) return -1;
+  return a.at - b.at;
+}
+
 // Every item, oldest first; an item with no time goes last.
 export function storyEntries(story: HandoverStory): StoryEntry[] {
   return [
@@ -115,7 +131,7 @@ export function storyEntries(story: HandoverStory): StoryEntry[] {
     ...maneuverEntries(story),
     ...threadEntries(story),
     ...noteEntries(story),
-  ].sort((a, b) => (a.at ?? Infinity) - (b.at ?? Infinity));
+  ].sort(byTime);
 }
 
 export const ENTRY_LABELS: Readonly<Record<EntryType, string>> = {

@@ -61,3 +61,17 @@ def aliased_deduped_notifications(
     subquery = deduped_notifications_select(conditions).subquery()
     alias: Any = aliased(Notification, subquery)
     return alias, subquery
+
+
+def compute_event_key(n: Notification) -> str:
+    """Python mirror of `notification_group_key`.
+
+    The SQL groups on COALESCE(event_id, notso_identifier, udl_id). The same key is computed
+    here, so the summariser can group publications and the dashboard can join notifications
+    to their summary. It lives here, apart from the assistant, so the Handover page can use it
+    without loading the assistant.
+    """
+    for value in (n.event_id, n.notso_identifier, n.udl_id):
+        if value:
+            return str(value)
+    return str(n.id)
