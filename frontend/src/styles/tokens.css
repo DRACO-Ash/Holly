@@ -4281,6 +4281,166 @@ button.event-row {
   }
 }
 
+/* Handover: the objects with live events beside one object's story */
+
+.handover-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+@media (min-width: 960px) {
+  .handover-grid {
+    grid-template-columns: minmax(16rem, 22rem) minmax(0, 1fr);
+  }
+}
+
+.handover-objects,
+.handover-suggestions,
+.handover-timers,
+.story-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.handover-objects {
+  margin-top: var(--space-3);
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+.handover-object {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  width: 100%;
+  text-align: left;
+}
+
+.handover-object[aria-pressed="true"] {
+  border-color: var(--color-accent);
+  background: var(--color-surface-hover);
+}
+
+.handover-object-name {
+  font-weight: 600;
+}
+
+.handover-object-kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.handover-object-meta,
+.story-time,
+.story-source {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.handover-story {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.handover-story h3 {
+  font-size: 0.8rem;
+  margin: 0 0 var(--space-2);
+}
+
+.story-entry,
+.handover-suggestion {
+  display: grid;
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+}
+
+@media (min-width: 720px) {
+  .story-entry {
+    grid-template-columns: 9rem minmax(0, 1fr);
+  }
+}
+
+.story-body {
+  min-width: 0;
+}
+
+.story-title,
+.story-detail,
+.story-source {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.story-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.story-detail {
+  white-space: pre-line;
+}
+
+.story-source {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+
+.story-type {
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-muted);
+}
+
+.story-type-maneuver {
+  border-color: var(--source-1);
+}
+
+.story-type-post {
+  border-color: var(--channel-2);
+}
+
+.story-type-note {
+  border-color: var(--amber);
+}
+
+.handover-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.handover-note-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.handover-note-form button {
+  align-self: flex-start;
+}
+
 /* Reduced motion: no flicker, pulse or transition for anyone who asks the system for less. */
 
 @media (prefers-reduced-motion: reduce) {

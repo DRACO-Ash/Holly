@@ -10,6 +10,13 @@ import {
   dismissEventTimer,
   listEventTimers,
 } from "./event_timers";
+import {
+  addHandoverNote,
+  decideThreadLink,
+  deleteHandoverNote,
+  getHandoverObjects,
+  getHandoverStory,
+} from "./handover";
 import { getManeuver, listManeuvers } from "./maneuvers";
 import {
   listChannels,
@@ -356,5 +363,29 @@ describe("the shift log endpoints", () => {
       shift_date: "2026-01-02",
       format: "md",
     });
+  });
+});
+
+describe("the handover endpoints", () => {
+  it("reads the objects and one object's story, with the server's window unless one is set", async () => {
+    const get = answer("get");
+    await expect(getHandoverObjects()).resolves.toBe(body);
+    expect(get).toHaveBeenLastCalledWith("/handover/objects", { params: {} });
+    await getHandoverObjects(48);
+    expect(get).toHaveBeenLastCalledWith("/handover/objects", { params: { hours: 48 } });
+    await expect(getHandoverStory(90001, 24)).resolves.toBe(body);
+    expect(get).toHaveBeenLastCalledWith("/handover/objects/90001", { params: { hours: 24 } });
+  });
+
+  it("sends a link decision and a note, and deletes a note", async () => {
+    const post = answer("post");
+    const decision = { thread_id: "t-1", event_key: "EVT-1", decision: "confirmed" as const };
+    await expect(decideThreadLink(decision)).resolves.toBe(body);
+    expect(post).toHaveBeenLastCalledWith("/handover/thread-links", decision);
+    await expect(addHandoverNote(90001, "A note.")).resolves.toBe(body);
+    expect(post).toHaveBeenLastCalledWith("/handover/objects/90001/notes", { text: "A note." });
+    const del = answer("delete");
+    await expect(deleteHandoverNote("note-1")).resolves.toBeUndefined();
+    expect(del).toHaveBeenLastCalledWith("/handover/notes/note-1");
   });
 });

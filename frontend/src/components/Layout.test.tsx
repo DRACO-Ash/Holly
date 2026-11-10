@@ -66,6 +66,7 @@ describe("the dashboard's frame", () => {
       "Notifications",
       "Maneuvers",
       "Comms",
+      "Handover",
       "Procedures",
       "Shift log",
       "Password",

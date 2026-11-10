@@ -5,6 +5,7 @@ import Layout from "./components/Layout";
 import AuditLog from "./pages/AuditLog";
 import ChangePassword from "./pages/ChangePassword";
 import Dashboard from "./pages/Dashboard";
+import Handover from "./pages/Handover";
 import Help from "./pages/Help";
 import Login from "./pages/Login";
 import Maneuvers from "./pages/Maneuvers";
@@ -33,6 +34,7 @@ export default function App() {
             <Route path="/notifications/:id" element={<NotificationDetail />} />
             <Route path="/maneuvers" element={<Maneuvers />} />
             <Route path="/comms" element={<Mattermost />} />
+            <Route path="/handover" element={<Handover />} />
             <Route path="/procedures" element={<Procedures />} />
             <Route path="/shift-log" element={<ShiftLog />} />
             <Route path="/audit" element={<AuditLog />} />
