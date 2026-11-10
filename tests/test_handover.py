@@ -23,6 +23,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import httpx2
 import pytest
+from pydantic import ValidationError
 from sqlalchemy.dialects import postgresql
 
 from app.models.event_timer import EventTimer
@@ -31,6 +32,7 @@ from app.models.maneuver import Maneuver
 from app.models.mattermost_message import MattermostMessage
 from app.models.notification import Notification
 from app.models.user import User
+from app.schemas.handover import ThreadLinkDecision
 from app.services.handover import story
 from app.services.handover.taxonomy import EventObject, event_object, parse_event_class
 from fakes import NOW, FakeSession, make_user, rows_result, scalar_result
@@ -683,11 +685,43 @@ class TestTheLinkDecisions:
         body = {"thread_id": "t1", "event_key": key, "decision": "confirmed"}
         assert (await api.post(LINKS, json=body)).status_code == 200
         notice_sql = sent(session, 0)
+        blank = "(notification.{0} IS NULL OR notification.{0} = %({0}_{1})s::VARCHAR)"
         assert (
-            "(notification.udl_id IS NULL OR notification.udl_id = %(udl_id_2)s::VARCHAR)"
-            " AND notification.id = %(id_1)s::UUID" in notice_sql
+            f"OR {blank.format('event_id', 2)} AND {blank.format('notso_identifier', 2)}"
+            f" AND {blank.format('udl_id', 2)} AND notification.id = %(id_1)s::UUID" in notice_sql
         )
         assert params(session, 0)["id_1"] == held.id
+
+    async def test_a_key_holly_cannot_store_is_refused(
+        self, api: httpx2.AsyncClient, use_session: UseSession, sign_in: SignIn
+    ) -> None:
+        sign_in(make_user())
+        session = use_session(FakeSession())
+        raw = '{"thread_id": "t", "event_key": "a\\ud800", "decision": "confirmed"}'
+        response = await api.post(LINKS, content=raw, headers={"content-type": "application/json"})
+        assert response.status_code == 422
+        session.execute.assert_not_awaited()
+
+    def test_the_key_type_refuses_text_holly_cannot_store(self) -> None:
+        with pytest.raises(ValidationError):
+            ThreadLinkDecision(thread_id="t", event_key="a\ud800", decision="clear")
+
+    @pytest.mark.parametrize(
+        "shape", [str.upper, lambda k: "{" + k + "}", lambda k: f"urn:uuid:{k}"]
+    )
+    async def test_only_a_notice_id_as_written_is_looked_up_by_id(
+        self,
+        api: httpx2.AsyncClient,
+        use_session: UseSession,
+        sign_in: SignIn,
+        shape: Callable[[str], str],
+    ) -> None:
+        sign_in(make_user())
+        session = use_session(FakeSession([rows_result([])]))
+        key = shape(str(uuid.uuid4()))
+        body = {"thread_id": "t1", "event_key": key, "decision": "confirmed"}
+        assert (await api.post(LINKS, json=body)).status_code == 404
+        assert "notification.id =" not in sent(session, 0)
 
     @pytest.mark.parametrize(
         "body",
@@ -696,6 +730,8 @@ class TestTheLinkDecisions:
             {"thread_id": "t" * 65, "event_key": "EVT-1", "decision": "confirmed"},
             {"thread_id": "t", "event_key": "", "decision": "confirmed"},
             {"thread_id": "t", "event_key": "   ", "decision": "clear"},
+            {"thread_id": "t", "event_key": "\x1c", "decision": "clear"},
+            {"thread_id": "t", "event_key": "bad\x00key", "decision": "confirmed"},
             {"thread_id": "t", "event_key": "k" * 201, "decision": "confirmed"},
             {"thread_id": "t", "event_key": "EVT-1", "decision": "maybe"},
             {"thread_id": "t", "event_key": "EVT-1", "decision": "confirmed", "extra": 1},
@@ -847,12 +883,20 @@ def _is_banned(node: ast.Import | ast.ImportFrom) -> bool:
     return any(n == b or n.startswith(f"{b}.") for n in names for b in BANNED)
 
 
+DYNAMIC = ("importlib", "import_module", "__import__")
+
+
 def banned_imports(source: str) -> list[int]:
-    """The lines, at any depth, that import a banned module."""
+    """The lines, at any depth, that import a banned module, or import by a relative path or
+    by name, which this check could not follow."""
     return [
         node.lineno
         for node in ast.walk(ast.parse(source))
-        if isinstance(node, ast.Import | ast.ImportFrom) and _is_banned(node)
+        if (isinstance(node, ast.Import | ast.ImportFrom) and _is_banned(node))
+        or (isinstance(node, ast.ImportFrom) and node.level)
+        or (isinstance(node, ast.Name | ast.alias) and getattr(node, "id", None) in DYNAMIC)
+        or (isinstance(node, ast.alias) and node.name.split(".")[0] in DYNAMIC)
+        or (isinstance(node, ast.Attribute) and node.attr in DYNAMIC)
     ]
 
 
@@ -903,6 +947,21 @@ def test_the_import_guard_refuses_each_way_round_it(source: str) -> None:
 def test_a_banned_import_is_found_at_any_depth() -> None:
     assert banned_imports("import json\ndef f():\n    import anthropic\n") == [3]
     assert banned_imports("def f():\n    from app.services import json\n") == []
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "def f():\n    from . import claude\n",
+        "def f():\n    from .claude import X\n",
+        "def f():\n    import importlib\n",
+        "def f():\n    from importlib import import_module\n",
+        "def f(m):\n    return m.import_module('anthropic')\n",
+        "def f():\n    return __import__('anthropic')\n",
+    ],
+)
+def test_a_shared_module_may_not_import_in_a_way_the_check_cannot_follow(source: str) -> None:
+    assert banned_imports(source) != []
 
 
 def test_the_import_guard_allows_a_plain_module_level_import() -> None:

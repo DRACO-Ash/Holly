@@ -51,7 +51,10 @@ export default function Handover() {
     wanted.current = satNo;
     try {
       const data = await getHandoverStory(satNo);
-      if (wanted.current === satNo) setStory(data);
+      if (wanted.current === satNo) {
+        setStory(data);
+        setError(null);
+      }
     } catch {
       if (wanted.current === satNo) setError(STORY_FAILED);
     }

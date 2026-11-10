@@ -246,7 +246,7 @@ async def decide_thread_link(
     """Confirm or reject a suggested link, or clear an earlier decision. To decide, the notice
     and a post of the thread in a channel not switched off must be ones Holly holds; clearing
     needs neither, so a decision can be undone after its notice or thread is gone."""
-    event_key = payload.event_key.strip()
+    event_key = payload.event_key
     if payload.decision == "clear":
         await db.execute(
             delete(HandoverThreadLink).where(

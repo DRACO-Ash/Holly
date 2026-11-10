@@ -78,3 +78,5 @@ review security-reviewer FAIL a44e2bdd7272a2bad1ec9c9986edd9dcb36d5d06 # V0.19, 
 review engineering-reviewer FAIL a44e2bdd7272a2bad1ec9c9986edd9dcb36d5d06 # V0.19, round 2: per-thread and candidate caps untested, root posts unpinned, race test passed unguarded, key lookup could miss
 review security-reviewer FAIL 7fa3c019104ec280280df32d6be9ca835ea21b41 # V0.19, round 3: import guard left schemas and models out, shared modules unchecked, blank key passed
 review engineering-reviewer PASS 7fa3c019104ec280280df32d6be9ca835ea21b41 # V0.19, round 3: 4 minor (failed-load guard untested, one error slot, timers in the manual, all-blank key)
+review security-reviewer PASS 74e2c54d8c4451703874f621f8a6bc0cb84f465c # V0.19, round 4: 2 minor (shared-module check missed relative and dynamic imports, control-character key)
+review engineering-reviewer FAIL 74e2c54d8c4451703874f621f8a6bc0cb84f465c # V0.19, round 4: stale load alert, key storability and own-id branch unpinned

@@ -121,11 +121,14 @@ class ThreadLinkDecision(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     thread_id: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
-    # Stripped before its length is checked, so a key of spaces alone is refused.
+    # Stripped before its length is checked, so a key of spaces alone is refused. A control
+    # character, NUL among them, is refused by the pattern, and Pydantic refuses a lone
+    # surrogate before any validator, so the key is always text Holly can store.
     event_key: Annotated[
         str,
-        StringConstraints(strip_whitespace=True, min_length=1, max_length=200),
-        *StorableText.__metadata__,
+        StringConstraints(
+            strip_whitespace=True, min_length=1, max_length=200, pattern=r"^[^\x00-\x1f\x7f]+$"
+        ),
     ]
     decision: Literal["confirmed", "rejected", "clear"]
 

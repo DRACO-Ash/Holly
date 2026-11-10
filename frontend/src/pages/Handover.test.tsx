@@ -293,6 +293,21 @@ describe("the Handover tab", () => {
     await waitFor(() => expect(addHandoverNote).toHaveBeenCalledWith(90002, "On B."));
   });
 
+  it("clears a failed reload once the story loads again", async () => {
+    vi.mocked(decideThreadLink).mockResolvedValue(CONFIRMED);
+    vi.mocked(getHandoverStory)
+      .mockResolvedValueOnce(aFullStory())
+      .mockRejectedValueOnce(new Error("down"))
+      .mockResolvedValue(aFullStory());
+    await openFirstObject();
+    fireEvent.click(screen.getByRole("button", { name: "Confirm this thread" }));
+    await screen.findByText(/could not load this object/);
+    fireEvent.click(screen.getByRole("button", { name: "Confirm this thread" }));
+    await waitFor(() => expect(getHandoverStory).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    expect(screen.getByText("Maneuver · ABC-0001")).toBeTruthy();
+  });
+
   it("drops a slower failed load for an object no longer wanted", async () => {
     const first = held<HandoverStory>();
     vi.mocked(getHandoverStory)
