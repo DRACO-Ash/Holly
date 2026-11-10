@@ -371,6 +371,33 @@ details.risk .body{padding:0 16px 14px}
 .tsteps button span{display:block;font-family:var(--mono);font-size:12px;font-weight:700;color:var(--accent)}
 .tsteps button b{display:block;font-size:14px;color:var(--strong);line-height:1.3}
 .tsteps button[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft)}
+
+/* trial guide */
+.gsplit{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;align-items:stretch}
+@media (min-width:760px){.gsplit{grid-template-columns:minmax(0,1fr) 120px minmax(0,1fr)}}
+.gbox h4{margin-bottom:8px}
+.gnolink{display:grid;place-items:center;position:relative;min-height:44px}
+.gnolink::before{content:"";position:absolute;left:8px;right:8px;top:50%;border-top:2px dashed var(--red)}
+.gnolink span{position:relative;background:var(--bg);color:var(--red);font-size:12px;font-weight:700;padding:2px 8px;border:1px solid var(--red);border-radius:999px}
+.gimpact{min-width:560px}
+.gimpact th{text-align:left;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--fg-dim);padding:6px 8px}
+.gimpact td:first-child{width:24%}
+.gtree-wrap{display:grid;grid-template-columns:minmax(0,1fr);gap:12px}
+@media (min-width:760px){.gtree-wrap{grid-template-columns:minmax(0,300px) minmax(0,1fr)}}
+.gtree{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:10px;font-family:var(--mono);font-size:13.5px;display:grid;gap:2px}
+.gtree button{font:inherit;text-align:left;background:none;border:0;border-radius:6px;padding:4px 8px;cursor:pointer;color:var(--fg)}
+.gtree button:hover{background:var(--surface-2)}
+.gtree button[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent);font-weight:700}
+.gtree .d1{padding-left:22px}.gtree .d2{padding-left:40px}
+.cmdwrap{position:relative;margin:6px 0 10px}
+.cmd{font-family:var(--mono);font-size:13px;line-height:1.55;background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:0;overflow-x:auto;white-space:pre;color:var(--fg)}
+.cmdwrap .copy{position:absolute;top:6px;right:6px;font-size:12px;padding:3px 9px}
+.cmdwrap .cmd{padding-right:72px}
+.gflow{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:10px}
+.gstep-see{background:var(--go-soft);color:var(--go);border-radius:8px;padding:8px 12px;font-size:15px;margin-top:10px}
+.gstep-warn{background:var(--amber-soft);color:var(--amber);border-radius:8px;padding:8px 12px;font-size:14px;margin-top:8px}
+#gCols button{font:inherit;font-size:13px;font-weight:600;border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:999px;padding:4px 12px;cursor:pointer}
+#gCols button[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
 /* glossary and popover */
 .gloss{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:10px}
 .gloss div{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px}
@@ -404,6 +431,7 @@ footer b{color:var(--bar-fg)}
       <li><a href="#journeys">User journeys</a></li>
       <li><a href="#plan">Delivery plan</a></li>
       <li><a href="#trial">The Phase 0 trial</a></li>
+      <li><a href="#guide">Running the trial</a></li>
       <li><a href="#safeguards">Safeguards and risks</a></li>
       <li><a href="#decisions">Decisions needed</a></li>
       <li><a href="#glossary">Glossary</a></li>
@@ -634,12 +662,72 @@ footer b{color:var(--bar-fg)}
       <div class="card" style="border-left:4px solid var(--go-fill)">
         <ul class="dots" style="margin:0"><li>Real threads, answer keys and results stay on one trial machine inside Bluestaq. None is committed, uploaded or pasted into any outside tool, including an AI assistant.</li><li>The model runs with the network switched off and reads the data folder without being able to change it.</li><li>Results hold post ids and figures, never thread text, and are deleted when the trial ends. Only a short summary of pass and fail per mark is kept.</li></ul>
       </div>
-      <p>A step-by-step guide for first-timers covers what you need, where to put it, how to package it and why it changes nothing in Holly: <code>docs/roadmap/handover-trial-guide.md</code>.</p>
+      <p>Running it yourself? The next section, <a href="#guide">Running the trial</a>, walks you through it step by step.</p>
       <p class="tech">Protocol: <code>docs/roadmap/handover-trial-plan.md</code>. Harness: <code>trial/</code> (checks in <code>claims.py</code>, child-process runner, scoring and report, Mattermost converter, synthetic samples, 17 unit tests). Container: full <code>python:3.12</code> image pinned by digest, llama-cpp-python 0.3.36 hash-locked, uid 10001, run with <code>--network none --memory 4g --cpus 2</code>, the child at the lowest priority, with a responsiveness probe.</p>
     </section>
 
+
+    <section class="sec" id="guide">
+      <p class="eyebrow">10 · Running the trial</p>
+      <h2>A first-timer's guide, from empty folder to result</h2>
+      <p class="lead">You don't need to have done this before. This section covers what you need, where to put things, every command in order, how to read the result and how to tidy up. The same guide is in the repository as <code>docs/roadmap/handover-trial-guide.md</code>.</p>
+
+      <h3 style="margin-top:26px">First: it changes nothing in Holly</h3>
+      <p>The trial runs on its own machine inside Bluestaq. It never connects to Holly, and its files can never be uploaded with Holly.</p>
+      <div class="gsplit">
+        <div class="card gbox"><h4>Trial machine, inside Bluestaq</h4><ul class="dots small" style="margin:0"><li>The trial container, network switched off</li><li>5 exported threads and the answer keys</li><li>The model files</li><li>The results</li></ul></div>
+        <div class="gnolink" aria-label="No connection between them"><span>No connection</span></div>
+        <div class="card gbox"><h4>Holly on the App Store</h4><ul class="dots small" style="margin:0"><li>Keeps running as normal</li><li>Same version, same settings, same data</li><li>Its upload never includes the trial</li></ul></div>
+      </div>
+      <div class="tablewrap" style="margin-top:12px"><table class="ex gimpact"><thead><tr><th>Part of Holly</th><th>Effect</th><th>Why</th></tr></thead><tbody id="gImpact"></tbody></table></div>
+
+      <h3 style="margin-top:30px">Before you start</h3>
+      <p>Tick each one off. Your ticks are saved in this browser only.</p>
+      <div class="dec" id="gPre"></div>
+
+      <h3 style="margin-top:30px">What you need</h3>
+      <div class="grid g3">
+        <div class="card"><h4>A trial machine</h4><ul class="dots small" style="margin:0"><li>Bluestaq-managed and approved for the data</li><li>2 or more CPU cores</li><li>8 GB of memory or more</li><li>15 GB of free disk</li><li>Linux is simplest; Windows or macOS with Docker Desktop work too</li></ul></div>
+        <div class="card"><h4>Software</h4><ul class="dots small" style="margin:0"><li>Git, to fetch the code</li><li>Docker (Docker Desktop on Windows or macOS)</li><li>Internet access to PyPI while building only; running needs none</li></ul><p class="hint" style="margin:8px 0 0">Docker Desktop: in Settings, Resources, give it at least 6 GB of memory and 2 CPUs.</p></div>
+        <div class="card"><h4>Access</h4><ul class="dots small" style="margin:0"><li>Read access to the Holly repository</li><li>A Mattermost personal access token, or an administrator to export the threads (whether tokens are switched on is TBC, re-verify)</li></ul></div>
+      </div>
+
+      <h3 style="margin-top:30px">Where everything goes</h3>
+      <p>Make one working folder, outside any code repository. Select a folder to see what goes in it.</p>
+      <div class="gtree-wrap">
+        <div class="gtree" id="gTree" role="group" aria-label="Folder layout"></div>
+        <div class="card" id="gTreeInfo" aria-live="polite"></div>
+      </div>
+
+      <h3 style="margin-top:30px">Step by step</h3>
+      <div class="row" style="justify-content:space-between;margin-bottom:8px">
+        <p class="hint" style="margin:0">Pick your computer, then select a step. Every command has a copy button.</p>
+        <div class="row" role="group" aria-label="Your computer"><button type="button" class="btn" id="osLinux" aria-pressed="true">Linux or macOS</button><button type="button" class="btn" id="osWin" aria-pressed="false">Windows PowerShell</button></div>
+      </div>
+      <div class="tsteps" id="gSteps" role="group" aria-label="Guide steps"></div>
+      <div class="card" id="gStep" aria-live="polite"></div>
+      <p class="hint" style="margin-top:8px">Words in angle brackets, such as &lt;id&gt;, are placeholders: replace them, brackets included.</p>
+
+      <h3 style="margin-top:30px">Reading the report</h3>
+      <p>The report has one row per model. Select a column to see what it means and what good looks like.</p>
+      <div class="chips" id="gCols" role="group" aria-label="Report columns"></div>
+      <div class="card" id="gCol" aria-live="polite" style="margin-top:10px"></div>
+
+      <h3 style="margin-top:30px">No internet on the trial machine?</h3>
+      <div class="gflow">
+        <div class="card"><span class="when">1 · Connected machine</span><p class="small" style="margin:4px 0 0">Build the image, then save it to one file:</p><div class="cmdwrap"><pre class="cmd">docker save holly-handover-trial -o holly-handover-trial.tar</pre></div></div>
+        <div class="card"><span class="when">2 · Approved media</span><p class="small" style="margin:4px 0 0">Copy the .tar file and the model files across, following Bluestaq's rules for removable media.</p></div>
+        <div class="card"><span class="when">3 · Trial machine</span><p class="small" style="margin:4px 0 0">Load the image, then carry on from the self-test step. No source code or internet needed.</p><div class="cmdwrap"><pre class="cmd">docker load -i holly-handover-trial.tar</pre></div></div>
+      </div>
+      <p class="small" style="margin-top:10px">To hand someone just the trial code, with no history and none of Holly:</p>
+      <div class="cmdwrap"><pre class="cmd">git archive --format=zip -o handover-trial-code.zip HEAD trial</pre></div>
+
+      <h3 style="margin-top:30px">If something goes wrong</h3>
+      <div class="grid" id="gTrouble"></div>
+    </section>
+
     <section class="sec" id="safeguards">
-      <p class="eyebrow">10 · Safeguards and risks</p>
+      <p class="eyebrow">11 · Safeguards and risks</p>
       <h2>Built so a wrong handover is hard to make</h2>
       <div class="grid g2">
         <div class="card guard"><div class="ico">1</div><div><h3>Nothing leaves Holly</h3><p class="small">The model runs inside Holly's container. A test fails the build if any Handover code even imports the outside AI client.</p></div></div>
@@ -656,7 +744,7 @@ footer b{color:var(--bar-fg)}
     </section>
 
     <section class="sec" id="decisions">
-      <p class="eyebrow">11 · Decisions needed</p>
+      <p class="eyebrow">12 · Decisions needed</p>
       <h2>What we need before building</h2>
       <p>Tick each one as it is settled. Your ticks are saved in this browser only.</p>
       <div class="meter" aria-hidden="true"><i id="meter"></i></div>
@@ -665,7 +753,7 @@ footer b{color:var(--bar-fg)}
     </section>
 
     <section class="sec" id="glossary">
-      <p class="eyebrow">12 · Glossary</p>
+      <p class="eyebrow">13 · Glossary</p>
       <h2>Words used on this page</h2>
       <div class="gloss" id="gloss"></div>
     </section>
@@ -1154,6 +1242,119 @@ function tShow(i){var x=TSTEPS[i];$$("#tSteps button").forEach(function(b){b.set
  $("#tStep").innerHTML='<h3>Step '+(i+1)+' · '+x.t+'</h3><dl class="kv"><dt>Who</dt><dd>'+x.who+'</dd><dt>What happens</dt><dd>'+x.d+'</dd><dt>What it produces</dt><dd>'+x.out+'</dd></dl>'}
 $("#tSteps").addEventListener("click",function(e){var b=e.target.closest("button");if(b)tShow(+b.getAttribute("data-i"))});
 tShow(0);
+
+/* ---------- trial guide ---------- */
+function esc(t){return String(t).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}
+function cmdBlock(t){return '<div class="cmdwrap"><pre class="cmd">'+esc(t)+'</pre><button type="button" class="btn copy">Copy</button></div>'}
+document.addEventListener("click",function(e){var b=e.target.closest(".cmdwrap .copy");if(!b)return;var pre=b.parentNode.querySelector("pre"),txt=pre.textContent;
+ function sel(){var r=document.createRange();r.selectNodeContents(pre);var w=window.getSelection();w.removeAllRanges();w.addRange(r);b.textContent="Selected"}
+ try{navigator.clipboard.writeText(txt).then(function(){b.textContent="Copied";setTimeout(function(){b.textContent="Copy"},1600)},sel)}catch(err){sel()}});
+$$("#guide .cmdwrap").forEach(function(w){if(!w.querySelector(".copy"))w.insertAdjacentHTML("beforeend",'<button type="button" class="btn copy">Copy</button>')});
+
+$("#gImpact").innerHTML=[
+ ["The live Holly app","None","The trial runs on a separate machine and never connects to Holly."],
+ ["Holly's upload package","None","The packaging script lists exactly which files go into an upload. The trial folder is not on that list, so it can never be uploaded."],
+ ["App Store pipeline and code quality scan","None","They only see the upload package."],
+ ["Holly's tests and checks","None","They cover Holly's own code only."],
+ ["Holly's version number","None","Only changes to the upload bump the version."],
+ ["Holly's database, settings and users","None","The trial reads exported copies of threads, never Holly."],
+ ["The code repository","Adds the trial folder and 3 documents","Real data cannot be committed: the data and output folders are blocked, and this guide keeps them outside the repository anyway."]
+].map(function(r){return '<tr><td><b>'+r[0]+'</b></td><td>'+(r[1]==="None"?'<span class="chip go">None</span>':'<span class="chip existing">'+r[1]+'</span>')+'</td><td>'+r[2]+'</td></tr>'}).join("");
+
+var PRE=[["The pass marks confirmed","Owner"],["Holly's own peak memory, from the App Store metrics","Owner or platform team"],["How many threads a typical shift's run reads","Owner, with a mission lead"],["Approval to copy 5 real threads onto the trial machine","Data owner"],["A trial machine that meets the needs below","You"],["A mission lead booked for 2 to 3 hours to write the answer keys","Owner"],["The model files downloaded","You"]];
+var preState=store.get("hb-pre",{});
+function renderPre(){$("#gPre").innerHTML=PRE.map(function(d,i){var on=!!preState[i];return '<label class="'+(on?"done":"")+'"><input type="checkbox" id="pre'+i+'" data-i="'+i+'"'+(on?" checked":"")+'><span><span class="q">'+d[0]+'</span><span class="who">From: '+d[1]+'</span></span></label>'}).join("")}
+$("#gPre").addEventListener("change",function(e){var i=e.target.getAttribute("data-i");if(i==null)return;preState[i]=e.target.checked;store.set("hb-pre",preState);renderPre();var el=$("#pre"+i);if(el)el.focus()});
+renderPre();
+
+var TREE=[
+ ["handover-trial/",0,"Your working folder, outside any code repository. Keeping real data out of the code folder means it can never be committed by accident.","You"],
+ ["holly/",1,"The code, fetched with Git in step 1. Never put data in here.","Git"],
+ ["trial-data/",1,"Everything real. The trial reads it as read-only, except when converting threads.","You"],
+ ["providers.json",2,"The provider list: names, other names, and which Mattermost usernames speak for each provider. Only the owner decides who is on it.","Owner, typed up by you"],
+ ["users.json",2,"Mattermost user ids matched to usernames, fetched in step 7.","Step 7"],
+ ["raw/",2,"Threads exactly as exported from Mattermost.","Step 7"],
+ ["threads/",2,"The same threads converted for the trial.","Step 8"],
+ ["keys/",2,"The mission lead's answer keys, one per thread, written before any model output is seen.","Mission lead"],
+ ["models/",2,"The model files (.gguf), with their fingerprints recorded.","Step 5"],
+ ["trial-out/",1,"The results: report.md, scores.json and one detail file per model. They hold post ids and figures, never thread text, and are deleted at the end.","The trial"]
+];
+$("#gTree").innerHTML=TREE.map(function(t,i){return '<button type="button" class="d'+t[1]+'" data-i="'+i+'" aria-pressed="false">'+esc(t[0])+'</button>'}).join("");
+function treeShow(i){var t=TREE[i];$$("#gTree button").forEach(function(b){b.setAttribute("aria-pressed",+b.getAttribute("data-i")===i?"true":"false")});
+ $("#gTreeInfo").innerHTML='<h3 class="mono" style="margin:0 0 6px">'+esc(t[0])+'</h3><p style="margin:0 0 6px">'+t[2]+'</p><p class="hint" style="margin:0">Filled by: '+t[3]+'</p>'}
+$("#gTree").addEventListener("click",function(e){var b=e.target.closest("button");if(b)treeShow(+b.getAttribute("data-i"))});
+treeShow(0);
+
+var GSTEPS=[
+ {t:"Get the code",d:"Fetch the code with Git into your working folder. Once this work is merged, use the main branch instead.",
+  l:"cd ~/handover-trial\ngit clone https://github.com/draco-ash/holly.git\ncd holly\ngit checkout claude/rehydrate-foundations-bundle-abogpu",
+  w:"cd C:\\handover-trial\ngit clone https://github.com/draco-ash/holly.git\ncd holly\ngit checkout claude/rehydrate-foundations-bundle-abogpu",
+  see:"A holly folder appears in your working folder."},
+ {t:"Build the trial",d:"Build the trial's container image. It compiles the model runtime from source, and every download is checked against a pinned fingerprint.",
+  l:"docker build -t holly-handover-trial trial/",w:"docker build -t holly-handover-trial trial/",
+  see:"After several minutes, a line saying the image was named holly-handover-trial.",warn:"If it stops while downloading, check access to pypi.org. If a fingerprint check fails, stop and report it; never edit the lock file by hand."},
+ {t:"Self-test",d:"Run the trial's own tests, with the network switched off.",
+  l:"docker run --rm --network none --entrypoint python holly-handover-trial -m unittest discover -s tests",
+  w:"docker run --rm --network none --entrypoint python holly-handover-trial -m unittest discover -s tests",
+  see:"OK on the last line."},
+ {t:"Dry run",d:"Run the whole trial on made-up threads, with a stand-in instead of a model. No real data needed.",
+  l:"mkdir -p ~/handover-trial/trial-out && chmod 777 ~/handover-trial/trial-out\ndocker run --rm --network none --memory 4g --memory-swap 4g --cpus 2 \\\n  -v ~/handover-trial/trial-out:/out holly-handover-trial dry-run --out /out/dry",
+  w:"mkdir C:\\handover-trial\\trial-out\ndocker run --rm --network none --memory 4g --memory-swap 4g --cpus 2 `\n  -v C:\\handover-trial\\trial-out:/out holly-handover-trial dry-run --out /out/dry",
+  see:"A report ending in NO-GO, with 7/10 found, 1 wrong provider and 0 unsupported kept. That is correct: the stand-in was built to make mistakes, and each is caught."},
+ {t:"Get the models",d:"Download the 4-bit (Q4_K_M) GGUF file of each candidate from a source your team trusts. Check each licence is MIT or Apache-2.0, put the files in trial-data/models, and record each file's fingerprint.",
+  l:"sha256sum ~/handover-trial/trial-data/models/*.gguf",w:"Get-FileHash C:\\handover-trial\\trial-data\\models\\*.gguf",
+  see:"One long code per file. Write them down; the report prints them too, so you can match them."},
+ {t:"Choose the threads",d:"With a mission lead, pick 5 threads: a manoeuvre where providers disagreed, an RPO, a photometric change, a separation or other type, and the longest, noisiest thread of the last month. For each, open its first post in Mattermost, choose Copy Link, and keep the last part of the link, after /pl/. That is the thread id.",
+  see:"5 thread ids written down."},
+ {t:"Export the threads",d:"Put your token in a variable so it never lands in a file or your history. Export each thread, then fetch the usernames of everyone who posted (each post in the export has a user_id). Close the terminal afterwards so the token is forgotten. If personal tokens are switched off, a Mattermost administrator can export the threads instead.",
+  l:"read -s MM_TOKEN\ncurl -sS -H \"Authorization: Bearer $MM_TOKEN\" \\\n  https://<mattermost-host>/api/v4/posts/<id>/thread \\\n  -o ~/handover-trial/trial-data/raw/<id>.json\n\ncurl -sS -X POST -H \"Authorization: Bearer $MM_TOKEN\" -H \"Content-Type: application/json\" \\\n  -d '[\"<user id 1>\",\"<user id 2>\"]' \\\n  https://<mattermost-host>/api/v4/users/ids -o ~/handover-trial/trial-data/users.json",
+  w:"$MM_TOKEN = Read-Host -MaskInput \"Mattermost token\"\ncurl.exe -sS -H \"Authorization: Bearer $MM_TOKEN\" `\n  https://<mattermost-host>/api/v4/posts/<id>/thread `\n  -o C:\\handover-trial\\trial-data\\raw\\<id>.json\n\n'[\"<user id 1>\",\"<user id 2>\"]' | Out-File -Encoding ascii ids.json\ncurl.exe -sS -X POST -H \"Authorization: Bearer $MM_TOKEN\" -H \"Content-Type: application/json\" `\n  --data-binary \"@ids.json\" https://<mattermost-host>/api/v4/users/ids `\n  -o C:\\handover-trial\\trial-data\\users.json",
+  see:"One file per thread in trial-data/raw, and users.json.",warn:"On Windows, -MaskInput needs PowerShell 7. Use curl.exe, not curl, which PowerShell treats as a different command."},
+ {t:"Convert the threads",d:"Turn each export into the trial's format. This is the only command allowed to write into trial-data.",
+  l:"cd ~/handover-trial\ndocker run --rm --network none -v \"$PWD/trial-data:/data\" holly-handover-trial \\\n  convert --export /data/raw/<id>.json --channel <channel name> \\\n  --users /data/users.json --out /data/threads/<id>.json",
+  w:"docker run --rm --network none -v C:\\handover-trial\\trial-data:/data holly-handover-trial `\n  convert --export /data/raw/<id>.json --channel <channel name> `\n  --users /data/users.json --out /data/threads/<id>.json",
+  see:"One file per thread in trial-data/threads.",warn:"Permission denied? Make trial-data/threads writable, as for trial-out in the dry-run step."},
+ {t:"Providers and answer keys",d:"Type up the owner's provider list as providers.json. Then the mission lead writes one answer key per thread in trial-data/keys, before seeing any model output: every figure a provider gave, copied as written, with a sign only if the post writes one. A second lead checks one key.",
+  l:"{\n  \"providers\": {\n    \"NorthStar\": {\"aliases\": [\"North Star\"]},\n    \"KBR\": {\"aliases\": []}\n  },\n  \"authors\": {\"<mattermost username>\": \"NorthStar\"}\n}\n\n{\"thread_id\": \"<thread id>\",\n \"claims\": [{\"post_id\": \"<post id>\", \"provider\": \"NorthStar\",\n             \"quantity\": \"period_change\", \"value\": \"+25\", \"unit\": \"s\"}]}",
+  see:"providers.json and 5 key files. Allowed quantities: period_change (s, min); apogee_change, perigee_change, semi_major_axis_change, range (km, m); inclination_change, longitude (deg); eccentricity_change (none); delta_v (m/s, km/s, cm/s); drift_rate (deg/day); brightness_change (mag)."},
+ {t:"Run the trial",d:"Run every candidate with the network off and Holly's caps. Replace the two numbers with the owner's inputs. Allow up to an hour or so; the models run one after another.",
+  l:"cd ~/handover-trial\ndocker run --rm --network none --memory 4g --memory-swap 4g --cpus 2 \\\n  -v \"$PWD/trial-data:/data:ro\" -v \"$PWD/trial-out:/out\" holly-handover-trial \\\n  run --threads /data/threads --keys /data/keys --providers /data/providers.json \\\n      --model /data/models/<first>.gguf --model /data/models/<second>.gguf \\\n      --model /data/models/<third>.gguf \\\n      --holly-peak-gib <Holly's peak in GB> --shift-threads <typical threads> --out /out/run1",
+  w:"docker run --rm --network none --memory 4g --memory-swap 4g --cpus 2 `\n  -v C:\\handover-trial\\trial-data:/data:ro -v C:\\handover-trial\\trial-out:/out holly-handover-trial `\n  run --threads /data/threads --keys /data/keys --providers /data/providers.json `\n      --model /data/models/<first>.gguf --model /data/models/<second>.gguf `\n      --model /data/models/<third>.gguf `\n      --holly-peak-gib <Holly's peak in GB> --shift-threads <typical threads> --out /out/run1",
+  see:"trial-out/run1/report.md, with a GO or NO-GO per model. See Reading the report below."},
+ {t:"Review the misses",d:"For every wrong claim a model kept, open run-<model>.json, find the claim, read its post in the thread file and note in one line why it went wrong. The mission lead helps.",
+  see:"A short list of reasons, used to improve the V0.20 instructions and checks."},
+ {t:"Clean up",d:"Write the short results note (models, PASS or FAIL per mark, timings, memory), with no thread text and no real figures, and send it to the owner. Then delete all the data and results, remove the image if you're finished, and revoke any Mattermost token you made.",
+  l:"rm -rf ~/handover-trial/trial-data ~/handover-trial/trial-out\ndocker image rm holly-handover-trial",
+  w:"Remove-Item -Recurse -Force C:\\handover-trial\\trial-data, C:\\handover-trial\\trial-out\ndocker image rm holly-handover-trial",
+  see:"Nothing real left on the machine. Only the results note remains."}
+];
+var os=store.get("hb-os","l"),gIdx=0;
+function setOs(v){os=v;store.set("hb-os",v);$("#osLinux").setAttribute("aria-pressed",v==="l"?"true":"false");$("#osWin").setAttribute("aria-pressed",v==="w"?"true":"false");gShow(gIdx)}
+$("#gSteps").innerHTML=GSTEPS.map(function(x,i){return '<button type="button" data-i="'+i+'" aria-pressed="false"><span>Step '+(i+1)+'</span><b>'+x.t+'</b></button>'}).join("");
+function gShow(i){gIdx=i;var x=GSTEPS[i];$$("#gSteps button").forEach(function(b){b.setAttribute("aria-pressed",+b.getAttribute("data-i")===i?"true":"false")});
+ var cmd=x[os]||x.l;
+ $("#gStep").innerHTML='<div class="row" style="justify-content:space-between"><h3 style="margin:0">Step '+(i+1)+' · '+x.t+'</h3><div class="row"><button type="button" class="btn" id="gPrev"'+(i===0?" disabled":"")+'>Back</button><button type="button" class="btn primary" id="gNext"'+(i===GSTEPS.length-1?" disabled":"")+'>Next step</button></div></div><p style="margin:8px 0 4px">'+x.d+'</p>'+(cmd?cmdBlock(cmd):"")+'<div class="gstep-see"><b>You should see:</b> '+esc(x.see)+'</div>'+(x.warn?'<div class="gstep-warn">'+esc(x.warn)+'</div>':"")}
+$("#gSteps").addEventListener("click",function(e){var b=e.target.closest("button");if(b)gShow(+b.getAttribute("data-i"))});
+$("#gStep").addEventListener("click",function(e){if(e.target.id==="gNext"){gShow(Math.min(GSTEPS.length-1,gIdx+1));$("#gNext")&&$("#gNext").focus()}else if(e.target.id==="gPrev"){gShow(Math.max(0,gIdx-1));$("#gPrev")&&$("#gPrev").focus()}});
+$("#osLinux").addEventListener("click",function(){setOs("l")});$("#osWin").addEventListener("click",function(){setOs("w")});
+setOs(os==="w"?"w":"l");
+
+var COLS=[["Go","Did the model clear every pass mark?","GO"],["Found","The lead's figures it found, and the percentage.","80% or more"],["Precision","Of the figures it kept, how many were right.","High; anything below 100% is explained by the next two columns"],["Wrong provider","Figures it credited to the wrong provider.","0"],["Unsupported kept","Figures kept that are not written in their post.","Always 0. Anything else is a fault in the checks: stop and report it"],["Load s","Seconds to load the model.","For information"],["Mean s per thread","Average seconds to read one thread.","For information"],["Shift s","Load time plus a typical shift's threads.","300 or less"],["Peak GiB","The most memory the model used.","For information"],["Spare GiB","4 GiB, minus Holly's peak, minus the model's peak.","1 or more"],["Responsiveness","Under each model: how much slower a small fixed task ran while the model worked, a guide to how sluggish Holly would feel.","Reported, not marked, until real numbers are in"]];
+$("#gCols").innerHTML=COLS.map(function(c,i){return '<button type="button" data-i="'+i+'" aria-pressed="false">'+c[0]+'</button>'}).join("");
+function colShow(i){var c=COLS[i];$$("#gCols button").forEach(function(b){b.setAttribute("aria-pressed",+b.getAttribute("data-i")===i?"true":"false")});
+ $("#gCol").innerHTML='<h3 style="margin:0 0 4px">'+c[0]+'</h3><dl class="kv"><dt>What it means</dt><dd>'+c[1]+'</dd><dt>What good looks like</dt><dd>'+c[2]+'</dd></dl>'}
+$("#gCols").addEventListener("click",function(e){var b=e.target.closest("button");if(b)colShow(+b.getAttribute("data-i"))});
+colShow(0);
+
+$("#gTrouble").innerHTML=[
+ ["\u201crange of CPUs is from 0.01 to 1.00\u201d, or similar","The machine, or Docker Desktop, has fewer CPUs than the trial asks for.","Give Docker Desktop at least 2 CPUs, or use a machine with 2 or more cores. Don't lower --cpus, or the timings won't reflect Holly."],
+ ["\u201cno result within ... or the child died (exit -9)\u201d","The model ran out of its 4 GB and was stopped.","That model is too big for Holly. It is a valid NO-GO: record it and carry on."],
+ ["\u201cPermission denied\u201d writing to /out","The trial runs as an ordinary user and cannot write to the output folder.","Make trial-out writable: chmod 777 on Linux or macOS, or check the folder's sharing in Docker Desktop."],
+ ["The build stops while downloading","No access to PyPI, or a download didn't match its pinned fingerprint.","Check access to pypi.org. If a fingerprint fails, stop and report it."],
+ ["\u201canswer keys with no thread file\u201d","A key's thread_id doesn't match any converted thread.","Check the id at the top of the key against the thread file."],
+ ["\u201canswer key has malformed claims\u201d","A key uses a quantity or unit not on the list, or a value that isn't a number.","Fix the key using the list in the providers and answer keys step."],
+ ["A Windows path error on -v","PowerShell paths differ.","Use the full path, for example -v C:\\handover-trial\\trial-out:/out."]
+].map(function(r){return '<details class="risk"><summary>'+esc(r[0])+'</summary><div class="body"><p class="small" style="margin:0 0 6px"><b>What it means:</b> '+esc(r[1])+'</p><p class="small" style="margin:0"><b>What to do:</b> '+esc(r[2])+'</p></div></details>'}).join("");
 /* ---------- risks ---------- */
 var RISKS=[
  ["The model invents a figure","A wrong number could reach a handover.","Only claims whose figure appears word for word in the post they cite are kept, and you can open the post behind every claim."],
