@@ -9,11 +9,28 @@ import {
   getHandoverStory,
 } from "../api/handover";
 import { renderAt } from "../test/render";
-import type { HandoverObjectList, HandoverStory } from "../types";
+import type { HandoverObjectList, HandoverStory, ThreadLinkDecision } from "../types";
 import { aStory } from "../test/handover";
 import Handover from "./Handover";
 
 vi.mock("../api/handover");
+
+// A promise the test settles when it chooses, so a save can be held open while the analyst acts.
+function held<T>() {
+  let resolve: (value: T) => void = () => undefined;
+  let reject: (reason: unknown) => void = () => undefined;
+  const promise = new Promise<T>((settle, fail) => {
+    resolve = settle;
+    reject = fail;
+  });
+  return { promise, resolve, reject };
+}
+
+const CONFIRMED: ThreadLinkDecision = {
+  thread_id: "t-9",
+  event_key: "EVT-1",
+  decision: "confirmed",
+};
 
 function aList(overrides: Partial<HandoverObjectList> = {}): HandoverObjectList {
   return {
@@ -249,14 +266,8 @@ describe("the Handover tab", () => {
   });
 
   it("keeps the object picked during a save, and files a note on the object on screen", async () => {
-    let finishDecision: () => void = () => undefined;
-    vi.mocked(decideThreadLink).mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          finishDecision = () =>
-            resolve({ thread_id: "t-9", event_key: "EVT-1", decision: "confirmed" });
-        }),
-    );
+    const decision = held<ThreadLinkDecision>();
+    vi.mocked(decideThreadLink).mockReturnValue(decision.promise);
     vi.mocked(getHandoverStory).mockImplementation(async (satNo) =>
       satNo === 90001 ? aFullStory() : aStory({ sat_no: 90002, name: "OTHER-SAT" }),
     );
@@ -271,7 +282,7 @@ describe("the Handover tab", () => {
     fireEvent.click(screen.getByRole("button", { name: "Confirm this thread" }));
     fireEvent.click(screen.getByRole("button", { name: /Unnamed object/ }));
     await screen.findByRole("heading", { name: /OTHER-SAT/ });
-    finishDecision();
+    decision.resolve(CONFIRMED);
     await waitFor(() => expect(getHandoverStory).toHaveBeenCalledTimes(2));
     expect(screen.getByRole("heading", { name: /OTHER-SAT/ })).toBeTruthy();
     const box = screen.getByLabelText<HTMLTextAreaElement>("Add a note to this object's story");
@@ -281,13 +292,8 @@ describe("the Handover tab", () => {
   });
 
   it("says nothing about a failed save once another object is on screen", async () => {
-    let failDecision: () => void = () => undefined;
-    vi.mocked(decideThreadLink).mockImplementation(
-      () =>
-        new Promise((_resolve, reject) => {
-          failDecision = () => reject(new Error("down"));
-        }),
-    );
+    const decision = held<ThreadLinkDecision>();
+    vi.mocked(decideThreadLink).mockReturnValue(decision.promise);
     vi.mocked(getHandoverStory).mockImplementation(async (satNo) =>
       satNo === 90001 ? aFullStory() : aStory({ sat_no: 90002, name: "OTHER-SAT" }),
     );
@@ -295,7 +301,7 @@ describe("the Handover tab", () => {
     fireEvent.click(screen.getByRole("button", { name: "Not this one" }));
     fireEvent.click(screen.getByRole("button", { name: /Unnamed object/ }));
     await screen.findByRole("heading", { name: /OTHER-SAT/ });
-    failDecision();
+    decision.reject(new Error("down"));
     await waitFor(() =>
       expect((screen.getByRole("button", { name: "Add note" }) as HTMLButtonElement).disabled).toBe(
         true,
