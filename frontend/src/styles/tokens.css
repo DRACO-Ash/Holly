@@ -4883,7 +4883,7 @@ button.event-row {
 .lens-form input,
 .lens-form textarea {
   padding: 6px var(--space-2);
-  border: 1px solid var(--color-field-border);
+  border: var(--color-field-border) solid 1px;
   border-radius: var(--radius-sm);
   background: var(--color-bg);
   color: var(--color-text);
