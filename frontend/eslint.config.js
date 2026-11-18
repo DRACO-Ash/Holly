@@ -64,6 +64,12 @@ export default tseslint.config(
             'Text followed by an element on the next line: wrap the text, or add {" "} if a space is meant (SonarQube S6772).',
         },
         {
+          // Chat, notes and UDL fields are untrusted: they are shown as text, which React escapes,
+          // and never handed to the page as markup.
+          selector: "JSXAttribute[name.name='dangerouslySetInnerHTML']",
+          message: "Show text, never markup: dangerouslySetInnerHTML is refused.",
+        },
+        {
           selector: String.raw`:matches(JSXElement, JSXFragment) + JSXText[value=/^[^\S\n]*\n\s*\S/]`,
           message:
             'An element followed by text on the next line: wrap the text, or add {" "} if a space is meant (SonarQube S6772).',

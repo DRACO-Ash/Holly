@@ -830,6 +830,7 @@ def watch_row(sat_no: int = 90001, pinned: bool = True, seen: bool = False) -> S
 def one_result(row: Any) -> MagicMock:
     result = MagicMock()
     result.one.return_value = row
+    result.one_or_none.return_value = row
     return result
 
 
@@ -853,6 +854,7 @@ class TestTheWatchList:
             "ORDER BY object_watch.pinned DESC, object_watch.pinned_at, object_watch.sat_no" in sql
         )
         assert user.id in params(session, 0).values()
+        assert handover_routes.WATCH_CAP + handover_routes.SEEN_CAP in params(session, 0).values()
 
     async def test_pinning_locks_the_analyst_counts_the_others_and_audits(
         self,
@@ -868,8 +870,13 @@ class TestTheWatchList:
         response = await api.put(f"{WATCH}/90001", json={"pinned": True})
         assert response.status_code == 200
         assert response.json()["pinned"] is True
-        assert sent(session, 0).endswith("FOR UPDATE")
+        lock = sent(session, 0)
+        assert lock.startswith("SELECT app_user.id FROM app_user WHERE app_user.id =")
+        assert lock.endswith("FOR UPDATE")
+        assert user.id in params(session, 0).values()
         count = sent(session, 1)
+        assert "object_watch.user_id =" in count
+        assert user.id in params(session, 1).values()
         assert "object_watch.pinned IS true" in count
         assert "object_watch.sat_no !=" in count
         upsert = sent(session, 2)
@@ -907,14 +914,14 @@ class TestTheWatchList:
         )
         assert (await api.put(f"{WATCH}/90001", json={"pinned": True})).status_code == 200
 
-    async def test_unpinning_needs_no_count_and_clears_the_pin_time(
+    async def test_unpinning_updates_only_the_analysts_row_and_audits(
         self,
         api: httpx2.AsyncClient,
         use_session: UseSession,
         sign_in: SignIn,
         audits: list[AuditCall],
     ) -> None:
-        sign_in(make_user())
+        user = sign_in(make_user())
         session = use_session(FakeSession([one_result(watch_row(pinned=False))]))
         response = await api.put(f"{WATCH}/90001", json={"pinned": False})
         assert response.json() == {
@@ -923,8 +930,32 @@ class TestTheWatchList:
             "pinned_at": None,
             "last_seen_at": None,
         }
-        assert params(session, 0)["pinned_at"] is None
+        sql = sent(session, 0)
+        assert sql.startswith("UPDATE object_watch SET pinned=")
+        assert "WHERE object_watch.user_id =" in sql
+        assert "AND object_watch.sat_no =" in sql
+        sent_values = params(session, 0)
+        assert sent_values["pinned"] is False
+        assert sent_values["pinned_at"] is None
+        assert user.id in sent_values.values()
         assert audits[0].fields["detail"] == {"sat_no": 90001, "pinned": False}
+        assert audits[0].after_commit is False
+        session.commit.assert_awaited_once()
+
+    async def test_unpinning_an_object_never_held_writes_and_audits_nothing(
+        self,
+        api: httpx2.AsyncClient,
+        use_session: UseSession,
+        sign_in: SignIn,
+        audits: list[AuditCall],
+    ) -> None:
+        sign_in(make_user())
+        session = use_session(FakeSession([one_result(None)]))
+        response = await api.put(f"{WATCH}/90001", json={"pinned": False})
+        assert response.status_code == 200
+        assert response.json()["pinned"] is False
+        assert audits == []
+        session.commit.assert_not_awaited()
 
     async def test_looking_records_the_time_without_an_audit(
         self,
@@ -934,7 +965,9 @@ class TestTheWatchList:
         audits: list[AuditCall],
     ) -> None:
         user = sign_in(make_user())
-        session = use_session(FakeSession([one_result(watch_row(pinned=False, seen=True))]))
+        session = use_session(
+            FakeSession([one_result(watch_row(pinned=False, seen=True)), MagicMock()])
+        )
         response = await api.post(f"{WATCH}/90001/seen")
         assert response.status_code == 200
         assert response.json()["last_seen_at"] is not None
@@ -945,6 +978,14 @@ class TestTheWatchList:
         )
         assert "pinned =" not in upsert.split("DO UPDATE SET", 1)[1]
         assert params(session, 0)["user_id"] == user.id
+        # Only the newest marks on objects not on watch are kept, so the rows stay bounded.
+        prune = sent(session, 1)
+        assert prune.startswith("DELETE FROM object_watch WHERE object_watch.user_id =")
+        assert "AND object_watch.pinned IS false AND (object_watch.id NOT IN (SELECT" in prune
+        assert "ORDER BY object_watch.last_seen_at DESC NULLS LAST, object_watch.sat_no" in prune
+        prune_values = list(params(session, 1).values())
+        assert prune_values.count(user.id) == 2
+        assert handover_routes.SEEN_CAP in prune_values
         assert audits == []
         session.commit.assert_awaited_once()
 

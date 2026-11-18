@@ -9,7 +9,7 @@ from typing import Annotated, Any
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException, Path, Query, Request, Response, status
-from sqlalchemy import ColumnElement, and_, delete, func, or_, select
+from sqlalchemy import ColumnElement, and_, delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.config import get_settings
@@ -347,6 +347,9 @@ async def delete_note(
 # How many objects one analyst may keep on watch: enough for a shift's live events, few enough
 # that the strip, and the stories it reads, stay small.
 WATCH_CAP = 20
+# How many objects an analyst's "last looked" times are kept for, beyond those on watch: the most
+# recently looked at. Older marks are dropped, so the rows each analyst can create stay bounded.
+SEEN_CAP = 500
 _WATCH_COLUMNS = (
     ObjectWatch.sat_no,
     ObjectWatch.pinned,
@@ -369,7 +372,7 @@ async def list_watch(db: DbSession, current_user: CurrentUser) -> ObjectWatchLis
         select(*_WATCH_COLUMNS)
         .where(ObjectWatch.user_id == current_user.id)
         .order_by(ObjectWatch.pinned.desc(), ObjectWatch.pinned_at, ObjectWatch.sat_no)
-        .limit(500)
+        .limit(WATCH_CAP + SEEN_CAP)
     )
     rows = (await db.execute(stmt)).all()
     return ObjectWatchList(items=[_watch_read(r) for r in rows], cap=WATCH_CAP)
@@ -384,27 +387,40 @@ async def set_watch(
     current_user: CurrentUser,
 ) -> ObjectWatchRead:
     """Put an object on the analyst's watch strip, or take it off. At most WATCH_CAP are on watch;
-    the analyst's own row is locked first, so two pins at once cannot pass the cap together."""
+    the analyst's own row is locked first, so two pins at once cannot pass the cap together.
+    Taking off an object the analyst holds no row for changes nothing and is not audited."""
     now = datetime.now(UTC)
-    if payload.pinned:
-        await db.execute(select(User.id).where(User.id == current_user.id).with_for_update())
-        others = (
-            await db.execute(
-                select(func.count())
-                .select_from(ObjectWatch)
-                .where(
-                    ObjectWatch.user_id == current_user.id,
-                    ObjectWatch.pinned.is_(True),
-                    ObjectWatch.sat_no != sat_no,
-                )
+    if not payload.pinned:
+        unpin = (
+            update(ObjectWatch)
+            .where(ObjectWatch.user_id == current_user.id, ObjectWatch.sat_no == sat_no)
+            .values(pinned=False, pinned_at=None, updated_at=now)
+            .returning(*_WATCH_COLUMNS)
+        )
+        held = (await db.execute(unpin)).one_or_none()
+        if held is None:
+            return ObjectWatchRead(sat_no=sat_no, pinned=False, pinned_at=None, last_seen_at=None)
+        await _audit_watch(db, request, current_user.id, sat_no, pinned=False)
+        await db.commit()
+        return _watch_read(held)
+    await db.execute(select(User.id).where(User.id == current_user.id).with_for_update())
+    others = (
+        await db.execute(
+            select(func.count())
+            .select_from(ObjectWatch)
+            .where(
+                ObjectWatch.user_id == current_user.id,
+                ObjectWatch.pinned.is_(True),
+                ObjectWatch.sat_no != sat_no,
             )
-        ).scalar_one()
-        if others >= WATCH_CAP:
-            raise HTTPException(
-                status.HTTP_409_CONFLICT,
-                detail=f"At most {WATCH_CAP} objects can be on watch. Take one off first.",
-            )
-    values = {"pinned": payload.pinned, "pinned_at": now if payload.pinned else None}
+        )
+    ).scalar_one()
+    if others >= WATCH_CAP:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail=f"At most {WATCH_CAP} objects can be on watch. Take one off first.",
+        )
+    values = {"pinned": True, "pinned_at": now}
     stmt = (
         pg_insert(ObjectWatch)
         .values(id=uuid4(), user_id=current_user.id, sat_no=sat_no, **values)
@@ -414,24 +430,30 @@ async def set_watch(
         .returning(*_WATCH_COLUMNS)
     )
     row = (await db.execute(stmt)).one()
+    await _audit_watch(db, request, current_user.id, sat_no, pinned=True)
+    await db.commit()
+    return _watch_read(row)
+
+
+async def _audit_watch(
+    db: DbSession, request: Request, user_id: UUID, sat_no: int, *, pinned: bool
+) -> None:
     await write_audit(
         db,
         action_type="handover.watch",
         entity_type="object_watch",
         entity_id=str(sat_no),
-        user_id=current_user.id,
+        user_id=user_id,
         ip_address=client_ip(request),
-        detail={"sat_no": sat_no, "pinned": payload.pinned},
+        detail={"sat_no": sat_no, "pinned": pinned},
     )
-    await db.commit()
-    return _watch_read(row)
 
 
 @router.post("/watch/{sat_no}/seen")
 async def mark_seen(sat_no: SatNo, db: DbSession, current_user: CurrentUser) -> ObjectWatchRead:
     """Record that the analyst has just looked at the object, so the lens marks only what is new
     after this. A private reading mark, like a read receipt nobody else sees, so it is not
-    audited."""
+    audited. Marks beyond the newest SEEN_CAP on objects not on watch are dropped."""
     now = datetime.now(UTC)
     stmt = (
         pg_insert(ObjectWatch)
@@ -442,5 +464,18 @@ async def mark_seen(sat_no: SatNo, db: DbSession, current_user: CurrentUser) -> 
         .returning(*_WATCH_COLUMNS)
     )
     row = (await db.execute(stmt)).one()
+    keep = (
+        select(ObjectWatch.id)
+        .where(ObjectWatch.user_id == current_user.id, ObjectWatch.pinned.is_(False))
+        .order_by(ObjectWatch.last_seen_at.desc().nulls_last(), ObjectWatch.sat_no)
+        .limit(SEEN_CAP)
+    )
+    await db.execute(
+        delete(ObjectWatch).where(
+            ObjectWatch.user_id == current_user.id,
+            ObjectWatch.pinned.is_(False),
+            ObjectWatch.id.not_in(keep),
+        )
+    )
     await db.commit()
     return _watch_read(row)

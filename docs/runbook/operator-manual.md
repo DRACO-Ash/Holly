@@ -249,9 +249,9 @@ Since V0.19 the **Handover** page tells each object's story from what Holly alre
 
 Since V0.20 catalogue and NOTSO numbers on the dashboard open the Object Lens, which reads the story route above, the object list, the activity overview and followed chat, all routes the pages already call; it adds no data and calls nothing outside Holly. Each analyst can switch it off with **Links** in the header; the choice is kept in that browser. Its server side is each analyst's own watch list and "last looked" times:
 
-● `GET /api/v1/handover/watch` lists the signed-in analyst's own rows (up to 500), pinned first, with the cap.
-● `PUT /api/v1/handover/watch/{catalogue number}` with `{"pinned": true}` or `false` pins or unpins an object. At most 20 are pinned per analyst; the 21st is refused with 409. The analyst's account row is locked first, so two pins at once cannot pass the cap together. Audit action `handover.watch`, with the number and the new state.
-● `POST /api/v1/handover/watch/{catalogue number}/seen` records that the analyst looked at the object, when the lens closes. Not audited: it is a private reading mark nobody else sees.
+● `GET /api/v1/handover/watch` lists the signed-in analyst's own rows (up to 520), pinned first, with the cap.
+● `PUT /api/v1/handover/watch/{catalogue number}` with `{"pinned": true}` or `false` pins or unpins an object. At most 20 are pinned per analyst; the 21st is refused with 409. The analyst's account row is locked first, so two pins at once cannot pass the cap together. Audit action `handover.watch`, with the number and the new state. Unpinning an object the analyst holds no row for changes nothing and writes no audit row.
+● `POST /api/v1/handover/watch/{catalogue number}/seen` records that the analyst looked at the object, when the lens closes. Not audited: it is a private reading mark nobody else sees. Each analyst keeps marks on at most the 500 objects not on watch they looked at most recently; older marks are dropped, so the rows one analyst can create stay bounded.
 
 Migration `0021_object_watch` creates `object_watch`, one row per analyst and object, removed with the analyst's account.
 

@@ -38,6 +38,20 @@ describe("numbers as links", () => {
     expect(row).not.toHaveBeenCalled();
   });
 
+  it.each([true, false])("shows markup in chat as text, never as elements (lens on: %s)", (on) => {
+    const text =
+      '<img src=x onerror="go()"> 90001 <a href="javascript:go()">x</a> <script>1</script> 7afc_19Oct-1726Z';
+    const { container } = renderWithLens(
+      <p>
+        <Linkify text={text} />
+      </p>,
+      aLens({ enabled: on }),
+    );
+    expect(container.querySelector("img, a, script")).toBeNull();
+    expect(screen.getByRole("paragraph").textContent).toBe(text);
+    expect(screen.queryAllByRole("button")).toHaveLength(on ? 2 : 0);
+  });
+
   it("leaves text alone when the lens is switched off", () => {
     renderWithLens(<Linkify text="90001" />, aLens({ enabled: false }));
     expect(screen.queryByRole("button")).toBeNull();
