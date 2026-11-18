@@ -15,7 +15,7 @@ export function useFocusTrap(panel: RefObject<HTMLElement | null>): void {
       );
       const first = focusable[0];
       const last = focusable.at(-1);
-      if (last === undefined) return;
+      if (last === undefined) return; // a type guard: each panel always holds a Tab stop
       if (e.shiftKey && document.activeElement === first) {
         e.preventDefault();
         last.focus();

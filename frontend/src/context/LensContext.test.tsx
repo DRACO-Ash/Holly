@@ -112,11 +112,13 @@ describe("the lens's state", () => {
   });
 
   it("opens the lens, and on closing marks the look and returns focus", async () => {
+    // The server's clock a minute ahead of this browser's: its answer is the later look, so it holds.
+    const server = new Date(Date.now() + 60_000).toISOString();
     vi.mocked(markSeen).mockResolvedValue({
       sat_no: 90001,
       pinned: false,
       pinned_at: null,
-      last_seen_at: "2026-01-06T10:00:00Z",
+      last_seen_at: server,
     });
     await mounted();
     const opener = screen.getByText("open");
@@ -126,7 +128,7 @@ describe("the lens's state", () => {
     expect(markSeen).toHaveBeenCalledWith(90001);
     expect(state().satNo).toBeNull();
     expect(document.activeElement).toBe(opener);
-    await waitFor(() => expect(state().seen).toBe(Date.parse("2026-01-06T10:00:00Z")));
+    await waitFor(() => expect(state().seen).toBe(Date.parse(server)));
   });
 
   it("opens with a form when asked", async () => {
@@ -260,6 +262,34 @@ describe("the lens's state", () => {
     expect(state().watch).toEqual([[90001, true]]);
   });
 
+  it("never puts an older look back from a late answer or a refresh", async () => {
+    const stale = "2026-01-05T10:00:00Z";
+    const first = held<{
+      sat_no: number;
+      pinned: boolean;
+      pinned_at: null;
+      last_seen_at: string;
+    }>();
+    vi.mocked(markSeen).mockReturnValueOnce(first.promise);
+    await mounted();
+    const before = Date.now();
+    fireEvent.click(screen.getByText("open"));
+    fireEvent.click(screen.getByText("close"));
+    await act(async () =>
+      first.resolve({ sat_no: 90001, pinned: false, pinned_at: null, last_seen_at: stale }),
+    );
+    expect(state().seen).toBeGreaterThanOrEqual(before);
+    vi.mocked(getWatch).mockResolvedValue({
+      items: [{ sat_no: 90001, pinned: true, pinned_at: null, last_seen_at: stale }],
+      cap: 20,
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByText("changed"));
+    });
+    await waitFor(() => expect(state().watch).toEqual([[90001, true]]));
+    expect(state().seen).toBeGreaterThanOrEqual(before);
+  });
+
   it("remembers a first look at an object not on watch", async () => {
     vi.mocked(markSeen).mockReturnValue(new Promise(() => undefined));
     await mounted();
@@ -275,7 +305,7 @@ describe("the lens's state", () => {
     expect(markSeen).not.toHaveBeenCalled();
   });
 
-  it("drops a watch list that answers after it is gone", async () => {
+  it("takes a watch list that answers after it is gone without failing", async () => {
     const late = held<{ items: []; cap: number }>();
     vi.mocked(getWatch).mockReturnValue(late.promise);
     const { unmount } = render(

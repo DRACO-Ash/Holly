@@ -31,8 +31,23 @@ function watchRefusal(error: unknown, pinned: boolean, cap: number): string {
   return "Holly could not put that on watch. Try again in a moment.";
 }
 
+const later = (a: string | null, b: string | null): string | null =>
+  a !== null && (b === null || Date.parse(a) > Date.parse(b)) ? a : b;
+
+// An answer the server sent before a newer look was stored never puts the older look back.
+function withLatestLook(held: readonly ObjectWatch[], row: ObjectWatch): ObjectWatch {
+  const mine = held.find((r) => r.sat_no === row.sat_no)?.last_seen_at ?? null;
+  return { ...row, last_seen_at: later(mine, row.last_seen_at) };
+}
+
+// The server's list, as an update to the rows held: each keeps the later of the two looks.
+const refreshed =
+  (items: readonly ObjectWatch[]) =>
+  (held: readonly ObjectWatch[]): ObjectWatch[] =>
+    items.map((row) => withLatestLook(held, row));
+
 function upsert(rows: readonly ObjectWatch[], row: ObjectWatch): ObjectWatch[] {
-  return [...rows.filter((r) => r.sat_no !== row.sat_no), row];
+  return [...rows.filter((r) => r.sat_no !== row.sat_no), withLatestLook(rows, row)];
 }
 
 // The look as this browser saw it, until the server's answer replaces it, so a quick return to
@@ -77,7 +92,7 @@ export function LensProvider({
       getWatch()
         .then((list) => {
           if (!live) return;
-          setWatchRows(list.items);
+          setWatchRows(refreshed(list.items));
           setWatchCap(list.cap);
         })
         .catch(noop);

@@ -82,6 +82,20 @@ describe("Find", () => {
     expect(options().at(-1)?.textContent).toMatch(/Set a timer on TEST-SAT 1 #90001/);
   });
 
+  it("names the soonest timer still to come, not a later or a past one", async () => {
+    const at = (minutes: number) => new Date(Date.now() + minutes * 60_000).toISOString();
+    vi.mocked(listEventTimers).mockResolvedValue({
+      items: [
+        aTimer({ id: "t-later", target_time: at(300) }),
+        aTimer({ id: "t-past", target_time: at(-30) }),
+        aTimer({ id: "t-soon", target_time: at(45) }),
+      ],
+    });
+    renderWithLens(<Palette />);
+    typeIn("90001");
+    await waitFor(() => expect(options()[0].textContent).toMatch(/timer in 4\d min/));
+  });
+
   it("gives an object only the timers that name its number whole", async () => {
     vi.mocked(listEventTimers).mockResolvedValue({
       items: [

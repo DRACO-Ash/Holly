@@ -86,3 +86,5 @@ review security-reviewer FAIL 216f87eae7489d62c4a8c2bb6a86ccfd6af6afff # V0.20, 
 review engineering-reviewer FAIL 216f87eae7489d62c4a8c2bb6a86ccfd6af6afff # V0.20, round 1: switch skipped the look mark, focus lost on 3 paths, list cut at 500, stale story unpinned, Sonar-class findings
 review security-reviewer PASS c57cfe788b43a811c5bc6094b5e7d59477bda59b # V0.20, round 2: all round 1 findings fixed; advisory only (looks at once can briefly pass 500 marks)
 review engineering-reviewer FAIL c57cfe788b43a811c5bc6094b5e7d59477bda59b # V0.20, round 2: Tab left Find; re-pin moved the object; quick return showed read items as new; untested branches
+review security-reviewer PASS c31456fdf98f8057b3e5c77521812cb25c05d9e4 # V0.20, round 3: re-pin coalesce, focus trap and local look keep every control
+review engineering-reviewer FAIL c31456fdf98f8057b3e5c77521812cb25c05d9e4 # V0.20, round 3: next-timer sort untested; a late answer could restore an older look
