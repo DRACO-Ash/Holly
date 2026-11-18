@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -11,6 +12,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
+from sqlalchemy import false as sql_false
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -60,3 +62,20 @@ class HandoverNote(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     text: Mapped[str] = mapped_column(Text, nullable=False)
 
     __table_args__ = (Index("ix_handover_note_sat_no", "sat_no"),)
+
+
+class ObjectWatch(Base, UUIDPrimaryKeyMixin, TimestampMixin):
+    """One analyst's view of one object: whether they keep it on watch, and when they last
+    looked at it in the lens. Each analyst sees only their own rows."""
+
+    __tablename__ = "object_watch"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("app_user.id", ondelete="CASCADE"), nullable=False
+    )
+    sat_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    pinned: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sql_false())
+    pinned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (UniqueConstraint("user_id", "sat_no", name="uq_object_watch_user_sat"),)

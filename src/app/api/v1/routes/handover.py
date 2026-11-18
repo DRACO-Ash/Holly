@@ -1,6 +1,7 @@
 """The Handover tab: the objects with live events, each object's story, the mission lead's
-decisions on suggested chat threads, and analysts' notes. Signed-in users only; every write is
-audited. Nothing here calls the assistant (tests/test_handover.py holds that line).
+decisions on suggested chat threads, and analysts' notes; and the Object Lens's per-analyst watch
+list and "last looked" times. Signed-in users only; every write that others can see is audited.
+Nothing here calls the assistant (tests/test_handover.py holds that line).
 """
 
 from datetime import UTC, datetime, timedelta
@@ -15,16 +16,20 @@ from app.config import get_settings
 from app.core.net import client_ip
 from app.dependencies import CurrentUser, DbSession
 from app.models.event_timer import EventTimer
-from app.models.handover import HandoverNote, HandoverThreadLink
+from app.models.handover import HandoverNote, HandoverThreadLink, ObjectWatch
 from app.models.maneuver import Maneuver
 from app.models.mattermost_message import MattermostMessage
 from app.models.notification import Notification
+from app.models.user import User
 from app.schemas.handover import (
     HandoverNoteCreate,
     HandoverObjectList,
     HandoverStory,
+    ObjectWatchList,
+    ObjectWatchRead,
     StoryNote,
     ThreadLinkDecision,
+    WatchUpdate,
 )
 from app.services.audit import write_audit
 from app.services.handover import story as s
@@ -337,3 +342,105 @@ async def delete_note(
     )
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# How many objects one analyst may keep on watch: enough for a shift's live events, few enough
+# that the strip, and the stories it reads, stay small.
+WATCH_CAP = 20
+_WATCH_COLUMNS = (
+    ObjectWatch.sat_no,
+    ObjectWatch.pinned,
+    ObjectWatch.pinned_at,
+    ObjectWatch.last_seen_at,
+)
+
+
+def _watch_read(row: Any) -> ObjectWatchRead:
+    return ObjectWatchRead(
+        sat_no=row.sat_no, pinned=row.pinned, pinned_at=row.pinned_at, last_seen_at=row.last_seen_at
+    )
+
+
+@router.get("/watch")
+async def list_watch(db: DbSession, current_user: CurrentUser) -> ObjectWatchList:
+    """The analyst's own rows: objects on watch, in the order they were pinned, then those only
+    looked at. Nobody else's."""
+    stmt = (
+        select(*_WATCH_COLUMNS)
+        .where(ObjectWatch.user_id == current_user.id)
+        .order_by(ObjectWatch.pinned.desc(), ObjectWatch.pinned_at, ObjectWatch.sat_no)
+        .limit(500)
+    )
+    rows = (await db.execute(stmt)).all()
+    return ObjectWatchList(items=[_watch_read(r) for r in rows], cap=WATCH_CAP)
+
+
+@router.put("/watch/{sat_no}")
+async def set_watch(
+    sat_no: SatNo,
+    payload: WatchUpdate,
+    request: Request,
+    db: DbSession,
+    current_user: CurrentUser,
+) -> ObjectWatchRead:
+    """Put an object on the analyst's watch strip, or take it off. At most WATCH_CAP are on watch;
+    the analyst's own row is locked first, so two pins at once cannot pass the cap together."""
+    now = datetime.now(UTC)
+    if payload.pinned:
+        await db.execute(select(User.id).where(User.id == current_user.id).with_for_update())
+        others = (
+            await db.execute(
+                select(func.count())
+                .select_from(ObjectWatch)
+                .where(
+                    ObjectWatch.user_id == current_user.id,
+                    ObjectWatch.pinned.is_(True),
+                    ObjectWatch.sat_no != sat_no,
+                )
+            )
+        ).scalar_one()
+        if others >= WATCH_CAP:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                detail=f"At most {WATCH_CAP} objects can be on watch. Take one off first.",
+            )
+    values = {"pinned": payload.pinned, "pinned_at": now if payload.pinned else None}
+    stmt = (
+        pg_insert(ObjectWatch)
+        .values(id=uuid4(), user_id=current_user.id, sat_no=sat_no, **values)
+        .on_conflict_do_update(
+            constraint="uq_object_watch_user_sat", set_={**values, "updated_at": now}
+        )
+        .returning(*_WATCH_COLUMNS)
+    )
+    row = (await db.execute(stmt)).one()
+    await write_audit(
+        db,
+        action_type="handover.watch",
+        entity_type="object_watch",
+        entity_id=str(sat_no),
+        user_id=current_user.id,
+        ip_address=client_ip(request),
+        detail={"sat_no": sat_no, "pinned": payload.pinned},
+    )
+    await db.commit()
+    return _watch_read(row)
+
+
+@router.post("/watch/{sat_no}/seen")
+async def mark_seen(sat_no: SatNo, db: DbSession, current_user: CurrentUser) -> ObjectWatchRead:
+    """Record that the analyst has just looked at the object, so the lens marks only what is new
+    after this. A private reading mark, like a read receipt nobody else sees, so it is not
+    audited."""
+    now = datetime.now(UTC)
+    stmt = (
+        pg_insert(ObjectWatch)
+        .values(id=uuid4(), user_id=current_user.id, sat_no=sat_no, last_seen_at=now)
+        .on_conflict_do_update(
+            constraint="uq_object_watch_user_sat", set_={"last_seen_at": now, "updated_at": now}
+        )
+        .returning(*_WATCH_COLUMNS)
+    )
+    row = (await db.execute(stmt)).one()
+    await db.commit()
+    return _watch_read(row)

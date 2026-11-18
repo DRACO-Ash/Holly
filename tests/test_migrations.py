@@ -60,7 +60,7 @@ def test_there_is_one_linear_history_with_one_head() -> None:
     scripts = ScriptDirectory.from_config(alembic_config())
     assert len(scripts.get_heads()) == 1
     revisions = list(scripts.walk_revisions())
-    assert len(revisions) == 20
+    assert len(revisions) == 21
     # The container smoke rung reads the head from the newest file's name.
     newest = sorted(path.stem for path in (MIGRATIONS_DIR / "versions").glob("0*.py"))[-1]
     assert scripts.get_current_head() == newest
@@ -145,6 +145,16 @@ def test_the_handover_story_adds_thread_ids_links_and_notes() -> None:
     assert "DROP TABLE handover_thread_link" in down
     assert "DROP INDEX ix_notification_event_id" in down
     assert "ALTER TABLE mattermost_message DROP COLUMN root_id" in down
+
+
+def test_the_object_watch_keeps_one_row_per_analyst_and_object() -> None:
+    sql = offline_sql("upgrade", "head")
+    assert "CREATE TABLE object_watch (" in sql
+    assert "CONSTRAINT uq_object_watch_user_sat UNIQUE (user_id, sat_no)" in sql
+    assert "FOREIGN KEY(user_id) REFERENCES app_user (id) ON DELETE CASCADE" in sql
+    assert "pinned BOOLEAN DEFAULT false NOT NULL" in sql
+    down = offline_sql("downgrade", "0021_object_watch:0020_handover_story")
+    assert "DROP TABLE object_watch" in down
 
 
 def test_the_developer_ini_points_at_the_packaged_migrations() -> None:

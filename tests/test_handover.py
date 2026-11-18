@@ -18,6 +18,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -26,6 +27,7 @@ import pytest
 from pydantic import ValidationError
 from sqlalchemy.dialects import postgresql
 
+from app.api.v1.routes import handover as handover_routes
 from app.models.event_timer import EventTimer
 from app.models.handover import HandoverNote, HandoverThreadLink
 from app.models.maneuver import Maneuver
@@ -811,6 +813,176 @@ class TestTheNotes:
         sign_in(make_user())
         use_session(FakeSession([scalar_result(None)]))
         assert (await api.delete(f"/api/v1/handover/notes/{uuid.uuid4()}")).status_code == 404
+
+
+WATCH = "/api/v1/handover/watch"
+
+
+def watch_row(sat_no: int = 90001, pinned: bool = True, seen: bool = False) -> SimpleNamespace:
+    return SimpleNamespace(
+        sat_no=sat_no,
+        pinned=pinned,
+        pinned_at=NOW if pinned else None,
+        last_seen_at=NOW if seen else None,
+    )
+
+
+def one_result(row: Any) -> MagicMock:
+    result = MagicMock()
+    result.one.return_value = row
+    return result
+
+
+class TestTheWatchList:
+    async def test_an_analyst_reads_only_their_own_rows_pinned_first(
+        self, api: httpx2.AsyncClient, use_session: UseSession, sign_in: SignIn
+    ) -> None:
+        user = sign_in(make_user())
+        session = use_session(
+            FakeSession([rows_result([watch_row(), watch_row(90002, pinned=False, seen=True)])])
+        )
+        body = (await api.get(WATCH)).json()
+        assert body["cap"] == handover_routes.WATCH_CAP
+        assert [(i["sat_no"], i["pinned"]) for i in body["items"]] == [
+            (90001, True),
+            (90002, False),
+        ]
+        sql = sent(session, 0)
+        assert "WHERE object_watch.user_id =" in sql
+        assert (
+            "ORDER BY object_watch.pinned DESC, object_watch.pinned_at, object_watch.sat_no" in sql
+        )
+        assert user.id in params(session, 0).values()
+
+    async def test_pinning_locks_the_analyst_counts_the_others_and_audits(
+        self,
+        api: httpx2.AsyncClient,
+        use_session: UseSession,
+        sign_in: SignIn,
+        audits: list[AuditCall],
+    ) -> None:
+        user = sign_in(make_user())
+        session = use_session(
+            FakeSession([MagicMock(), scalar_result(3), one_result(watch_row(90001))])
+        )
+        response = await api.put(f"{WATCH}/90001", json={"pinned": True})
+        assert response.status_code == 200
+        assert response.json()["pinned"] is True
+        assert sent(session, 0).endswith("FOR UPDATE")
+        count = sent(session, 1)
+        assert "object_watch.pinned IS true" in count
+        assert "object_watch.sat_no !=" in count
+        upsert = sent(session, 2)
+        assert "ON CONFLICT ON CONSTRAINT uq_object_watch_user_sat DO UPDATE SET" in upsert
+        assert params(session, 2)["user_id"] == user.id
+        [call] = audits
+        assert call.after_commit is False
+        assert call.fields["action_type"] == "handover.watch"
+        assert call.fields["detail"] == {"sat_no": 90001, "pinned": True}
+        session.commit.assert_awaited_once()
+
+    async def test_a_pin_past_the_cap_is_refused_and_nothing_written(
+        self,
+        api: httpx2.AsyncClient,
+        use_session: UseSession,
+        sign_in: SignIn,
+        audits: list[AuditCall],
+    ) -> None:
+        sign_in(make_user())
+        session = use_session(FakeSession([MagicMock(), scalar_result(handover_routes.WATCH_CAP)]))
+        response = await api.put(f"{WATCH}/90001", json={"pinned": True})
+        assert response.status_code == 409
+        assert audits == []
+        assert session.execute.await_count == 2
+        session.commit.assert_not_awaited()
+
+    async def test_one_below_the_cap_still_pins(
+        self, api: httpx2.AsyncClient, use_session: UseSession, sign_in: SignIn
+    ) -> None:
+        sign_in(make_user())
+        use_session(
+            FakeSession(
+                [MagicMock(), scalar_result(handover_routes.WATCH_CAP - 1), one_result(watch_row())]
+            )
+        )
+        assert (await api.put(f"{WATCH}/90001", json={"pinned": True})).status_code == 200
+
+    async def test_unpinning_needs_no_count_and_clears_the_pin_time(
+        self,
+        api: httpx2.AsyncClient,
+        use_session: UseSession,
+        sign_in: SignIn,
+        audits: list[AuditCall],
+    ) -> None:
+        sign_in(make_user())
+        session = use_session(FakeSession([one_result(watch_row(pinned=False))]))
+        response = await api.put(f"{WATCH}/90001", json={"pinned": False})
+        assert response.json() == {
+            "sat_no": 90001,
+            "pinned": False,
+            "pinned_at": None,
+            "last_seen_at": None,
+        }
+        assert params(session, 0)["pinned_at"] is None
+        assert audits[0].fields["detail"] == {"sat_no": 90001, "pinned": False}
+
+    async def test_looking_records_the_time_without_an_audit(
+        self,
+        api: httpx2.AsyncClient,
+        use_session: UseSession,
+        sign_in: SignIn,
+        audits: list[AuditCall],
+    ) -> None:
+        user = sign_in(make_user())
+        session = use_session(FakeSession([one_result(watch_row(pinned=False, seen=True))]))
+        response = await api.post(f"{WATCH}/90001/seen")
+        assert response.status_code == 200
+        assert response.json()["last_seen_at"] is not None
+        upsert = sent(session, 0)
+        assert (
+            "ON CONFLICT ON CONSTRAINT uq_object_watch_user_sat DO UPDATE SET last_seen_at ="
+            in upsert
+        )
+        assert "pinned =" not in upsert.split("DO UPDATE SET", 1)[1]
+        assert params(session, 0)["user_id"] == user.id
+        assert audits == []
+        session.commit.assert_awaited_once()
+
+    @pytest.mark.parametrize(
+        "body", [{"pinned": "yes"}, {"pinned": 1}, {}, {"pinned": True, "sat_no": 90002}]
+    )
+    async def test_a_malformed_pin_is_refused(
+        self,
+        api: httpx2.AsyncClient,
+        use_session: UseSession,
+        sign_in: SignIn,
+        body: dict[str, Any],
+    ) -> None:
+        sign_in(make_user())
+        session = use_session(FakeSession())
+        assert (await api.put(f"{WATCH}/90001", json=body)).status_code == 422
+        session.execute.assert_not_awaited()
+
+    @pytest.mark.parametrize("path", ["/0", "/1000000000", "/abc"])
+    async def test_a_number_out_of_range_is_refused(
+        self, api: httpx2.AsyncClient, use_session: UseSession, sign_in: SignIn, path: str
+    ) -> None:
+        sign_in(make_user())
+        use_session(FakeSession())
+        assert (await api.put(WATCH + path, json={"pinned": True})).status_code == 422
+        assert (await api.post(WATCH + path + "/seen")).status_code == 422
+
+    @pytest.mark.parametrize(
+        ("method", "path"),
+        [("GET", ""), ("PUT", "/90001"), ("POST", "/90001/seen")],
+    )
+    async def test_the_watch_list_needs_sign_in(
+        self, api: httpx2.AsyncClient, use_session: UseSession, method: str, path: str
+    ) -> None:
+        session = use_session(FakeSession())
+        response = await api.request(method, WATCH + path, json={"pinned": True})
+        assert response.status_code == 401
+        session.execute.assert_not_awaited()
 
 
 APP = ROOT / "src/app"

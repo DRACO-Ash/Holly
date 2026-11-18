@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StringConstraints, field_validator
 
 from app.schemas.common import StorableText
 from app.schemas.maneuver import ManeuverFacts
@@ -144,3 +144,27 @@ class HandoverNoteCreate(BaseModel):
         """Drops Unicode format characters (bidirectional overrides, zero-width spaces), so a
         note cannot show in another order than it is stored."""
         return "".join(ch for ch in value if unicodedata.category(ch) != "Cf")
+
+
+class ObjectWatchRead(BaseModel):
+    """One object on the analyst's own record: on watch or not, and when they last looked."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    sat_no: int
+    pinned: bool
+    pinned_at: datetime | None
+    last_seen_at: datetime | None
+
+
+class ObjectWatchList(BaseModel):
+    items: list[ObjectWatchRead]
+    cap: int
+
+
+class WatchUpdate(BaseModel):
+    """Put an object on the analyst's watch strip, or take it off."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    pinned: StrictBool
