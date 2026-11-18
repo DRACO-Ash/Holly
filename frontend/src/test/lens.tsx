@@ -66,8 +66,10 @@ function Landed() {
   return <output data-testid="landed">{pathname + search}</output>;
 }
 
-export function renderWithLens(element: ReactElement, lens: LensState = aLens()): RenderResult {
-  return render(
+// The tree the lens's components are tested in; render it again with another lens state to
+// update the same mounted components.
+export function lensTree(element: ReactElement, lens: LensState): ReactElement {
+  return (
     <LensContext.Provider value={lens}>
       <MemoryRouter initialEntries={["/"]}>
         <Routes>
@@ -75,6 +77,10 @@ export function renderWithLens(element: ReactElement, lens: LensState = aLens())
           <Route path="*" element={<Landed />} />
         </Routes>
       </MemoryRouter>
-    </LensContext.Provider>,
+    </LensContext.Provider>
   );
+}
+
+export function renderWithLens(element: ReactElement, lens: LensState = aLens()): RenderResult {
+  return render(lensTree(element, lens));
 }

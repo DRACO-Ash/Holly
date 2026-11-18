@@ -8,6 +8,7 @@ import {
   getHandoverObjects,
   getHandoverStory,
 } from "../api/handover";
+import { useNavigate } from "react-router-dom";
 import { renderAt } from "../test/render";
 import type { HandoverObjectList, HandoverStory, ThreadLinkDecision } from "../types";
 import { aStory } from "../test/handover";
@@ -232,6 +233,29 @@ describe("the Handover tab", () => {
     renderAt(<Handover />, "/handover?sat=90001", "/handover");
     expect(await screen.findByRole("heading", { name: /TEST-SAT 1/ })).toBeTruthy();
     expect(getHandoverStory).toHaveBeenCalledWith(90001);
+  });
+
+  it("opens the asked-for object again when the lens asks a second time", async () => {
+    function AskAgain() {
+      const navigate = useNavigate();
+      return (
+        <button type="button" onClick={() => navigate("/handover?sat=90001")}>
+          ask again
+        </button>
+      );
+    }
+    renderAt(
+      <>
+        <Handover />
+        <AskAgain />
+      </>,
+      "/handover?sat=90001",
+      "/handover",
+    );
+    await screen.findByRole("heading", { name: /TEST-SAT 1/ });
+    fireEvent.click(screen.getByText("ask again"));
+    await waitFor(() => expect(getHandoverStory).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(getHandoverStory).mock.calls[1][0]).toBe(90001);
   });
 
   it.each(["abc", "0", "1.5"])("ignores a sat that is not a catalogue number: %s", async (sat) => {

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { listEventTimers } from "../../api/event_timers";
 import { listMattermostMessages } from "../../api/mattermost";
@@ -57,9 +57,10 @@ beforeEach(() => {
     .mockResolvedValue({ items: [], total: 0, limit: 4, offset: 0 });
 });
 
-const box = () => screen.getByRole("combobox");
+const box = () => screen.getByRole("searchbox");
 const typeIn = (text: string) => fireEvent.change(box(), { target: { value: text } });
-const options = () => screen.getAllByRole("option");
+const options = () =>
+  within(screen.getByRole("list", { name: "Results" })).queryAllByRole("button");
 
 describe("Find", () => {
   it("opens focused on the box and offers the pages first", () => {
@@ -77,8 +78,22 @@ describe("Find", () => {
     expect(first).toMatch(/1 open NOTSO \(HIGH\)/);
     expect(first).toMatch(/2 provider records/);
     expect(options()[1].textContent).toMatch(/TEST-SAT 2 #90002.*0 provider records/);
-    expect(options()[0].getAttribute("aria-selected")).toBe("true");
+    expect(options()[0].getAttribute("aria-current")).toBe("true");
     expect(options().at(-1)?.textContent).toMatch(/Set a timer on TEST-SAT 1 #90001/);
+  });
+
+  it("gives an object only the timers that name its number whole", async () => {
+    vi.mocked(listEventTimers).mockResolvedValue({
+      items: [
+        aTimer({ label: "Pass 900010" }),
+        aTimer({ id: "t-2", label: "Old 90001", target_time: "2020-01-01T00:00:00Z" }),
+      ],
+    });
+    renderWithLens(<Palette />);
+    typeIn("90001");
+    await waitFor(() => expect(listEventTimers).toHaveBeenCalled());
+    await act(async () => undefined);
+    expect(options()[0].textContent).not.toMatch(/timer in/);
   });
 
   it("opens the lens on Enter and pins on Shift and Enter, staying open", () => {
@@ -96,12 +111,12 @@ describe("Find", () => {
   it("moves with the arrow keys, within the list", () => {
     renderWithLens(<Palette />);
     fireEvent.keyDown(box(), { key: "ArrowUp" });
-    expect(options()[0].getAttribute("aria-selected")).toBe("true");
+    expect(options()[0].getAttribute("aria-current")).toBe("true");
     fireEvent.keyDown(box(), { key: "ArrowDown" });
-    expect(options()[1].getAttribute("aria-selected")).toBe("true");
-    expect(box().getAttribute("aria-activedescendant")).toBe(options()[1].id);
+    expect(options()[1].getAttribute("aria-current")).toBe("true");
+    expect(screen.getByText(/results\. Enter opens Notifications\./)).toBeTruthy();
     for (let i = 0; i < 20; i++) fireEvent.keyDown(box(), { key: "ArrowDown" });
-    expect(options().at(-1)?.getAttribute("aria-selected")).toBe("true");
+    expect(options().at(-1)?.getAttribute("aria-current")).toBe("true");
     fireEvent.keyDown(box(), { key: "x" });
   });
 
@@ -109,7 +124,7 @@ describe("Find", () => {
     const lens = aLens();
     renderWithLens(<Palette />, lens);
     fireEvent.mouseMove(options()[3]);
-    expect(options()[3].getAttribute("aria-selected")).toBe("true");
+    expect(options()[3].getAttribute("aria-current")).toBe("true");
     fireEvent.mouseMove(options()[3]);
     fireEvent.click(options()[3]);
     expect(lens.closePalette).toHaveBeenCalled();
@@ -119,7 +134,7 @@ describe("Find", () => {
   it("finds a notice by NOTSO number and opens it", () => {
     renderWithLens(<Palette />);
     typeIn("7afc");
-    fireEvent.click(screen.getByRole("option", { name: /7afc_19Oct-1726Z/ }));
+    fireEvent.click(screen.getByRole("button", { name: /7afc_19Oct-1726Z/ }));
     expect(screen.getByTestId("landed").textContent).toBe("/notifications/n-1");
   });
 
@@ -138,7 +153,7 @@ describe("Find", () => {
     });
     expect(listMattermostMessages).not.toHaveBeenCalled();
     typeIn("checking");
-    const hit = await screen.findByRole("option", { name: /Checking 90002 now/ });
+    const hit = await screen.findByRole("button", { name: /Checking 90002 now/ });
     expect(listMattermostMessages).toHaveBeenCalledWith({
       q: "checking",
       followed: true,
@@ -146,7 +161,7 @@ describe("Find", () => {
     });
     fireEvent.click(hit);
     expect(lens.open).toHaveBeenCalledWith(90002, null);
-    fireEvent.click(screen.getByRole("option", { name: /Nothing named/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Nothing named/ }));
     expect(screen.getByTestId("landed").textContent).toBe("/comms");
   });
 
@@ -159,16 +174,16 @@ describe("Find", () => {
     await act(async () => {
       await new Promise((r) => setTimeout(r, 250));
     });
-    expect(screen.queryAllByRole("option")).toHaveLength(0);
+    expect(options()).toHaveLength(0);
   });
 
   it("closes from the backdrop, and runs the timer action through the lens", () => {
     const lens = aLens();
     renderWithLens(<Palette />, lens);
     typeIn("90001");
-    fireEvent.click(screen.getByRole("option", { name: /Set a timer/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Set a timer/ }));
     expect(lens.open).toHaveBeenCalledWith(90001, null, "timer");
-    fireEvent.click(document.querySelector(".lens-scrim") as Element);
+    fireEvent.mouseDown(document.querySelector(".lens-scrim") as Element);
     expect(lens.closePalette).toHaveBeenCalledTimes(2);
   });
 });

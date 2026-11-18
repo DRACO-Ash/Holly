@@ -24,6 +24,8 @@ export function FindButton() {
   );
 }
 
+const STRIP_REFRESH_MS = 60_000;
+
 function hoursMinutes(ms: number): string {
   const m = Math.max(0, Math.round(ms / 60_000));
   return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}`;
@@ -69,9 +71,9 @@ function storiesFrom(
   answers: PromiseSettledResult<HandoverStory>[],
 ): Record<number, HandoverStory> {
   const out: Record<number, HandoverStory> = {};
-  answers.forEach((a) => {
+  for (const a of answers) {
     if (a.status === "fulfilled") out[a.value.sat_no] = a.value;
-  });
+  }
   return out;
 }
 
@@ -81,27 +83,34 @@ export function WatchStrip() {
   const [stories, setStories] = useState<Record<number, HandoverStory>>({});
   const pinned = lens.watch.filter((r) => r.pinned).map((r) => r.sat_no);
   const key = pinned.join(",");
+  // The pinned stories are read when the list or Holly's data changes, and every minute; the
+  // counts of what is new follow each "last looked" mark without another read.
   useEffect(() => {
     if (!lens.enabled || !key) return undefined;
     let live = true;
-    Promise.allSettled(key.split(",").map((sat) => getHandoverStory(Number(sat))))
-      .then((answers) => {
-        if (live) setStories(storiesFrom(answers));
-      })
-      .catch(() => undefined);
+    const load = () => {
+      Promise.allSettled(key.split(",").map((sat) => getHandoverStory(Number(sat))))
+        .then((answers) => {
+          if (live) setStories(storiesFrom(answers));
+        })
+        .catch(() => undefined);
+    };
+    load();
+    const id = globalThis.setInterval(load, STRIP_REFRESH_MS);
     return () => {
       live = false;
+      globalThis.clearInterval(id);
     };
-  }, [lens.enabled, key, lens.version, lens.satNo]);
+  }, [lens.enabled, key, lens.version]);
   if (!lens.enabled || pinned.length === 0) return null;
   return (
-    <div className="lens-watch" role="region" aria-label="Objects on watch">
+    <section className="lens-watch" aria-label="Objects on watch">
       <b>ON WATCH</b>
       {pinned.map((sat) => (
         <WatchPin key={sat} satNo={sat} story={stories[sat]} now={now} />
       ))}
       <span className="lens-watch-hint">Ctrl K or / to find anything</span>
-    </div>
+    </section>
   );
 }
 

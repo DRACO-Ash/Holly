@@ -94,6 +94,7 @@ describe("the dashboard's frame", () => {
       await shell();
       await waitFor(() => expect(links()).toEqual(["Password"]));
       expect(screen.queryByRole("link", { name: "Help" })).toBeNull();
+      expect(screen.queryByRole("button", { name: /Find/ })).toBeNull();
       // Nothing polls the timers meanwhile, past a whole poll interval: Holly would refuse it.
       vi.mocked(listEventTimers).mockClear();
       await act(() => vi.advanceTimersByTimeAsync(11_000));

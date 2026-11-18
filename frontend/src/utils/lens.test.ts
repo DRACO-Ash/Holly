@@ -4,6 +4,7 @@ import type { ActivityNotice, HandoverObject } from "../types";
 import {
   countdown,
   firstObjectIn,
+  namesNumber,
   lensItems,
   linkParts,
   matchNotices,
@@ -67,6 +68,13 @@ describe("which text links", () => {
     expect(linkParts(text, known, held).every((p) => p.kind === "text")).toBe(true);
   });
 
+  it("tells a number named whole from one inside a longer number", () => {
+    expect(namesNumber("Pass 90001 / 90002", "90001")).toBe(true);
+    expect(namesNumber("Pass 190001", "90001")).toBe(false);
+    expect(namesNumber("Pass 900010", "90001")).toBe(false);
+    expect(namesNumber("no digits", "90001")).toBe(false);
+  });
+
   it("finds the first known object a message names", () => {
     expect(firstObjectIn("190001 then 90002 then 90001", known)).toBe("90002");
     expect(firstObjectIn("nothing here", known)).toBeNull();
@@ -127,6 +135,8 @@ describe("the lens's items", () => {
   it("splits what is new since the analyst last looked; an item with no time is never new", () => {
     const items = [...lensItems(story), { ...lensItems(story)[1], key: "untimed", at: null }];
     const [fresh, earlier] = splitBySeen(items, Date.parse("2026-01-05T13:00:00Z"));
+    // An item from the very moment of the last look was seen then.
+    expect(splitBySeen(items, Date.parse("2026-01-05T14:00:00Z"))[0]).toEqual([]);
     expect(fresh.map((i) => i.key)).toEqual(["suggested-t-9"]);
     expect(earlier.map((i) => i.key)).toEqual(["note-note-1", "untimed"]);
   });

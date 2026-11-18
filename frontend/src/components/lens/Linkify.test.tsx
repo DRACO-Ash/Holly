@@ -24,18 +24,16 @@ describe("numbers as links", () => {
 
   it("opens the lens on the object, or the notice's first known object, and only that", () => {
     const lens = aLens();
+    // A click that reached the page around the chip would reach the document too.
     const row = vi.fn();
-    renderWithLens(
-      <div onClick={row}>
-        <Linkify text="90002 and 7afc_19Oct-1726Z" />
-      </div>,
-      lens,
-    );
+    document.addEventListener("click", row);
+    renderWithLens(<Linkify text="90002 and 7afc_19Oct-1726Z" />, lens);
     fireEvent.click(screen.getByRole("button", { name: "Open the lens on TEST-SAT 2 90002" }));
     expect(lens.open).toHaveBeenLastCalledWith(90002, expect.any(HTMLButtonElement));
     fireEvent.click(screen.getByRole("button", { name: /notice 7afc_19Oct-1726Z/ }));
     expect(lens.open).toHaveBeenLastCalledWith(90001, expect.any(HTMLButtonElement));
     expect(row).not.toHaveBeenCalled();
+    document.removeEventListener("click", row);
   });
 
   it.each([true, false])("shows markup in chat as text, never as elements (lens on: %s)", (on) => {

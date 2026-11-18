@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
-import { fireEvent, screen } from "@testing-library/react";
+import { act, fireEvent, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { listEventTimers } from "../../api/event_timers";
 import { getHandoverStory } from "../../api/handover";
 import { aStory } from "../../test/handover";
-import { aLens, renderWithLens } from "../../test/lens";
+import { held } from "../../test/held";
+import type { HandoverStory } from "../../types";
+import { aLens, lensTree, renderWithLens } from "../../test/lens";
 import { FindButton, LensLayer, WatchStrip } from "./LensChrome";
 
 vi.mock("../../api/handover");
@@ -73,6 +75,23 @@ describe("the lens in Holly's frame", () => {
     unmount();
     renderWithLens(<WatchStrip />, aLens({ enabled: false, watch: [pinned(90001)] }));
     expect(screen.queryByRole("region")).toBeNull();
+  });
+
+  it("never shows a slow story under another object's lens", async () => {
+    const slow = held<HandoverStory>();
+    vi.mocked(getHandoverStory)
+      .mockReset()
+      .mockImplementationOnce(() => slow.promise)
+      .mockResolvedValueOnce(aStory({ sat_no: 90002, name: "TEST-SAT 2" }));
+    // 90001 has never been looked at; 90002 was, an hour ago: the lens must take each one's own.
+    const lastSeen = (sat: number) => (sat === 90002 ? Date.now() - H : null);
+    const { rerender } = renderWithLens(<LensLayer />, aLens({ satNo: 90001, lastSeen }));
+    rerender(lensTree(<LensLayer />, aLens({ satNo: 90002, lastSeen })));
+    expect(await screen.findByRole("heading", { name: /TEST-SAT 2/ })).toBeTruthy();
+    expect(screen.getByText("Since you last looked")).toBeTruthy();
+    await act(async () => slow.resolve(aStory({ name: "SLOW ONE", notes: [] })));
+    expect(screen.queryByText(/SLOW ONE/)).toBeNull();
+    expect(screen.getByRole("heading", { name: /TEST-SAT 2/ })).toBeTruthy();
   });
 
   it("holds the open lens or Find, and nothing with the lens off", async () => {

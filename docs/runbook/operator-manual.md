@@ -251,7 +251,7 @@ Since V0.20 catalogue and NOTSO numbers on the dashboard open the Object Lens, w
 
 ● `GET /api/v1/handover/watch` lists the signed-in analyst's own rows (up to 520), pinned first, with the cap.
 ● `PUT /api/v1/handover/watch/{catalogue number}` with `{"pinned": true}` or `false` pins or unpins an object. At most 20 are pinned per analyst; the 21st is refused with 409. The analyst's account row is locked first, so two pins at once cannot pass the cap together. Audit action `handover.watch`, with the number and the new state. Unpinning an object the analyst holds no row for changes nothing and writes no audit row.
-● `POST /api/v1/handover/watch/{catalogue number}/seen` records that the analyst looked at the object, when the lens closes. Not audited: it is a private reading mark nobody else sees. Each analyst keeps marks on at most the 500 objects not on watch they looked at most recently; older marks are dropped, so the rows one analyst can create stay bounded.
+● `POST /api/v1/handover/watch/{catalogue number}/seen` records that the analyst looked at the object, when the lens closes or moves to another object. Not audited: it is a private reading mark nobody else sees. Each analyst keeps marks on at most the 500 objects not on watch they looked at most recently; older marks are dropped, so the rows one analyst can create stay bounded.
 
 Migration `0021_object_watch` creates `object_watch`, one row per analyst and object, removed with the analyst's account.
 

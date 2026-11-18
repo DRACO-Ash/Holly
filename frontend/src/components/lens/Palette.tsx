@@ -1,12 +1,20 @@
 // Find anything: one box, from any page, for objects, notices, chat and pages. Objects come first,
 // because the question is usually about one. Keyboard first, as a combobox.
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { listEventTimers } from "../../api/event_timers";
 import { listMattermostMessages } from "../../api/mattermost";
 import { useLens, type LensState } from "../../context/lens";
+import { useFocusTrap, useOutsidePress } from "./useFocusTrap";
 import type { EventTimer, HandoverObject, MattermostMessage } from "../../types";
-import { firstObjectIn, matchNotices, matchObjects, noticesOf, topUrgency } from "../../utils/lens";
+import {
+  firstObjectIn,
+  matchNotices,
+  matchObjects,
+  namesNumber,
+  noticesOf,
+  topUrgency,
+} from "../../utils/lens";
 import { stampUtc } from "../../utils/ops";
 
 type Group = "Objects" | "Notices" | "Chat" | "Pages" | "Do";
@@ -55,10 +63,12 @@ function objectSub(o: HandoverObject, lens: LensState, timers: EventTimer[], now
   const open = own.filter((n) => n.status === "OPEN");
   const urgency = topUrgency(own);
   const timer = timers
-    .filter((t) => t.label.includes(String(o.sat_no)) && Date.parse(t.target_time) > now)
+    .filter((t) => namesNumber(t.label, String(o.sat_no)) && Date.parse(t.target_time) > now)
     .sort((a, b) => Date.parse(a.target_time) - Date.parse(b.target_time))[0];
   return [
-    `${plural(open.length, "open NOTSO")}${urgency ? ` (${urgency.toUpperCase()})` : ""}`,
+    open.length > 0 && urgency
+      ? `${plural(open.length, "open NOTSO")} (${urgency.toUpperCase()})`
+      : plural(open.length, "open NOTSO"),
     plural(o.maneuvers, "provider record"),
     timer ? `timer in ${inTime(timer.target_time, now)}` : null,
     `latest ${ago(o.latest_at, now)}`,
@@ -155,6 +165,9 @@ export default function Palette() {
   const [chat, setChat] = useState<MattermostMessage[]>([]);
   const [timers, setTimers] = useState<EventTimer[]>([]);
   const input = useRef<HTMLInputElement>(null);
+  const panel = useRef<HTMLDialogElement>(null);
+  useFocusTrap(panel);
+  useOutsidePress(panel, lens.closePalette);
 
   useEffect(() => input.current?.focus(), []);
   useEffect(() => {
@@ -185,8 +198,11 @@ export default function Palette() {
   }, [query]);
   useEffect(() => setActive(0), [query]);
 
-  const go = (to: string) => navigate(to);
-  const list = useMemo(() => results(query, lens, chat, timers, go), [query, lens, chat, timers]); // eslint-disable-line react-hooks/exhaustive-deps
+  const go = useCallback((to: string) => navigate(to), [navigate]);
+  const list = useMemo(
+    () => results(query, lens, chat, timers, go),
+    [query, lens, chat, timers, go],
+  );
 
   const choose = (r: Result | undefined, shift: boolean) => {
     if (!r) return;
@@ -207,41 +223,46 @@ export default function Palette() {
     }
   };
 
+  const current = list[active];
   return (
     <>
-      <div className="lens-scrim" onClick={lens.closePalette} aria-hidden="true" />
-      <div className="lens-palette" role="dialog" aria-modal="true" aria-label="Find anything">
+      <div className="lens-scrim" aria-hidden="true" />
+      <dialog
+        open
+        ref={panel}
+        className="lens-palette"
+        aria-modal="true"
+        aria-label="Find anything"
+      >
         <input
           ref={input}
+          type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={onKeyDown}
           placeholder="Find an object, notice, message or page"
-          role="combobox"
-          aria-expanded="true"
-          aria-controls="lens-palette-list"
-          aria-activedescendant={list[active] ? `lens-option-${list[active].id}` : undefined}
-          aria-autocomplete="list"
+          aria-label="Find an object, notice, message or page"
+          aria-describedby="lens-palette-status"
           maxLength={200}
         />
-        <div
-          id="lens-palette-list"
-          role="listbox"
-          aria-label="Results"
-          className="lens-palette-list"
-        >
-          {list.length === 0 && <p className="lens-empty">Nothing in the window matches.</p>}
+        <p id="lens-palette-status" className="visually-hidden" aria-live="polite">
+          {current
+            ? `${plural(list.length, "result")}. Enter opens ${current.title}.`
+            : "No results."}
+        </p>
+        <ul className="lens-palette-list" aria-label="Results">
+          {list.length === 0 && <li className="lens-empty">Nothing in the window matches.</li>}
           {list.map((r, i) => (
-            <div key={r.id} role="presentation">
+            <li key={r.id}>
               {r.group !== list[i - 1]?.group && (
-                <div className="lens-group" role="presentation">
+                <span className="lens-group" aria-hidden="true">
                   {r.group}
-                </div>
+                </span>
               )}
-              <div
-                id={`lens-option-${r.id}`}
-                role="option"
-                aria-selected={i === active}
+              <button
+                type="button"
+                tabIndex={-1}
+                aria-current={i === active ? "true" : undefined}
                 className={`lens-option${i === active ? " active" : ""}`}
                 // Only a moving pointer selects, so a mouse resting where Find opens never
                 // takes the keyboard's selection.
@@ -252,15 +273,16 @@ export default function Palette() {
                   {r.icon}
                 </span>
                 <span>
+                  <span className="visually-hidden">{r.group}: </span>
                   <b>{r.title}</b>
                   <br />
                   <small>{r.sub}</small>
                 </span>
                 <small className="lens-hint">{r.hint}</small>
-              </div>
-            </div>
+              </button>
+            </li>
           ))}
-        </div>
+        </ul>
         <div className="lens-keys">
           <span>
             <kbd>↑</kbd>
@@ -276,7 +298,7 @@ export default function Palette() {
             <kbd>Esc</kbd> close
           </span>
         </div>
-      </div>
+      </dialog>
     </>
   );
 }

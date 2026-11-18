@@ -1,6 +1,6 @@
 // The Object Lens: one object's story over whatever page is open. It reads the V0.19 story
 // (/handover/objects/{sat_no}) and nothing else, so it shows only what Holly already shows.
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { createEventTimer } from "../../api/event_timers";
 import { addHandoverNote, getHandoverStory } from "../../api/handover";
@@ -18,6 +18,7 @@ import {
 import { parseEventClass, stampUtc } from "../../utils/ops";
 import { useNow } from "../ops/useNow";
 import { Linkify } from "./Linkify";
+import { useFocusTrap, useOutsidePress } from "./useFocusTrap";
 
 const H = 3_600_000;
 const DAY = 24 * H;
@@ -237,7 +238,7 @@ function TimerForm({
       <button
         type="submit"
         className="lens-btn primary"
-        disabled={busy || !label.trim() || !(minutes >= 1)}
+        disabled={busy || !label.trim() || Number.isNaN(minutes) || minutes < 1}
       >
         Set timer
       </button>
@@ -300,7 +301,7 @@ export default function LensDrawer({ satNo }: Readonly<{ satNo: number }>) {
   // Fixed when the lens opens, so what is new stays marked while the analyst reads.
   const [seenAt] = useState(() => lens.lastSeen(satNo));
   const closeRef = useRef<HTMLButtonElement>(null);
-  const panel = useRef<HTMLElement>(null);
+  const panel = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
     let live = true;
@@ -318,21 +319,13 @@ export default function LensDrawer({ satNo }: Readonly<{ satNo: number }>) {
   useEffect(() => closeRef.current?.focus(), []);
 
   // Focus stays in the lens while it is open; Esc is handled by the lens's provider.
-  const onKeyDown = (e: KeyboardEvent<HTMLElement>) => {
-    if (e.key !== "Tab" || !panel.current) return;
-    const focusable = panel.current.querySelectorAll<HTMLElement>(
-      "button:not(:disabled), input, textarea, [href]",
-    );
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (e.shiftKey && document.activeElement === first) {
-      e.preventDefault();
-      last.focus();
-    } else if (!e.shiftKey && document.activeElement === last) {
-      e.preventDefault();
-      first.focus();
-    }
-  };
+  useFocusTrap(panel);
+  // Find, when open over the lens, takes the press itself.
+  const { paletteOpen, close } = lens;
+  const pressedOutside = useCallback(() => {
+    if (!paletteOpen) close();
+  }, [paletteOpen, close]);
+  useOutsidePress(panel, pressedOutside);
 
   const saved = (failed: boolean) => {
     if (failed) {
@@ -360,14 +353,13 @@ export default function LensDrawer({ satNo }: Readonly<{ satNo: number }>) {
 
   return (
     <>
-      <div className="lens-scrim" onClick={lens.close} aria-hidden="true" />
-      <aside
+      <div className="lens-scrim" aria-hidden="true" />
+      <dialog
+        open
         ref={panel}
         className="lens-drawer"
-        role="dialog"
         aria-modal="true"
         aria-labelledby="lens-title"
-        onKeyDown={onKeyDown}
       >
         <header className="lens-head">
           <div className="lens-eyebrow">
@@ -484,7 +476,7 @@ export default function LensDrawer({ satNo }: Readonly<{ satNo: number }>) {
         <p className="lens-foot">
           Everything here is already in Holly; the lens reads it and sends nothing anywhere else.
         </p>
-      </aside>
+      </dialog>
     </>
   );
 }

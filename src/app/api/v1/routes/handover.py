@@ -367,11 +367,17 @@ def _watch_read(row: Any) -> ObjectWatchRead:
 @router.get("/watch")
 async def list_watch(db: DbSession, current_user: CurrentUser) -> ObjectWatchList:
     """The analyst's own rows: objects on watch, in the order they were pinned, then those only
-    looked at. Nobody else's."""
+    looked at, most recent first. Nobody else's. Looks are pruned to SEEN_CAP (mark_seen), so the
+    limit holds every row an analyst can have."""
     stmt = (
         select(*_WATCH_COLUMNS)
         .where(ObjectWatch.user_id == current_user.id)
-        .order_by(ObjectWatch.pinned.desc(), ObjectWatch.pinned_at, ObjectWatch.sat_no)
+        .order_by(
+            ObjectWatch.pinned.desc(),
+            ObjectWatch.pinned_at,
+            ObjectWatch.last_seen_at.desc().nulls_last(),
+            ObjectWatch.sat_no,
+        )
         .limit(WATCH_CAP + SEEN_CAP)
     )
     rows = (await db.execute(stmt)).all()

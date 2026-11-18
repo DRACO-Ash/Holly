@@ -34,6 +34,12 @@ function Probe() {
       <button type="button" onClick={() => lens.open(90002, null, "timer")}>
         timer
       </button>
+      <button type="button" onClick={(e) => lens.open(90002, e.currentTarget)}>
+        switch
+      </button>
+      <button type="button" onClick={lens.closePalette}>
+        close find
+      </button>
       <button type="button" onClick={lens.close}>
         close
       </button>
@@ -164,11 +170,76 @@ describe("the lens's state", () => {
     await waitFor(() => expect(state().error).toMatch(/could not take that off watch/));
   });
 
-  it("names the cap when a pin is refused", async () => {
-    vi.mocked(setWatch).mockRejectedValue(new Error("full"));
+  it("names the cap only when the server refuses on it", async () => {
+    vi.mocked(setWatch).mockRejectedValueOnce(
+      Object.assign(new Error("full"), { isAxiosError: true, response: { status: 409 } }),
+    );
     await mounted();
     fireEvent.click(screen.getByText("pin"));
-    await waitFor(() => expect(state().error).toMatch(/At most 20 objects/));
+    await waitFor(() => expect(state().error).toMatch(/at most 20 objects can be on watch/));
+    vi.mocked(setWatch).mockRejectedValueOnce(
+      Object.assign(new Error("broken"), { isAxiosError: true, response: { status: 500 } }),
+    );
+    fireEvent.click(screen.getByText("pin"));
+    await waitFor(() =>
+      expect(state().error).toBe("Holly could not put that on watch. Try again in a moment."),
+    );
+  });
+
+  it("marks the object left behind when the lens moves to another, and returns focus home", async () => {
+    await mounted();
+    const home = screen.getByText("open");
+    fireEvent.click(home);
+    fireEvent.click(screen.getByText("switch"));
+    expect(markSeen).toHaveBeenCalledWith(90001);
+    expect(state().satNo).toBe(90002);
+    fireEvent.click(screen.getByText("switch"));
+    expect(markSeen).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(vi.mocked(markSeen).mock.calls).toEqual([[90001], [90002]]);
+    expect(document.activeElement).toBe(home);
+  });
+
+  it("returns focus to where Find was opened when Find opens the lens", async () => {
+    await mounted();
+    const home = screen.getByText("open");
+    home.focus();
+    fireEvent.keyDown(home, { key: "k", ctrlKey: true });
+    // Focus has moved into Find by the time a result is chosen.
+    const inFind = screen.getByText("timer");
+    inFind.focus();
+    fireEvent.click(inFind);
+    expect(state()).toMatchObject({ palette: false, satNo: 90002 });
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(document.activeElement).toBe(home);
+  });
+
+  it("with Find over the lens, Esc returns to the lens, then home", async () => {
+    await mounted();
+    const home = screen.getByText("open");
+    fireEvent.click(home);
+    const inLens = screen.getByText("changed");
+    inLens.focus();
+    fireEvent.keyDown(inLens, { key: "k", ctrlKey: true });
+    // Asking for Find again from inside Find keeps where it was first opened.
+    screen.getByText("pin").focus();
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(state()).toMatchObject({ palette: false, satNo: 90001 });
+    expect(document.activeElement).toBe(inLens);
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(document.activeElement).toBe(home);
+  });
+
+  it("returns focus to where Find was opened when Find closes", async () => {
+    await mounted();
+    const home = screen.getByText("pin");
+    home.focus();
+    fireEvent.keyDown(home, { key: "/" });
+    screen.getByText("open").focus();
+    fireEvent.click(screen.getByText("close find"));
+    expect(state().palette).toBe(false);
+    expect(document.activeElement).toBe(home);
   });
 
   it("reloads when told something changed, and keeps working when the loads fail", async () => {

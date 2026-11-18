@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useLocation, useSearchParams } from "react-router-dom";
 import {
   addHandoverNote,
   decideThreadLink,
@@ -36,6 +36,8 @@ export default function Handover() {
   // The Object Lens's "Open full story" names the object to open: /handover?sat=90001.
   const [params] = useSearchParams();
   const asked = Number(params.get("sat"));
+  // Each arrival is a new location, so asking again for the object in the address re-opens it.
+  const { key: arrival } = useLocation();
 
   useEffect(() => {
     let live = true;
@@ -77,7 +79,7 @@ export default function Handover() {
 
   useEffect(() => {
     if (Number.isInteger(asked) && asked > 0) select(asked);
-  }, [asked, select]);
+  }, [asked, arrival, select]);
 
   // Acts on the object whose story is on screen. Its story is read again afterwards only if it
   // is still the one wanted, so picking another object meanwhile is never undone; a failure is

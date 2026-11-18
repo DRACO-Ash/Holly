@@ -154,3 +154,9 @@ export function matchNotices(
 export function firstObjectIn(text: string, isObject: (id: string) => boolean): string | null {
   return (text.match(/\d+/g) ?? []).find(isObject) ?? null;
 }
+
+// True when the text names the number whole, not as part of a longer one: 90001 is named in
+// "Pass 90001 / 90002" but not in "Pass 190001".
+export function namesNumber(text: string, number: string): boolean {
+  return (text.match(/\d+/g) ?? ([] as string[])).includes(number);
+}

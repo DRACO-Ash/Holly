@@ -3,8 +3,9 @@ import { act, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createEventTimer } from "../../api/event_timers";
 import { addHandoverNote, getHandoverStory } from "../../api/handover";
-import { aStory } from "../../test/handover";
-import { aLens, renderWithLens } from "../../test/lens";
+import { aManeuver, aStory } from "../../test/handover";
+import { held } from "../../test/held";
+import { aLens, lensTree, renderWithLens } from "../../test/lens";
 import type { HandoverStory } from "../../types";
 import LensDrawer from "./LensDrawer";
 
@@ -12,6 +13,7 @@ vi.mock("../../api/handover");
 vi.mock("../../api/event_timers");
 
 const NOW = Date.parse("2026-01-06T12:00:00Z");
+
 const H = 3_600_000;
 const at = (t: number) => new Date(t).toISOString();
 
@@ -212,10 +214,96 @@ describe("the lens", () => {
     expect(screen.getByTestId("landed").textContent).toBe("/handover?sat=90001");
   });
 
-  it("closes from the backdrop", async () => {
+  it("closes on a press outside it, but not inside it, nor while Find is over it", async () => {
     const lens = await opened();
-    fireEvent.click(document.querySelector(".lens-scrim") as Element);
-    expect(lens.close).toHaveBeenCalled();
+    fireEvent.mouseDown(screen.getByRole("dialog"));
+    expect(lens.close).not.toHaveBeenCalled();
+    fireEvent.mouseDown(document.querySelector(".lens-scrim") as Element);
+    expect(lens.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves a press outside to Find while Find is open over it", async () => {
+    const lens = await opened(aLens({ satNo: 90001, paletteOpen: true }));
+    fireEvent.mouseDown(document.querySelector(".lens-scrim") as Element);
+    expect(lens.close).not.toHaveBeenCalled();
+  });
+
+  it("keeps what is new as it was when the lens opened, though the mark moves meanwhile", async () => {
+    let seen = NOW - 3 * H;
+    const lens = aLens({ satNo: 90001, lastSeen: () => seen });
+    const { rerender } = renderWithLens(<LensDrawer satNo={90001} />, lens);
+    await screen.findByText("Closest approach");
+    seen = NOW;
+    rerender(lensTree(<LensDrawer satNo={90001} />, { ...lens }));
+    expect(screen.getByText("1 new")).toBeTruthy();
+  });
+
+  it("keeps the newer story when an older read answers late", async () => {
+    const first = held<HandoverStory>();
+    vi.mocked(getHandoverStory)
+      .mockReset()
+      .mockImplementationOnce(() => first.promise)
+      .mockResolvedValueOnce(story({ name: "NEWER" }));
+    const lens = aLens({ satNo: 90001 });
+    const { rerender } = renderWithLens(<LensDrawer satNo={90001} />, lens);
+    rerender(lensTree(<LensDrawer satNo={90001} />, { ...lens, version: 1 }));
+    expect(await screen.findByRole("heading", { name: /NEWER/ })).toBeTruthy();
+    await act(async () => first.resolve(story({ name: "OLDER" })));
+    expect(screen.queryByRole("heading", { name: /OLDER/ })).toBeNull();
+    expect(screen.getByRole("heading", { name: /NEWER/ })).toBeTruthy();
+  });
+
+  it("drops a late failure from an older read", async () => {
+    const first = held<HandoverStory>();
+    vi.mocked(getHandoverStory)
+      .mockReset()
+      .mockImplementationOnce(() => first.promise)
+      .mockResolvedValueOnce(story());
+    const lens = aLens({ satNo: 90001 });
+    const { rerender } = renderWithLens(<LensDrawer satNo={90001} />, lens);
+    rerender(lensTree(<LensDrawer satNo={90001} />, { ...lens, version: 1 }));
+    await screen.findByText("Closest approach");
+    await act(async () => first.reject(new Error("late")));
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("draws each source on its own lane", async () => {
+    vi.mocked(getHandoverStory).mockResolvedValue(
+      story({
+        maneuvers: [
+          aManeuver({ id: "m-a", source: "PROVIDER-A", event_start_time: at(NOW - 40 * H) }),
+          aManeuver({ id: "m-b", source: null, event_start_time: null }),
+        ],
+        threads: [
+          {
+            thread_id: "t",
+            event_keys: ["EVT-1"],
+            channel_name: "LEO cell",
+            confirmed_at: at(NOW),
+            truncated: false,
+            posts: [{ post_id: "p", posted_at: at(NOW - 20 * H), author: null, message: "x" }],
+          },
+        ],
+      }),
+    );
+    renderWithLens(<LensDrawer satNo={90001} />, aLens({ satNo: 90001 }));
+    await screen.findByText("Closest approach");
+    const strip = document.querySelector(".lens-strip") as HTMLElement;
+    expect(strip.querySelectorAll(".lens-mark.tone-maneuver")).toHaveLength(1);
+    expect(strip.querySelectorAll(".lens-mark.tone-post")).toHaveLength(1);
+    expect(strip.querySelectorAll(".lens-mark.hollow")).toHaveLength(1);
+    expect(strip.querySelectorAll(".lens-mark.tone-note")).toHaveLength(3);
+  });
+
+  it("refuses a timer with no whole number of minutes", async () => {
+    await opened(aLens({ satNo: 90001, form: "timer" }));
+    const set = within(document.querySelector(".lens-form") as HTMLElement).getByRole("button");
+    fireEvent.change(screen.getByLabelText("In minutes"), { target: { value: "" } });
+    expect((set as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText("In minutes"), { target: { value: "0" } });
+    expect((set as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText("In minutes"), { target: { value: "5" } });
+    expect((set as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("keeps Tab inside the lens", async () => {
@@ -223,7 +311,7 @@ describe("the lens", () => {
     const dialog = screen.getByRole("dialog");
     const buttons = within(dialog).getAllByRole("button");
     const first = buttons[0];
-    const last = buttons[buttons.length - 1];
+    const last = buttons.at(-1) as HTMLElement;
     last.focus();
     fireEvent.keyDown(dialog, { key: "Tab" });
     expect(document.activeElement).toBe(first);

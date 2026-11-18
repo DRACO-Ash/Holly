@@ -835,6 +835,10 @@ def one_result(row: Any) -> MagicMock:
 
 
 class TestTheWatchList:
+    def test_the_caps_are_those_the_documents_state(self) -> None:
+        assert handover_routes.WATCH_CAP == 20
+        assert handover_routes.SEEN_CAP == 500
+
     async def test_an_analyst_reads_only_their_own_rows_pinned_first(
         self, api: httpx2.AsyncClient, use_session: UseSession, sign_in: SignIn
     ) -> None:
@@ -851,7 +855,8 @@ class TestTheWatchList:
         sql = sent(session, 0)
         assert "WHERE object_watch.user_id =" in sql
         assert (
-            "ORDER BY object_watch.pinned DESC, object_watch.pinned_at, object_watch.sat_no" in sql
+            "ORDER BY object_watch.pinned DESC, object_watch.pinned_at, "
+            "object_watch.last_seen_at DESC NULLS LAST, object_watch.sat_no" in sql
         )
         assert user.id in params(session, 0).values()
         assert handover_routes.WATCH_CAP + handover_routes.SEEN_CAP in params(session, 0).values()
