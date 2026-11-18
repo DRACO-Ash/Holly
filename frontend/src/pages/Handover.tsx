@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   addHandoverNote,
   decideThreadLink,
@@ -32,6 +33,9 @@ export default function Handover() {
   const [busy, setBusy] = useState(false);
   // The object whose story was asked for last, so a slower answer for another is dropped.
   const wanted = useRef<number | null>(null);
+  // The Object Lens's "Open full story" names the object to open: /handover?sat=90001.
+  const [params] = useSearchParams();
+  const asked = Number(params.get("sat"));
 
   useEffect(() => {
     let live = true;
@@ -60,13 +64,20 @@ export default function Handover() {
     }
   }, []);
 
-  const select = (satNo: number) => {
-    setSelected(satNo);
-    setStory(null);
-    setError(null);
-    setSaveError(null);
-    void loadStory(satNo);
-  };
+  const select = useCallback(
+    (satNo: number) => {
+      setSelected(satNo);
+      setStory(null);
+      setError(null);
+      setSaveError(null);
+      void loadStory(satNo);
+    },
+    [loadStory],
+  );
+
+  useEffect(() => {
+    if (Number.isInteger(asked) && asked > 0) select(asked);
+  }, [asked, select]);
 
   // Acts on the object whose story is on screen. Its story is read again afterwards only if it
   // is still the one wanted, so picking another object meanwhile is never undone; a failure is

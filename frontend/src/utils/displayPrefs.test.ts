@@ -28,16 +28,15 @@ const brokenStore = {
 };
 
 describe("loadDisplayPrefs", () => {
-  it("starts with scanlines on and flicker off", () => {
-    expect(DEFAULT_DISPLAY).toEqual({ scanlines: true, flicker: false });
+  it("starts with scanlines on, flicker off and links on", () => {
+    expect(DEFAULT_DISPLAY).toEqual({ scanlines: true, flicker: false, links: true });
     expect(loadDisplayPrefs(memoryStore())).toEqual(DEFAULT_DISPLAY);
   });
 
   it("reads a saved choice", () => {
-    expect(loadDisplayPrefs(memoryStore('{"scanlines":false,"flicker":true}'))).toEqual({
-      scanlines: false,
-      flicker: true,
-    });
+    expect(
+      loadDisplayPrefs(memoryStore('{"scanlines":false,"flicker":true,"links":false}')),
+    ).toEqual({ scanlines: false, flicker: true, links: false });
   });
 
   it.each([
@@ -50,9 +49,10 @@ describe("loadDisplayPrefs", () => {
   });
 
   it("keeps the default for a field that is not a boolean", () => {
-    expect(loadDisplayPrefs(memoryStore('{"scanlines":"no","flicker":true}'))).toEqual({
+    expect(loadDisplayPrefs(memoryStore('{"scanlines":"no","flicker":true,"links":1}'))).toEqual({
       scanlines: true,
       flicker: true,
+      links: true,
     });
   });
 
@@ -69,12 +69,14 @@ describe("loadDisplayPrefs", () => {
 });
 
 describe("saveDisplayPrefs", () => {
-  it("writes only the two known fields, which load back", () => {
+  it("writes only the three known fields, which load back", () => {
     const store = memoryStore();
-    const extra = { scanlines: false, flicker: true, other: "x" };
+    const extra = { scanlines: false, flicker: true, links: false, other: "x" };
     saveDisplayPrefs(extra, store);
-    expect(store.items.get(DISPLAY_STORAGE_KEY)).toBe('{"scanlines":false,"flicker":true}');
-    expect(loadDisplayPrefs(store)).toEqual({ scanlines: false, flicker: true });
+    expect(store.items.get(DISPLAY_STORAGE_KEY)).toBe(
+      '{"scanlines":false,"flicker":true,"links":false}',
+    );
+    expect(loadDisplayPrefs(store)).toEqual({ scanlines: false, flicker: true, links: false });
   });
 
   it("ignores a store that throws or is missing", () => {

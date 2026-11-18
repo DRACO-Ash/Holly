@@ -1,5 +1,12 @@
 import { apiClient } from "./client";
-import type { HandoverObjectList, HandoverStory, StoryNote, ThreadLinkDecision } from "../types";
+import type {
+  HandoverObjectList,
+  HandoverStory,
+  ObjectWatch,
+  ObjectWatchList,
+  StoryNote,
+  ThreadLinkDecision,
+} from "../types";
 
 const windowParams = (hours?: number) => (hours === undefined ? {} : { hours });
 
@@ -29,4 +36,20 @@ export async function addHandoverNote(satNo: number, text: string): Promise<Stor
 
 export async function deleteHandoverNote(noteId: string): Promise<void> {
   await apiClient.delete(`/handover/notes/${noteId}`);
+}
+
+// The analyst's own watch list and "last looked" times, for the Object Lens.
+export async function getWatch(): Promise<ObjectWatchList> {
+  const { data } = await apiClient.get<ObjectWatchList>("/handover/watch");
+  return data;
+}
+
+export async function setWatch(satNo: number, pinned: boolean): Promise<ObjectWatch> {
+  const { data } = await apiClient.put<ObjectWatch>(`/handover/watch/${satNo}`, { pinned });
+  return data;
+}
+
+export async function markSeen(satNo: number): Promise<ObjectWatch> {
+  const { data } = await apiClient.post<ObjectWatch>(`/handover/watch/${satNo}/seen`);
+  return data;
 }

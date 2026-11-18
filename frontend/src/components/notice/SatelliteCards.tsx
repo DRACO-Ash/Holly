@@ -13,6 +13,7 @@ import {
   maneuverStart,
 } from "../../utils/ops";
 import SatelliteStrip from "./SatelliteStrip";
+import { SatChip } from "../lens/Linkify";
 
 function ManeuverList({
   groups,
@@ -67,7 +68,12 @@ function SatelliteCard({
       <div className="satellite-card-head">
         <strong>
           {satellite?.name ?? `#${satId}`}
-          {satellite?.name && <span className="norad"> #{satId}</span>}
+          {satellite?.name && (
+            <span className="norad">
+              {" "}
+              #<SatChip id={satId} />
+            </span>
+          )}
         </strong>
         <RegimeBadge regime={satellite?.regime ?? null} from={satellite?.regimeFrom} />
       </div>

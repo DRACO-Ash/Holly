@@ -5,7 +5,8 @@ interface DisplayTogglesProps {
   onChange: (prefs: DisplayPrefs) => void;
 }
 
-// The two screen effects of the Holly design document, switched per analyst. When the operating
+// The two screen effects of the Holly design document, and the Object Lens's links, switched per
+// analyst. When the operating
 // system asks for reduced motion, flicker is off and its box is greyed out, saying why.
 export default function DisplayToggles({ prefs, onChange }: Readonly<DisplayTogglesProps>) {
   const reduceMotion =
@@ -13,7 +14,7 @@ export default function DisplayToggles({ prefs, onChange }: Readonly<DisplayTogg
     window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
   return (
     <fieldset className="display-toggles">
-      <legend className="visually-hidden">Screen effects</legend>
+      <legend className="visually-hidden">Screen effects and links</legend>
       <label className="display-toggle">
         <input
           type="checkbox"
@@ -34,6 +35,14 @@ export default function DisplayToggles({ prefs, onChange }: Readonly<DisplayTogg
           onChange={(e) => onChange({ ...prefs, flicker: e.target.checked })}
         />
         <span>CRT flicker</span>
+      </label>
+      <label className="display-toggle" title="Object numbers open the Object Lens">
+        <input
+          type="checkbox"
+          checked={prefs.links}
+          onChange={(e) => onChange({ ...prefs, links: e.target.checked })}
+        />
+        <span>Links</span>
       </label>
       {reduceMotion && (
         <span id="flicker-off-note" hidden>

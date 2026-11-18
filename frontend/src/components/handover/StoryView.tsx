@@ -3,6 +3,7 @@ import type { HandoverStory, LinkDecision, ThreadSuggestion } from "../../types"
 import { ENTRY_LABELS, storyEntries, type StoryEntry } from "../../utils/handover";
 import { dayHeading, groupByDay, stampUtc } from "../../utils/ops";
 import { KindGlyph } from "../ops/Badges";
+import { Linkify } from "../lens/Linkify";
 
 function Entry({
   entry,
@@ -19,7 +20,11 @@ function Entry({
           <span className={`story-type story-type-${entry.type}`}>{ENTRY_LABELS[entry.type]}</span>
           <span>{entry.title}</span>
         </p>
-        {entry.detail && <p className="story-detail">{entry.detail}</p>}
+        {entry.detail && (
+          <p className="story-detail">
+            <Linkify text={entry.detail} />
+          </p>
+        )}
         <p className="story-source">
           <span>Source: {entry.source}</span>
           {entry.type === "note" && (

@@ -2,6 +2,7 @@ import { FormEvent, useState } from "react";
 import { useEventTimers } from "../context/EventTimersContext";
 import type { EventTimer, TimerRecurrence } from "../types";
 import { extractErrorMessage } from "../utils/errors";
+import { Linkify } from "./lens/Linkify";
 
 const COLLAPSE_STORAGE_KEY = "holly.event-timers.collapsed";
 
@@ -70,7 +71,9 @@ function TimerRow({ timer, variant }: Readonly<TimerRowProps>) {
   return (
     <li className={`event-timer-row event-timer-${variant}`}>
       <div className="event-timer-head">
-        <strong>{timer.label}</strong>
+        <strong>
+          <Linkify text={timer.label} />
+        </strong>
         <span className="muted">{formatTime(timer.target_time)}</span>
       </div>
       <div className="event-timer-meta">

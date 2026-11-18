@@ -2,7 +2,9 @@ import { type ReactNode, useState } from "react";
 import { Link, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { EventTimersProvider } from "../context/EventTimersContext";
+import { LensProvider } from "../context/LensContext";
 import DisplayToggles from "./DisplayToggles";
+import { FindButton, LensLayer, WatchStrip } from "./lens/LensChrome";
 import TimerBanner from "./TimerBanner";
 import type { UserRole } from "../types";
 import { type DisplayPrefs, loadDisplayPrefs, saveDisplayPrefs } from "../utils/displayPrefs";
@@ -53,67 +55,72 @@ export default function Layout() {
 
   return (
     <Timers off={changeDue}>
-      <div
-        className="app-shell"
-        data-scanlines={display.scanlines ? "on" : "off"}
-        data-flicker={display.flicker ? "on" : "off"}
-      >
-        <header className="app-header">
-          <div className="app-brand">
-            <span className="brand-badge" aria-hidden="true">
-              [H]
-            </span>
-            <span className="brand-text">
-              <span className="app-title">
-                <span aria-hidden="true">[</span>Holly<span aria-hidden="true">]</span>
+      <LensProvider enabled={display.links && !changeDue && user !== null}>
+        <div
+          className="app-shell"
+          data-scanlines={display.scanlines ? "on" : "off"}
+          data-flicker={display.flicker ? "on" : "off"}
+        >
+          <header className="app-header">
+            <div className="app-brand">
+              <span className="brand-badge" aria-hidden="true">
+                [H]
               </span>
-              <span className="brand-sub">Daily operations dashboard</span>
-            </span>
-          </div>
-          <div className="app-header-right">
-            <DisplayToggles prefs={display} onChange={changeDisplay} />
-            {user && <span className="app-user">{user.username}</span>}
-            {!changeDue && (
-              <Link
-                to="/help"
-                className="help-link"
-                aria-current={pathname === "/help" ? "page" : undefined}
-              >
-                Help
-              </Link>
-            )}
-            <button type="button" className="logout-btn" onClick={logout}>
-              Sign out
-            </button>
-          </div>
-        </header>
-        {!changeDue && <TimerBanner />}
-        <div className="app-body">
-          <nav className="app-nav">
-            {visibleItems.map((item) => (
-              <Link
-                key={item.to}
-                to={item.to}
-                className={pathname === item.to ? "nav-link active" : "nav-link"}
-                aria-current={pathname === item.to ? "page" : undefined}
-              >
-                {item.label}
-              </Link>
-            ))}
-          </nav>
-          <main className="app-main">
-            <span className="screw screw-tl" aria-hidden="true" />
-            <span className="screw screw-tr" aria-hidden="true" />
-            <span className="screw screw-bl" aria-hidden="true" />
-            <span className="screw screw-br" aria-hidden="true" />
-            <div className="crt-screen">
-              <div className="crt-content">
-                <Outlet />
-              </div>
+              <span className="brand-text">
+                <span className="app-title">
+                  <span aria-hidden="true">[</span>Holly<span aria-hidden="true">]</span>
+                </span>
+                <span className="brand-sub">Daily operations dashboard</span>
+              </span>
             </div>
-          </main>
+            <div className="app-header-right">
+              <FindButton />
+              <DisplayToggles prefs={display} onChange={changeDisplay} />
+              {user && <span className="app-user">{user.username}</span>}
+              {!changeDue && (
+                <Link
+                  to="/help"
+                  className="help-link"
+                  aria-current={pathname === "/help" ? "page" : undefined}
+                >
+                  Help
+                </Link>
+              )}
+              <button type="button" className="logout-btn" onClick={logout}>
+                Sign out
+              </button>
+            </div>
+          </header>
+          {!changeDue && <TimerBanner />}
+          <div className="app-body">
+            <nav className="app-nav">
+              {visibleItems.map((item) => (
+                <Link
+                  key={item.to}
+                  to={item.to}
+                  className={pathname === item.to ? "nav-link active" : "nav-link"}
+                  aria-current={pathname === item.to ? "page" : undefined}
+                >
+                  {item.label}
+                </Link>
+              ))}
+            </nav>
+            <main className="app-main">
+              <span className="screw screw-tl" aria-hidden="true" />
+              <span className="screw screw-tr" aria-hidden="true" />
+              <span className="screw screw-bl" aria-hidden="true" />
+              <span className="screw screw-br" aria-hidden="true" />
+              <div className="crt-screen">
+                <div className="crt-content">
+                  <WatchStrip />
+                  <Outlet />
+                </div>
+              </div>
+            </main>
+          </div>
         </div>
-      </div>
+        <LensLayer />
+      </LensProvider>
     </Timers>
   );
 }

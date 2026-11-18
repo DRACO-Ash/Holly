@@ -228,6 +228,18 @@ describe("the Handover tab", () => {
     await waitFor(() => expect(box.value).toBe(""));
   });
 
+  it("opens the object the lens asked for", async () => {
+    renderAt(<Handover />, "/handover?sat=90001", "/handover");
+    expect(await screen.findByRole("heading", { name: /TEST-SAT 1/ })).toBeTruthy();
+    expect(getHandoverStory).toHaveBeenCalledWith(90001);
+  });
+
+  it.each(["abc", "0", "1.5"])("ignores a sat that is not a catalogue number: %s", async (sat) => {
+    renderAt(<Handover />, `/handover?sat=${sat}`, "/handover");
+    expect(await screen.findByText("Pick an object to read its story.")).toBeTruthy();
+    expect(getHandoverStory).not.toHaveBeenCalled();
+  });
+
   it("keeps the note's text when it cannot be saved", async () => {
     vi.mocked(addHandoverNote).mockRejectedValue(new Error("down"));
     await openFirstObject();

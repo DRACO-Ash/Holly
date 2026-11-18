@@ -1,4 +1,5 @@
 import { useEventTimers } from "../context/EventTimersContext";
+import { Linkify } from "./lens/Linkify";
 
 function formatTimeUtc(value: string): string {
   return new Date(value).toISOString().slice(11, 19) + "Z";
@@ -26,7 +27,9 @@ export default function TimerBanner() {
         <div key={t.id} className="timer-banner timer-banner-firing">
           <div className="timer-banner-body">
             <strong>FIRING</strong>
-            <span className="timer-banner-label">{t.label}</span>
+            <span className="timer-banner-label">
+              <Linkify text={t.label} />
+            </span>
             <span className="muted">target {formatTimeUtc(t.target_time)}</span>
             {t.event_key && <span className="muted">event {t.event_key}</span>}
             {notificationPermission === "denied" && (

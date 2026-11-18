@@ -2,6 +2,7 @@ import type { ActivityNotice, NotificationDetail } from "../../types";
 import { KindBadge, RegimeBadge, StatusBadge, UrgencyBadge } from "../ops/Badges";
 import { Stamp } from "../ops/Stamp";
 import { type ParsedEvent, type Satellite, stampUtc, timeOf, urgencyOf } from "../../utils/ops";
+import { SatChip } from "../lens/Linkify";
 
 function Title({
   item,
@@ -16,7 +17,12 @@ function Title({
         <span key={`${object.name}-${object.id ?? "none"}`}>
           {index > 0 && <span className="event-vs">vs </span>}
           {object.name}
-          {object.id && object.id !== object.name && <span className="norad"> #{object.id}</span>}
+          {object.id && object.id !== object.name && (
+            <span className="norad">
+              {" "}
+              #<SatChip id={object.id} />
+            </span>
+          )}
         </span>
       ))}
     </>

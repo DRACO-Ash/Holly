@@ -16,6 +16,9 @@ import {
   deleteHandoverNote,
   getHandoverObjects,
   getHandoverStory,
+  getWatch,
+  markSeen,
+  setWatch,
 } from "./handover";
 import { getManeuver, listManeuvers } from "./maneuvers";
 import {
@@ -65,7 +68,7 @@ const typed = "pw";
 // function must hand back the body it was given.
 const body = { synthetic: "body" };
 
-function answer(method: "get" | "post" | "patch" | "delete") {
+function answer(method: "get" | "post" | "put" | "patch" | "delete") {
   return vi.spyOn(apiClient, method).mockResolvedValue({ data: body });
 }
 
@@ -387,5 +390,19 @@ describe("the handover endpoints", () => {
     const del = answer("delete");
     await expect(deleteHandoverNote("note-1")).resolves.toBeUndefined();
     expect(del).toHaveBeenLastCalledWith("/handover/notes/note-1");
+  });
+
+  it("reads the analyst's watch list, pins and unpins, and marks a look", async () => {
+    const get = answer("get");
+    await expect(getWatch()).resolves.toBe(body);
+    expect(get).toHaveBeenLastCalledWith("/handover/watch");
+    const put = answer("put");
+    await expect(setWatch(90001, true)).resolves.toBe(body);
+    expect(put).toHaveBeenLastCalledWith("/handover/watch/90001", { pinned: true });
+    await setWatch(90001, false);
+    expect(put).toHaveBeenLastCalledWith("/handover/watch/90001", { pinned: false });
+    const post = answer("post");
+    await expect(markSeen(90001)).resolves.toBe(body);
+    expect(post).toHaveBeenLastCalledWith("/handover/watch/90001/seen");
   });
 });

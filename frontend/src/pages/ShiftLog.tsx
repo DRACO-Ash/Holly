@@ -13,6 +13,7 @@ import {
 import EventTimersPanel from "../components/EventTimersPanel";
 import type { ShiftDateSummary, ShiftExportFormat, ShiftNote, ShiftSummary } from "../types";
 import { extractErrorMessage } from "../utils/errors";
+import { Linkify } from "../components/lens/Linkify";
 
 function todayUtcIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -126,7 +127,9 @@ function NoteRow({ note, onSaved, onDeleted, onError }: Readonly<NoteRowProps>) 
           </div>
         </>
       ) : (
-        <p className="shift-note-body">{display}</p>
+        <p className="shift-note-body">
+          <Linkify text={display} />
+        </p>
       )}
       {showRaw && !editing && (
         <div className="shift-note-raw">

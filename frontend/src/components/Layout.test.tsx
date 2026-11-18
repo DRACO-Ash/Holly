@@ -152,6 +152,16 @@ describe("the dashboard's frame", () => {
     expect(JSON.parse(localStorage.getItem(DISPLAY_STORAGE_KEY)!)).toEqual({
       scanlines: false,
       flicker: true,
+      links: true,
     });
+  });
+
+  it("offers Find while links are on, and drops it when the analyst switches them off", async () => {
+    signedInAs(aUser());
+    await shell();
+    expect(screen.getByRole("button", { name: /Find/ })).toBeTruthy();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Links" }));
+    expect(screen.queryByRole("button", { name: /Find/ })).toBeNull();
+    expect(JSON.parse(localStorage.getItem(DISPLAY_STORAGE_KEY)!).links).toBe(false);
   });
 });

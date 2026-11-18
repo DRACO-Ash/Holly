@@ -103,3 +103,15 @@ export interface ThreadLinkDecision {
   event_key: string;
   decision: LinkDecision;
 }
+
+export interface ObjectWatch {
+  sat_no: number;
+  pinned: boolean;
+  pinned_at: string | null;
+  last_seen_at: string | null;
+}
+
+export interface ObjectWatchList {
+  items: ObjectWatch[];
+  cap: number;
+}

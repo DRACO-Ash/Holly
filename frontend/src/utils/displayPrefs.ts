@@ -1,13 +1,18 @@
 // The screen effects each analyst can switch, as the Holly design document sets them: scanlines
-// on, flicker off. The choice is kept in this browser only. A store that is blocked, full or
+// on, flicker off; and whether object numbers are links that open the Object Lens (on). The choice is kept in this browser only. A store that is blocked, full or
 // holding anything unexpected falls back to the defaults, so the dashboard always renders.
 
 export interface DisplayPrefs {
   scanlines: boolean;
   flicker: boolean;
+  links: boolean;
 }
 
-export const DEFAULT_DISPLAY: Readonly<DisplayPrefs> = { scanlines: true, flicker: false };
+export const DEFAULT_DISPLAY: Readonly<DisplayPrefs> = {
+  scanlines: true,
+  flicker: false,
+  links: true,
+};
 
 export const DISPLAY_STORAGE_KEY = "holly.display";
 
@@ -26,10 +31,11 @@ export function loadDisplayPrefs(store: Store | undefined = browserStore()): Dis
     const raw = store?.getItem(DISPLAY_STORAGE_KEY);
     const saved: unknown = raw ? JSON.parse(raw) : null;
     if (typeof saved !== "object" || saved === null) return { ...DEFAULT_DISPLAY };
-    const { scanlines, flicker } = saved as Record<string, unknown>;
+    const { scanlines, flicker, links } = saved as Record<string, unknown>;
     return {
       scanlines: typeof scanlines === "boolean" ? scanlines : DEFAULT_DISPLAY.scanlines,
       flicker: typeof flicker === "boolean" ? flicker : DEFAULT_DISPLAY.flicker,
+      links: typeof links === "boolean" ? links : DEFAULT_DISPLAY.links,
     };
   } catch {
     return { ...DEFAULT_DISPLAY };
@@ -43,7 +49,7 @@ export function saveDisplayPrefs(
   try {
     store?.setItem(
       DISPLAY_STORAGE_KEY,
-      JSON.stringify({ scanlines: prefs.scanlines, flicker: prefs.flicker }),
+      JSON.stringify({ scanlines: prefs.scanlines, flicker: prefs.flicker, links: prefs.links }),
     );
   } catch {
     // A blocked or full store keeps the choice for this page only.

@@ -10,6 +10,7 @@ import {
   sameUtcDay,
   timeOfDay,
 } from "../../utils/comms";
+import { Linkify } from "../lens/Linkify";
 
 // Messages under a heading for each day, with a marker where those posted since the last visit
 // begin, and any search match marked. The feed lists newest first; a conversation, oldest first.
@@ -87,7 +88,9 @@ export default function MessageList({
                   part.match ? (
                     <mark key={part.start}>{part.text}</mark>
                   ) : (
-                    <Fragment key={part.start}>{part.text}</Fragment>
+                    <Fragment key={part.start}>
+                      <Linkify text={part.text} />
+                    </Fragment>
                   ),
                 )}
               </p>

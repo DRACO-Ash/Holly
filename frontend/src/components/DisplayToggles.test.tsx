@@ -20,7 +20,9 @@ afterEach(() => {
 
 describe("the screen effect toggles", () => {
   it("show each effect as the analyst set it, where the browser cannot say about motion", () => {
-    render(<DisplayToggles prefs={{ scanlines: true, flicker: true }} onChange={vi.fn()} />);
+    render(
+      <DisplayToggles prefs={{ scanlines: true, flicker: true, links: true }} onChange={vi.fn()} />,
+    );
     expect(box("Scanlines").checked).toBe(true);
     expect(box("CRT flicker").checked).toBe(true);
     expect(box("CRT flicker").disabled).toBe(false);
@@ -29,16 +31,26 @@ describe("the screen effect toggles", () => {
   it("report each change with the other effect kept", () => {
     reducedMotion(false);
     const onChange = vi.fn();
-    render(<DisplayToggles prefs={{ scanlines: true, flicker: false }} onChange={onChange} />);
+    render(
+      <DisplayToggles
+        prefs={{ scanlines: true, flicker: false, links: true }}
+        onChange={onChange}
+      />,
+    );
     fireEvent.click(box("Scanlines"));
-    expect(onChange).toHaveBeenLastCalledWith({ scanlines: false, flicker: false });
+    expect(onChange).toHaveBeenLastCalledWith({ scanlines: false, flicker: false, links: true });
     fireEvent.click(box("CRT flicker"));
-    expect(onChange).toHaveBeenLastCalledWith({ scanlines: true, flicker: true });
+    expect(onChange).toHaveBeenLastCalledWith({ scanlines: true, flicker: true, links: true });
   });
 
   it("turn flicker off, and say why, when the system asks for reduced motion", () => {
     reducedMotion(true);
-    render(<DisplayToggles prefs={{ scanlines: false, flicker: true }} onChange={vi.fn()} />);
+    render(
+      <DisplayToggles
+        prefs={{ scanlines: false, flicker: true, links: true }}
+        onChange={vi.fn()}
+      />,
+    );
     const flicker = box("CRT flicker");
     expect(flicker.checked).toBe(false);
     expect(flicker.disabled).toBe(true);
