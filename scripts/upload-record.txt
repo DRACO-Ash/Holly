@@ -84,3 +84,5 @@ review engineering-reviewer PASS 644213d805d1f6aae552c5a52cea75dc46ee5e26 # V0.1
 review security-reviewer PASS 644213d805d1f6aae552c5a52cea75dc46ee5e26 # V0.19, round 5: 2 minor (from-importlib not flagged, dead alias clause)
 review security-reviewer FAIL 216f87eae7489d62c4a8c2bb6a86ccfd6af6afff # V0.20, round 1: cap count not pinned to the analyst, lock table unpinned, no markup guard, rows unbounded
 review engineering-reviewer FAIL 216f87eae7489d62c4a8c2bb6a86ccfd6af6afff # V0.20, round 1: switch skipped the look mark, focus lost on 3 paths, list cut at 500, stale story unpinned, Sonar-class findings
+review security-reviewer PASS c57cfe788b43a811c5bc6094b5e7d59477bda59b # V0.20, round 2: all round 1 findings fixed; advisory only (looks at once can briefly pass 500 marks)
+review engineering-reviewer FAIL c57cfe788b43a811c5bc6094b5e7d59477bda59b # V0.20, round 2: Tab left Find; re-pin moved the object; quick return showed read items as new; untested branches

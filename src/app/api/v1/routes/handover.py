@@ -426,12 +426,17 @@ async def set_watch(
             status.HTTP_409_CONFLICT,
             detail=f"At most {WATCH_CAP} objects can be on watch. Take one off first.",
         )
-    values = {"pinned": True, "pinned_at": now}
+    # Pinning an object already on watch keeps its place: pinned_at stays as first set.
     stmt = (
         pg_insert(ObjectWatch)
-        .values(id=uuid4(), user_id=current_user.id, sat_no=sat_no, **values)
+        .values(id=uuid4(), user_id=current_user.id, sat_no=sat_no, pinned=True, pinned_at=now)
         .on_conflict_do_update(
-            constraint="uq_object_watch_user_sat", set_={**values, "updated_at": now}
+            constraint="uq_object_watch_user_sat",
+            set_={
+                "pinned": True,
+                "pinned_at": func.coalesce(ObjectWatch.pinned_at, now),
+                "updated_at": now,
+            },
         )
         .returning(*_WATCH_COLUMNS)
     )

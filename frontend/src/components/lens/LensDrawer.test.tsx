@@ -306,6 +306,14 @@ describe("the lens", () => {
     expect((set as HTMLButtonElement).disabled).toBe(false);
   });
 
+  it("will not set a timer without a label", async () => {
+    await opened(aLens({ satNo: 90001, form: "timer" }));
+    const set = within(document.querySelector(".lens-form") as HTMLElement).getByRole("button");
+    expect(set).toHaveProperty("disabled", false);
+    fireEvent.change(screen.getByLabelText("Timer"), { target: { value: "   " } });
+    expect(set).toHaveProperty("disabled", true);
+  });
+
   it("keeps Tab inside the lens", async () => {
     await opened();
     const dialog = screen.getByRole("dialog");

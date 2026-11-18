@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getActivity } from "../api/activity";
 import { getHandoverObjects, getWatch, markSeen, setWatch } from "../api/handover";
+import { held } from "../test/held";
 import { aNotice, anObject } from "../test/lens";
 import type { ActivityOverview } from "../types";
 import { useLens } from "./lens";
@@ -240,6 +241,51 @@ describe("the lens's state", () => {
     fireEvent.click(screen.getByText("close find"));
     expect(state().palette).toBe(false);
     expect(document.activeElement).toBe(home);
+  });
+
+  it("remembers a look at once, before the server answers, and keeps the pin", async () => {
+    vi.mocked(getWatch).mockResolvedValue({
+      items: [
+        { sat_no: 90001, pinned: true, pinned_at: null, last_seen_at: "2026-01-05T10:00:00Z" },
+      ],
+      cap: 20,
+    });
+    vi.mocked(markSeen).mockReturnValue(new Promise(() => undefined));
+    await mounted();
+    await waitFor(() => expect(state().watch).toEqual([[90001, true]]));
+    const before = Date.now();
+    fireEvent.click(screen.getByText("open"));
+    fireEvent.click(screen.getByText("close"));
+    expect(state().seen).toBeGreaterThanOrEqual(before);
+    expect(state().watch).toEqual([[90001, true]]);
+  });
+
+  it("remembers a first look at an object not on watch", async () => {
+    vi.mocked(markSeen).mockReturnValue(new Promise(() => undefined));
+    await mounted();
+    fireEvent.click(screen.getByText("open"));
+    fireEvent.click(screen.getByText("close"));
+    expect(state().watch).toEqual([[90001, false]]);
+    expect(state().seen).not.toBeNull();
+  });
+
+  it("marks nothing when closed with no lens open", async () => {
+    await mounted();
+    fireEvent.click(screen.getByText("close"));
+    expect(markSeen).not.toHaveBeenCalled();
+  });
+
+  it("drops a watch list that answers after it is gone", async () => {
+    const late = held<{ items: []; cap: number }>();
+    vi.mocked(getWatch).mockReturnValue(late.promise);
+    const { unmount } = render(
+      <LensProvider enabled>
+        <Probe />
+      </LensProvider>,
+    );
+    unmount();
+    await act(async () => late.resolve({ items: [], cap: 20 }));
+    expect(getWatch).toHaveBeenCalledTimes(1);
   });
 
   it("reloads when told something changed, and keeps working when the loads fail", async () => {

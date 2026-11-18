@@ -887,6 +887,8 @@ class TestTheWatchList:
         upsert = sent(session, 2)
         assert "ON CONFLICT ON CONSTRAINT uq_object_watch_user_sat DO UPDATE SET" in upsert
         assert params(session, 2)["user_id"] == user.id
+        # A second pin keeps the object's place: pinned_at stays as first set.
+        assert "pinned_at = coalesce(object_watch.pinned_at," in upsert
         [call] = audits
         assert call.after_commit is False
         assert call.fields["action_type"] == "handover.watch"

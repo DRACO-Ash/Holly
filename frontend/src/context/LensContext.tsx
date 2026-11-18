@@ -35,6 +35,13 @@ function upsert(rows: readonly ObjectWatch[], row: ObjectWatch): ObjectWatch[] {
   return [...rows.filter((r) => r.sat_no !== row.sat_no), row];
 }
 
+// The look as this browser saw it, until the server's answer replaces it, so a quick return to
+// the object never shows what was just read as new again.
+function looked(rows: readonly ObjectWatch[], sat: number, at: string): ObjectWatch[] {
+  const row = rows.find((r) => r.sat_no === sat) ?? { sat_no: sat, pinned: false, pinned_at: null };
+  return upsert(rows, { ...row, last_seen_at: at });
+}
+
 export function LensProvider({
   enabled,
   children,
@@ -93,6 +100,7 @@ export function LensProvider({
 
   // Leaving an object's lens, by closing it or by moving to another object, is a look at it.
   const markLook = useCallback((sat: number) => {
+    setWatchRows((rows) => looked(rows, sat, new Date().toISOString()));
     markSeen(sat)
       .then((row) => setWatchRows((rows) => upsert(rows, row)))
       .catch(noop);

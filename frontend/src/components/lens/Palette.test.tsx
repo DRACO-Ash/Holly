@@ -177,6 +177,19 @@ describe("Find", () => {
     expect(options()).toHaveLength(0);
   });
 
+  it.each(["", "zzzz"])("keeps Tab inside Find, with or without results (%j)", (query) => {
+    renderWithLens(<Palette />);
+    typeIn(query);
+    expect(options().length > 0).toBe(query === "");
+    const dialog = screen.getByRole("dialog");
+    for (const shiftKey of [false, true]) {
+      box().focus();
+      expect(fireEvent.keyDown(box(), { key: "Tab", shiftKey })).toBe(false);
+      expect(document.activeElement).toBe(box());
+    }
+    expect(dialog.contains(document.activeElement)).toBe(true);
+  });
+
   it("closes from the backdrop, and runs the timer action through the lens", () => {
     const lens = aLens();
     renderWithLens(<Palette />, lens);
