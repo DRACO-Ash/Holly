@@ -262,31 +262,53 @@ describe("the lens's state", () => {
     expect(state().watch).toEqual([[90001, true]]);
   });
 
-  it("never puts an older look back from a late answer or a refresh", async () => {
-    const stale = "2026-01-05T10:00:00Z";
-    const first = held<{
-      sat_no: number;
-      pinned: boolean;
-      pinned_at: null;
-      last_seen_at: string;
-    }>();
-    vi.mocked(markSeen).mockReturnValueOnce(first.promise);
+  it("holds a look until the server answers that look, whatever arrives before", async () => {
+    type Row = { sat_no: number; pinned: boolean; pinned_at: null; last_seen_at: string };
+    const firstAnswer = held<Row>();
+    const secondAnswer = held<Row>();
+    vi.mocked(getWatch).mockResolvedValue({
+      items: [{ sat_no: 90001, pinned: true, pinned_at: null, last_seen_at: null }],
+      cap: 20,
+    });
+    vi.mocked(markSeen)
+      .mockReturnValueOnce(firstAnswer.promise)
+      .mockReturnValueOnce(secondAnswer.promise);
+    await mounted();
+    await waitFor(() => expect(state().watch).toEqual([[90001, true]]));
+    fireEvent.click(screen.getByText("open"));
+    fireEvent.click(screen.getByText("close"));
+    const before = Date.now();
+    fireEvent.click(screen.getByText("open"));
+    fireEvent.click(screen.getByText("close"));
+    const local = state().seen;
+    expect(local).toBeGreaterThanOrEqual(before);
+    // The answer to the first look is older than the second: the second still stands.
+    const old = "2026-01-05T10:00:00Z";
+    await act(async () =>
+      firstAnswer.resolve({ sat_no: 90001, pinned: true, pinned_at: null, last_seen_at: old }),
+    );
+    expect(state().seen).toBe(local);
+    // A refresh from before any look was stored: the look still stands.
+    await act(async () => {
+      fireEvent.click(screen.getByText("changed"));
+    });
+    await waitFor(() => expect(getWatch).toHaveBeenCalledTimes(2));
+    expect(state().seen).toBe(local);
+    // The answer to the newest look replaces it, even when the server's clock is behind this one.
+    const server = new Date(before - 5 * 60_000).toISOString();
+    await act(async () =>
+      secondAnswer.resolve({ sat_no: 90001, pinned: true, pinned_at: null, last_seen_at: server }),
+    );
+    expect(state().seen).toBe(Date.parse(server));
+  });
+
+  it("keeps the look for the session when the server cannot record it", async () => {
+    vi.mocked(markSeen).mockRejectedValue(new Error("down"));
     await mounted();
     const before = Date.now();
     fireEvent.click(screen.getByText("open"));
     fireEvent.click(screen.getByText("close"));
-    await act(async () =>
-      first.resolve({ sat_no: 90001, pinned: false, pinned_at: null, last_seen_at: stale }),
-    );
-    expect(state().seen).toBeGreaterThanOrEqual(before);
-    vi.mocked(getWatch).mockResolvedValue({
-      items: [{ sat_no: 90001, pinned: true, pinned_at: null, last_seen_at: stale }],
-      cap: 20,
-    });
-    await act(async () => {
-      fireEvent.click(screen.getByText("changed"));
-    });
-    await waitFor(() => expect(state().watch).toEqual([[90001, true]]));
+    await act(async () => undefined);
     expect(state().seen).toBeGreaterThanOrEqual(before);
   });
 
@@ -295,7 +317,7 @@ describe("the lens's state", () => {
     await mounted();
     fireEvent.click(screen.getByText("open"));
     fireEvent.click(screen.getByText("close"));
-    expect(state().watch).toEqual([[90001, false]]);
+    expect(state().watch).toEqual([]);
     expect(state().seen).not.toBeNull();
   });
 

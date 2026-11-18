@@ -31,36 +31,40 @@ function watchRefusal(error: unknown, pinned: boolean, cap: number): string {
   return "Holly could not put that on watch. Try again in a moment.";
 }
 
-const later = (a: string | null, b: string | null): string | null =>
-  a !== null && (b === null || Date.parse(a) > Date.parse(b)) ? a : b;
-
-// An answer the server sent before a newer look was stored never puts the older look back.
-function withLatestLook(held: readonly ObjectWatch[], row: ObjectWatch): ObjectWatch {
-  const mine = held.find((r) => r.sat_no === row.sat_no)?.last_seen_at ?? null;
-  return { ...row, last_seen_at: later(mine, row.last_seen_at) };
-}
-
-// The server's list, as an update to the rows held: each keeps the later of the two looks.
-const refreshed =
-  (items: readonly ObjectWatch[]) =>
-  (held: readonly ObjectWatch[]): ObjectWatch[] =>
-    items.map((row) => withLatestLook(held, row));
-
 function upsert(rows: readonly ObjectWatch[], row: ObjectWatch): ObjectWatch[] {
-  return [...rows.filter((r) => r.sat_no !== row.sat_no), withLatestLook(rows, row)];
+  return [...rows.filter((r) => r.sat_no !== row.sat_no), row];
 }
 
-// The look as this browser saw it, until the server's answer replaces it, so a quick return to
-// the object never shows what was just read as new again.
-function looked(rows: readonly ObjectWatch[], sat: number, at: string): ObjectWatch[] {
-  const row = rows.find((r) => r.sat_no === sat) ?? { sat_no: sat, pinned: false, pinned_at: null };
-  return upsert(rows, { ...row, last_seen_at: at });
+// A look this browser has made and the server has not yet answered, keyed by object. It stands in
+// for the server's "last looked" until the answer to that same look arrives, so a quick return
+// never shows what was just read as new, and server times are only ever compared with each other.
+interface Look {
+  readonly id: number;
+  readonly at: string;
 }
+type Pending = ReadonlyMap<number, Look>;
+
+const pendingWith =
+  (sat: number, look: Look) =>
+  (pending: Pending): Pending =>
+    new Map(pending).set(sat, look);
+
+// Clears the stand-in only when the answer is for the newest look at that object.
+const pendingAnswered =
+  (sat: number, look: Look) =>
+  (pending: Pending): Pending => {
+    if (pending.get(sat)?.id !== look.id) return pending;
+    const next = new Map(pending);
+    next.delete(sat);
+    return next;
+  };
 
 export function LensProvider({
   enabled,
   children,
 }: Readonly<{ enabled: boolean; children: ReactNode }>) {
+  const [pending, setPending] = useState<Pending>(new Map());
+  const lookCount = useRef(0);
   const [satNo, setSatNo] = useState<number | null>(null);
   const [form, setForm] = useState<LensForm>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -92,7 +96,7 @@ export function LensProvider({
       getWatch()
         .then((list) => {
           if (!live) return;
-          setWatchRows(refreshed(list.items));
+          setWatchRows(list.items);
           setWatchCap(list.cap);
         })
         .catch(noop);
@@ -114,10 +118,16 @@ export function LensProvider({
   );
 
   // Leaving an object's lens, by closing it or by moving to another object, is a look at it.
+  // A failed mark keeps the stand-in, so the analyst's look holds for this session.
   const markLook = useCallback((sat: number) => {
-    setWatchRows((rows) => looked(rows, sat, new Date().toISOString()));
+    lookCount.current += 1;
+    const look = { id: lookCount.current, at: new Date().toISOString() };
+    setPending(pendingWith(sat, look));
     markSeen(sat)
-      .then((row) => setWatchRows((rows) => upsert(rows, row)))
+      .then((row) => {
+        setWatchRows((rows) => upsert(rows, row));
+        setPending(pendingAnswered(sat, look));
+      })
       .catch(noop);
   }, []);
 
@@ -168,10 +178,10 @@ export function LensProvider({
 
   const lastSeen = useCallback(
     (sat: number) => {
-      const at = watch.find((r) => r.sat_no === sat)?.last_seen_at;
+      const at = pending.get(sat)?.at ?? watch.find((r) => r.sat_no === sat)?.last_seen_at;
       return at ? Date.parse(at) : null;
     },
-    [watch],
+    [watch, pending],
   );
 
   const changed = useCallback(() => setVersion((v) => v + 1), []);
