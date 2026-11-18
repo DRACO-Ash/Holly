@@ -24,24 +24,26 @@ PATCHES: list[tuple[str, str, str]] = [
     (
         "src/main.tsx",
         'import App from "./App";\n',
-        'import "./proto/mock";\nimport App from "./App";\n',
+        'import "./proto/storage";\nimport "./proto/mock";\nimport App from "./App";\n',
     ),
     ("src/main.tsx", 'import "./styles/tokens.css";\n', 'import "./styles/tokens.css";\nimport "./proto/proto.css";\n'),
-    # A single offline file has no server to answer deep links, so the prototype routes by hash.
-    ("src/App.tsx", "import { BrowserRouter, Routes, Route }", "import { HashRouter, Routes, Route }"),
+    # A single offline file has no server to answer deep links, so the prototype routes by hash
+    # (in memory when embedded as a blob; see proto/router.tsx).
+    ("src/App.tsx", "import { BrowserRouter, Routes, Route }", "import { Routes, Route }"),
     (
         "src/App.tsx",
         'import Users from "./pages/Users";\n',
         'import Users from "./pages/Users";\n'
+        'import ProtoRouter from "./proto/router";\n'
         'import { LensProvider } from "./proto/lens/LensContext";\n'
         'import { LensLayer } from "./proto/lens/Chrome";\n'
         'import TestConsole from "./proto/console/TestConsole";\n',
     ),
-    ("src/App.tsx", "<BrowserRouter>\n        <Routes>", "<HashRouter>\n        <LensProvider>\n        <Routes>"),
+    ("src/App.tsx", "<BrowserRouter>\n        <Routes>", "<ProtoRouter>\n        <LensProvider>\n        <Routes>"),
     (
         "src/App.tsx",
         "</Routes>\n      </BrowserRouter>",
-        "</Routes>\n        <LensLayer />\n        <TestConsole />\n        </LensProvider>\n      </HashRouter>",
+        "</Routes>\n        <LensLayer />\n        <TestConsole />\n        </LensProvider>\n      </ProtoRouter>",
     ),
     (
         "src/components/Layout.tsx",

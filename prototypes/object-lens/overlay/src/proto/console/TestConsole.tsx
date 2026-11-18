@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useNow } from "../../components/ops/useNow";
 import { useLens } from "../lens/LensContext";
+import { storagePersists } from "../storage";
 import { CONDITION_LABEL, TASKS, type Condition, type SetName } from "./tasks";
 
 type Phase = "setup" | "ready" | "running" | "rate" | "between" | "done" | "explore";
@@ -198,6 +199,13 @@ export default function TestConsole() {
   // A fresh participant gets a fresh world: no earlier participant's notes, timers, pins or
   // "last looked" times. The synthetic world is rebuilt by reloading the page.
   const fresh = (next: Session) => {
+    if (!storagePersists) {
+      // Without lasting storage a reload would lose the session, so the world is kept.
+      lens.closeAll();
+      update(next);
+      navigate("/");
+      return;
+    }
     save(SESSION_KEY, next);
     ["holly.proto.watch", "holly.proto.seen"].forEach((k) => localStorage.removeItem(k));
     globalThis.location.hash = "#/";
@@ -228,6 +236,7 @@ export default function TestConsole() {
               <label><input type="radio" checked={lensFirst} onChange={() => setLensFirst(true)} /> Lens first</label>
             </fieldset>
           </div>
+          {!storagePersists && <p className="tc-note"><b>This copy cannot keep data:</b> results last until the page closes, and notes or pins carry over between participants. Export the CSV before closing, or open the prototype as its own file.</p>}
           <p className="tc-note">Alternate the order between participants. Suggested for {code}: {participants.size % 2 === 1 ? "lens first" : "today's Holly first"}.</p>
           <div className="tc-actions">
             <button type="button" className="lx-btn pri" onClick={begin}>Start session</button>
