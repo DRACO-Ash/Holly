@@ -90,3 +90,5 @@ review security-reviewer PASS c31456fdf98f8057b3e5c77521812cb25c05d9e4 # V0.20, 
 review engineering-reviewer FAIL c31456fdf98f8057b3e5c77521812cb25c05d9e4 # V0.20, round 3: next-timer sort untested; a late answer could restore an older look
 review security-reviewer PASS f05e017e9430cee2ffbb1b945f518af051368966 # V0.20, round 4: frontend look merge only; no findings
 review engineering-reviewer FAIL f05e017e9430cee2ffbb1b945f518af051368966 # V0.20, round 4: a server row with no look could wipe a fresh look; browser and server clocks compared
+review security-reviewer PASS 0bd48f1dd36a3ec63f2e9d1ae664a3c0d0ebd808 # V0.20, round 5: no findings
+review engineering-reviewer PASS 0bd48f1dd36a3ec63f2e9d1ae664a3c0d0ebd808 # V0.20, round 5: one minor accepted (late older answer, self-corrects within 60s)
