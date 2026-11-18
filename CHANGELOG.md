@@ -9,6 +9,23 @@
 
 All notable changes to Holly are recorded here, newest first. Holly V0.2 is the Daily Operations Dashboard fused into the Holly App Store project and renamed; the sections after it are the Daily Operations Dashboard's own record, kept as written. Holly's releases are numbered V<major>.<minor>, and each has a row in `docs/AUDIT-LOG.md` with the checks that ran.
 
+## Holly V0.20 (2026-11-18)
+
+The Object Lens (`docs/roadmap/object-lens-proposal.html`): Holly follows the object wherever the analyst is. The owner decided on 18 November 2026 to build both of the proposal's phases at once, without waiting for the hallway test; the prototype for that test is in `docs/roadmap/object-lens-prototype.html`.
+
+### Added
+
+● **Numbers become links.** A catalogue number that names an object in the window, or a NOTSO number Holly holds, becomes a link in Comms messages, a notice's title and satellite cards, timers and the timer banner, shift log entries and the Handover story. Any other number, a clock time or a longer number among them, stays text. Numbers inside rows that are links already stay text.
+● **The lens.** One click opens the object's story over the page in use: its next timer with a countdown, every source on one strip across the window, what came in since the analyst last looked, and notes and timers added in place. "Open full story" opens it on the Handover page.
+● **Find**, on Ctrl K, ⌘K, / or the header's Find button: objects first, with their open notices, urgency and next timer, then notices, followed chat and pages. Shift and Enter pins an object.
+● **The watch strip.** Objects an analyst pins sit above every page, each with what is new and its next timer. At most 20 per analyst.
+● A **Links** switch beside Scanlines turns links, the lens and Find off for that analyst, in that browser.
+● Routes `GET /api/v1/handover/watch`, `PUT /api/v1/handover/watch/{sat_no}` and `POST /api/v1/handover/watch/{sat_no}/seen`, and migration `0021_object_watch`.
+
+### Security
+
+● The lens reads only what the pages already show, through the V0.19 story route, and sends nothing outside Holly; it uses no language model. The watch list and "last looked" times are each analyst's own: a route never reads or writes another analyst's rows. Pins are audited; a look is a private reading mark and is not.
+
 ## Holly V0.19 (2026-11-10)
 
 The first release of the Handover module (`docs/roadmap/handover-module.md`): each object's story, told from what Holly already holds. The owner decided on 10 November 2026 to skip the Phase 0 local-model trial and go straight to this release, which uses no language model.

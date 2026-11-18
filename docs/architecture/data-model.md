@@ -9,7 +9,7 @@
 
 > **BLUF**
 >
-> Two PostgreSQL schemas. `public` holds Holly's operational data in 15 tables. `audit` holds the hash-chained audit trail, which a trigger keeps append-only. The 20 Alembic migrations in `src/app/migrations` define every table, and the container applies them automatically when it starts.
+> Two PostgreSQL schemas. `public` holds Holly's operational data in 16 tables. `audit` holds the hash-chained audit trail, which a trigger keeps append-only. The 21 Alembic migrations in `src/app/migrations` define every table, and the container applies them automatically when it starts.
 
 **SECTION 01**
 
@@ -371,6 +371,23 @@ An analyst's note on one object, by catalogue number, from the Handover page (mi
 
 **Indexes:** `ix_handover_note_sat_no`.
 
+### `object_watch`
+
+One analyst's view of one object for the Object Lens: whether it is on their watch strip, and when they last looked at it (migration `0021`). Each analyst reads and writes only their own rows.
+
+| Column | Type | Nullable | Notes |
+|--------|------|----------|-------|
+| `id` | UUID | no | Primary key. |
+| `user_id` | UUID | no | Foreign key to `app_user.id`, `ON DELETE CASCADE`. |
+| `sat_no` | integer | no | The object's catalogue number, 1 to 999,999,999. |
+| `pinned` | boolean | no | On the watch strip. Default false. At most 20 per analyst, held by the route. |
+| `pinned_at` | timestamptz | yes | When it was pinned; null when not pinned. |
+| `last_seen_at` | timestamptz | yes | When the analyst last closed its lens; null before the first look. |
+| `created_at` | timestamptz | no | Row creation time. |
+| `updated_at` | timestamptz | no | Row update time. |
+
+**Constraints:** `uq_object_watch_user_sat` (unique on `user_id`, `sat_no`), which also serves each analyst's own list.
+
 **SECTION 05**
 
 ## Tables in `public`: identity
@@ -439,7 +456,7 @@ The hash chain, the advisory-lock concurrency control, the action types and the 
 All schema changes are Alembic migrations, packaged with the application:
 
 ● [src/app/migrations/env.py](../../src/app/migrations/env.py): async-aware. It imports every model, reads the database URL from the settings, and runs each migration session under a PostgreSQL advisory lock (`0x484F4C4C`), so two containers starting together cannot migrate at once.
-● [src/app/migrations/versions/](../../src/app/migrations/versions/): one file per migration, `0001_create_elset` to `0020_handover_story`, in one linear history.
+● [src/app/migrations/versions/](../../src/app/migrations/versions/): one file per migration, `0001_create_elset` to `0021_object_watch`, in one linear history.
 ● [src/app/migrations/columns.py](../../src/app/migrations/columns.py): column groups the migrations share. Frozen, because migrations that have already run import it; a new shape gets a new function.
 ● [alembic.ini](../../alembic.ini) at the repository root serves the developer's `alembic` command line: `script_location = %(here)s/src/app/migrations` and `prepend_sys_path = %(here)s/src`. The container does not use it.
 

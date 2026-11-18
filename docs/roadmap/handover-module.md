@@ -198,6 +198,8 @@ Each release is a version bump and goes through the verification loop, both gate
 ● The Handover tab with the object rail, the story timeline, provenance chips and free-text notes.
 ● Acceptance: a lead can open any object named in a NOTSO in the last 120 hours. They see its NOTSOs, provider records and confirmed threads in time order, each with its source.
 
+Renumbered on 18 November 2026: V0.20 became the Object Lens (`docs/roadmap/object-lens-proposal.html`), owner's decision, so each release below moves on by one number. The headings keep their original numbers until the owner confirms the order.
+
 **V0.20: guided flows, the template synopsis and the end-of-shift run (size L).** It needs the local-model trial (phase 0, item 3) to have passed. It stays within Holly's 4Gi and 2000m: the model runs at the lowest priority so Holly's pages and loops come first.
 ● Flow definitions for manoeuvre, RPO, photometric change and separation.
 ● The flow renderer, with answers filled from data, and the template synopsis.

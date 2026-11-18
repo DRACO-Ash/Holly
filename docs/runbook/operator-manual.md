@@ -4,8 +4,8 @@
 
 **Data classification:** Unclassified (per ADR-006)
 **Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned the edition this one replaces)
-**Version:** 0.9
-**Last updated:** 2026-11-10
+**Version:** 0.10
+**Last updated:** 2026-11-18
 **Audience:** Operators and on-call engineers responsible for keeping Holly healthy on the Bluestaq App Store.
 
 > **BLUF**
@@ -109,6 +109,14 @@ python -c "from alembic import command; from app.migrate import alembic_config; 
 ```
 
 It drops `handover_thread_link` and `handover_note`, every link decision and Handover note, the thread ids on chat posts and the two new notification indexes, and keeps every post. The page has no export: copy any note the team needs from the page first, or, with database access, dump the two tables (`pg_dump --table=handover_note --table=handover_thread_link`). V0.18 has no Handover page, so nothing else changes.
+
+From V0.20 back to V0.19, migration 0021 is undone the same way, in the running V0.20 container, immediately before V0.19 is deployed:
+
+```sh
+python -c "from alembic import command; from app.migrate import alembic_config; command.downgrade(alembic_config(), '0020_handover_story')"
+```
+
+It drops `object_watch`: every analyst's watch list and "last looked" times. Nothing else is held there, and V0.19 has no lens, so nothing else changes; analysts pin their objects again after rolling forward.
 
 ### Deployment parameters
 
@@ -236,6 +244,16 @@ Since V0.19 the **Handover** page tells each object's story from what Holly alre
 ● `GET /api/v1/handover/objects/{catalogue number}` tells one object's story. A notice counts when it names the number, as written or zero-padded, in its satellite list, its `sat_no` or the last brackets of its event class. The story holds the newest 500 notice publications and 300 maneuver records in the window, the 20 confirmed threads decided most recently with up to 100 posts each from channels not switched off, up to 100 open timers on its notices and the newest 200 notes. It also searches the newest 500 posts in the window, in channels not switched off, for the object's NOTSO numbers (4 characters or more) or its catalogue number as a whole number, and offers up to 20 undecided threads. When any of these caps is reached, `truncated` is true and the page says so.
 ● `POST /api/v1/handover/thread-links` records a lead's decision on a thread and a notice (`confirmed` or `rejected`), or forgets one (`clear`). To decide, Holly must hold the notice and a post of the thread in a channel not switched off; clearing needs neither, so a decision can be undone after its notice or thread is gone. Audit action `handover.thread_link`.
 ● `POST /api/v1/handover/objects/{catalogue number}/notes` and `DELETE /api/v1/handover/notes/{id}` add and delete analysts' notes. Audit actions `handover.note.create`, with the note's length but not its text, and `handover.note.delete`. Any signed-in user may delete any note, as with shift log entries.
+
+### The Object Lens
+
+Since V0.20 catalogue and NOTSO numbers on the dashboard open the Object Lens, which reads the story route above, the object list, the activity overview and followed chat, all routes the pages already call; it adds no data and calls nothing outside Holly. Each analyst can switch it off with **Links** in the header; the choice is kept in that browser. Its server side is each analyst's own watch list and "last looked" times:
+
+● `GET /api/v1/handover/watch` lists the signed-in analyst's own rows (up to 500), pinned first, with the cap.
+● `PUT /api/v1/handover/watch/{catalogue number}` with `{"pinned": true}` or `false` pins or unpins an object. At most 20 are pinned per analyst; the 21st is refused with 409. The analyst's account row is locked first, so two pins at once cannot pass the cap together. Audit action `handover.watch`, with the number and the new state.
+● `POST /api/v1/handover/watch/{catalogue number}/seen` records that the analyst looked at the object, when the lens closes. Not audited: it is a private reading mark nobody else sees.
+
+Migration `0021_object_watch` creates `object_watch`, one row per analyst and object, removed with the analyst's account.
 
 Migration `0020_handover_story` adds `mattermost_message.root_id`, the thread a reply belongs to, and copies it from each stored post's payload where it is a plain id; it also indexes `notification.sat_ids` and `notification.event_id`, and creates `handover_thread_link` and `handover_note`. The story query reads the notices in the window with no index on `udl_created_at`, like the activity overview; measured load `TBC, re-verify`.
 

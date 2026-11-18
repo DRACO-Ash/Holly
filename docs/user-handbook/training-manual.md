@@ -4,13 +4,13 @@
 
 **Data classification:** Unclassified (per ADR-006)
 **Owner:** TBC, re-verify (the Daily Operations Dashboard Team, Bluestaq Limited, owned the edition this one replaces)
-**Version:** 0.8
-**Last updated:** 2026-11-10
+**Version:** 0.9
+**Last updated:** 2026-11-18
 **Audience:** Watch analysts new to Holly, plus the trainers delivering induction. Sections labelled **Trainer note** are for delivery, not for the trainee handout.
 
 > **BLUF**
 >
-> Holly pulls UDL notifications and manoeuvre records and the team's Mattermost chat in the background, has an assistant evaluate each new notice cleared for it against your uploaded procedures, and shows what needs your attention first. This manual walks the trainee through signing in, the Dashboard, Notifications, Maneuvers, Comms, Handover and Procedures pages, the shift log and event timers, common workflows, and what to do when something goes wrong.
+> Holly pulls UDL notifications and manoeuvre records and the team's Mattermost chat in the background, has an assistant evaluate each new notice cleared for it against your uploaded procedures, and shows what needs your attention first. This manual walks the trainee through signing in, following an object with the Object Lens, the Dashboard, Notifications, Maneuvers, Comms, Handover and Procedures pages, the shift log and event timers, common workflows, and what to do when something goes wrong.
 
 **SECTION 01**
 
@@ -68,13 +68,29 @@ You stay signed in while you use Holly: your 30-minute access renews itself in t
 
 ## Finding your way around
 
-● **The header** shows Holly, two screen effects, your username, **Help** and **Sign out**. **Help** opens this manual in Holly, with its contents beside it: type in **Find a section** to narrow them, select a section to jump to it, and select **Print or save as PDF** for a paper or PDF copy, which your browser's print dialogue saves. Operators and administrators can switch to the operator manual there too. **Scanlines** gives the screen the fine horizontal lines of an old cathode ray tube (CRT) monitor: behind the text, and across the page titles and the dashboard's counts. **CRT flicker** makes the screen flicker faintly. Scanlines start on and flicker starts off; each choice is kept in your browser only. If your computer is set to reduce motion, flicker stays off and its box is greyed out.
+● **The header** shows Holly, **Find**, two screen effects, **Links**, your username, **Help** and **Sign out**. **Help** opens this manual in Holly, with its contents beside it: type in **Find a section** to narrow them, select a section to jump to it, and select **Print or save as PDF** for a paper or PDF copy, which your browser's print dialogue saves. Operators and administrators can switch to the operator manual there too. **Scanlines** gives the screen the fine horizontal lines of an old cathode ray tube (CRT) monitor: behind the text, and across the page titles and the dashboard's counts. **CRT flicker** makes the screen flicker faintly. Scanlines start on and flicker starts off; each choice is kept in your browser only. If your computer is set to reduce motion, flicker stays off and its box is greyed out.
 ● **The timer banner**, under the header, appears on every page while an event timer is firing, and when sound alerts are not yet enabled.
 ● **The side navigation** lists **Dashboard**, **Notifications**, **Maneuvers**, **Comms**, **Handover**, **Procedures**, **Shift log** and **Password**. Operators and administrators also see **Audit log**, and administrators **Users**.
 
 Times are shown in UTC unless a field says otherwise.
 
 **SECTION 05**
+
+## Following an object: the Object Lens
+
+Most questions on watch are about one object. Holly can show everything it holds about an object wherever you are, without leaving the page you are reading.
+
+● **Numbers are links.** A catalogue number that names an object in the window, or a NOTSO number Holly holds, shows as a small green link: in Comms messages, a notice's title and satellite cards, timers and the timer banner, shift log entries and the Handover story. A number that is not an object in the window, a time or a longer number stays plain text. Numbers inside a row that is itself a link, such as a Dashboard row, stay plain: use **Find**.
+● **Select a link to open the lens.** It slides over the page and shows, top to bottom: the object's name, its kinds, the other object of an RPO (a link too), its regime, the most urgent assistant urgency among its open notices, and whether a notice is open; the next timer on its notices, with a countdown; a strip of the window with a lane for each source (notices, provider records, chat, notes and timers) and a line at now; and every item, newest first, each with its source. Chat threads Holly found but nobody has confirmed are marked as suggested.
+● **Since you last looked.** Holly remembers, for you alone, when you last closed an object's lens. Next time, items that came in after that are listed first and marked **NEW**, with a dashed line on the strip. The first time you open an object, everything is listed together.
+● **Act in place.** **Add note** and **Set timer** work inside the lens. **Open full story** opens the object on the Handover page. **Esc** or a click outside closes the lens and returns you to where you were.
+● **Find.** Press **Ctrl K** (**⌘K** on a Mac), **/** when you are not typing in a box, or select **Find** in the header. Type a catalogue number, a name, a kind, a NOTSO number or a word. Objects come first, with their open notices, urgency and next timer; then notices, followed chat and pages. Use the arrow keys and **Enter**; **Shift** and **Enter** pins an object without closing Find.
+● **On watch.** Select **Pin to watch** in the lens to keep an object in the strip above every page, with how many items are new and its next timer. Select **×** to take it off. Up to 20 objects can be on watch; your list is yours alone and follows you to any computer.
+● **Links** in the header turns links, the lens and Find off for you, in that browser, if you prefer the pages as they were.
+
+The lens shows only what Holly already holds and sends nothing anywhere else.
+
+**SECTION 06**
 
 ## The Dashboard page
 
@@ -90,7 +106,7 @@ The Dashboard answers one question: what needs your attention. It covers the TAC
 
 Every filter in force shows as a chip above the feed; select a chip to remove it, or **Clear all**. New notices arrive with the hourly pull, or sooner when someone selects **Pull from UDL** on the Notifications page. If the activity overview cannot be loaded, the feed still works and a note says so.
 
-**SECTION 06**
+**SECTION 07**
 
 ## The Notifications page
 
@@ -136,7 +152,7 @@ Holly pulls notices from UDL every hour on its own. **Pull from UDL** runs the w
 >
 > The assistant's output is advice, not authority. Holly checks that each reply has the right shape before it shows it, not that it is right. Have the trainee compare one recommended action with the procedure it cites and with the raw payload.
 
-**SECTION 07**
+**SECTION 08**
 
 ## The Maneuvers page
 
@@ -158,7 +174,7 @@ Holly reads these values from each record with the field names of the UDL maneuv
 
 Every stored record, 50 to a page: **Sat No**, **Start**, **End**, **Status**, **Δv (m/s)** and **Source**. **Satellite number** filters it; **Sat No**, **Start** and **End** sort it, by start time, newest first, by default. **End** sorts by the record's typed stop time, which the providers' records have so far left empty.
 
-**SECTION 08**
+**SECTION 09**
 
 ## The Comms page
 
@@ -182,7 +198,7 @@ Each day has its own heading, and a marker shows where the messages new since yo
 
 The assistant reads up to 30 messages from the last 6 hours as soft context when it evaluates a notice. A page with no channel means the bot account is not yet a member of any channel, or Mattermost is not set up; tell the operator.
 
-**SECTION 09**
+**SECTION 10**
 
 ## The Handover page
 
@@ -205,7 +221,7 @@ Each item says where it came from under **Source**, such as `NOTSO · UDL` with 
 
 **Notes:** type in **Add a note to this object's story** and select **Add note**. The note joins the story with your username. **Delete note** asks you to confirm first; the audit log records both.
 
-**SECTION 10**
+**SECTION 11**
 
 ## The Procedures page
 
@@ -224,7 +240,7 @@ A file can be at most 10 MB. Holly refuses an empty file, and a file whose conte
 ● **Download** saves the file under its original name.
 ● **Delete** removes the procedure and its file, after you confirm. This cannot be undone, and any signed-in user can delete any procedure.
 
-**SECTION 11**
+**SECTION 12**
 
 ## The Shift log
 
@@ -238,7 +254,7 @@ Capture observations as you go; the assistant tidies your words into a professio
 
 New entries, re-polishes and narratives each count towards your assistant allowance of 30 requests in any 10 minutes. Once it is spent, a new entry is still saved, without the tidy-up, and says how many seconds to wait before you **Re-polish** it.
 
-**SECTION 12**
+**SECTION 13**
 
 ## Event timers
 
@@ -262,7 +278,7 @@ Select **Add timer**.
 
 Browsers play sound only after you interact with the page: each time Holly loads, sound starts after your first click or key press, and until then the banner offers **Enable alerts**. The same first interaction asks permission for browser notifications. If notifications are refused, the banner says the alerts are audio only.
 
-**SECTION 13**
+**SECTION 14**
 
 ## Common analyst workflows
 
@@ -285,14 +301,20 @@ Browsers play sound only after you interact with the page: each time Holly loads
 1. On **Notifications**, select **Pull from UDL** and wait for the list to reload.
 2. Return to the **Dashboard**; new notices show as **Awaiting analysis** until the assistant has evaluated them.
 
-### Workflow 4: shift handover
+### Workflow 4: "What is going on with this object?"
 
-1. On the **Handover** page, open each object with a live event. Confirm or reject its suggested threads, read its story and add a note on anything the incoming crew must know.
+1. Select its catalogue number wherever you see it, or press **Ctrl K** and type it.
+2. Read the next timer, the strip and what is new since you last looked.
+3. Add a note or set a timer from the lens; pin it to watch if you will keep coming back.
+
+### Workflow 5: shift handover
+
+1. On the **Handover** page, open each object with a live event, or work from your watch strip: each pin says what is new since you last looked. Confirm or reject its suggested threads, read its story and add a note on anything the incoming crew must know.
 2. Check that the day's shift log entries are complete and read well.
 3. Select **Generate** under **End-of-shift narrative** and review the draft.
 4. Export it as `.md` or `.html` for the incoming crew.
 
-**SECTION 14**
+**SECTION 15**
 
 ## What Holly does not do (yet)
 
@@ -305,7 +327,7 @@ Browsers play sound only after you interact with the page: each time Holly loads
 
 If you find yourself wishing Holly did something it does not, tell the team.
 
-**SECTION 15**
+**SECTION 16**
 
 ## When something goes wrong
 
@@ -323,7 +345,7 @@ If you find yourself wishing Holly did something it does not, tell the team.
 
 The operator-facing playbook for these is in [docs/runbook/operator-manual.md](../runbook/operator-manual.md).
 
-**SECTION 16**
+**SECTION 17**
 
 ## Trainer notes: delivering this material
 
@@ -341,7 +363,7 @@ The operator-facing playbook for these is in [docs/runbook/operator-manual.md](.
   | "Should I trust the assistant?" | Treat it as a quick first read. Check its actions against the procedure and the source before you act. |
   | "Is anyone watching what I do?" | The audit log records your state changes, not your page views. Use Holly accordingly. |
 
-**SECTION 17**
+**SECTION 18**
 
 ## Feedback
 
