@@ -7,8 +7,10 @@ from typing import Any
 
 import pytest
 from gunicorn.config import Config
+from gunicorn.glogging import Logger
 
 from app.config import get_settings
+from app.core.logging import GUNICORN_LOGCONFIG
 from fakes import log_lines
 
 
@@ -153,3 +155,37 @@ def test_gunicorn_knows_every_setting_the_module_defines(monkeypatch: pytest.Mon
 def test_the_worker_class_exists(monkeypatch: pytest.MonkeyPatch) -> None:
     module_name, _, class_name = load_settings(monkeypatch, None)["worker_class"].rpartition(".")
     assert hasattr(importlib.import_module(module_name), class_name)
+
+
+def test_gunicorn_logs_through_the_modules_own_config_to_stdout(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The module's logconfig_dict is what sends gunicorn's own lines, and through it the
+    # uvicorn worker's, to stdout in the logging standard's form instead of stderr.
+    settings = load_settings(monkeypatch, None)
+    assert settings["logconfig_dict"] is GUNICORN_LOGCONFIG
+    config = Config()
+    config.set("logconfig_dict", settings["logconfig_dict"])
+    Logger(config).error("Worker failed to boot")
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    [line] = log_lines(captured.out)
+    assert (line["severity_text"], line["body"]) == ("ERROR", "Worker failed to boot")
+
+
+def test_an_unexpected_failure_at_start_keeps_its_type_and_stack(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    hook = load_settings(monkeypatch, None)["on_starting"]
+    monkeypatch.setitem(hook.__globals__, "configure_logging", lambda: None)
+
+    def broken(_environ: object) -> None:
+        raise KeyError("x")
+
+    monkeypatch.setitem(hook.__globals__, "prepare_scan_environment", broken)
+    with pytest.raises(SystemExit):
+        hook(SimpleNamespace(cfg=SimpleNamespace(env_orig={})))
+    [line] = log_lines(capsys.readouterr().out)
+    assert line["severity_text"] == "FATAL"
+    assert line["attributes"]["exception.type"] == "KeyError"
+    assert "broken" in line["attributes"]["exception.stacktrace"]

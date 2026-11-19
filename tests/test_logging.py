@@ -19,10 +19,13 @@ from gunicorn.glogging import Logger
 
 from app.core.logging import (
     GUNICORN_LOGCONFIG,
+    JsonFormatter,
+    StdoutHandler,
     configure_logging,
     log_event,
     log_line,
     severity,
+    without_query,
 )
 from app.core.request_id import EMAIL_HEADER, REQUEST_ID_HEADER, request_attributes
 from fakes import FakeSession, log_lines
@@ -89,6 +92,24 @@ def test_a_query_string_is_cut_from_every_part_of_a_line() -> None:
     assert parsed["attributes"]["exception.type"] == "ValueError"
     assert parsed["attributes"]["exception.message"] == cut
     assert "Traceback" in parsed["attributes"]["exception.stacktrace"]
+
+
+@pytest.mark.parametrize(
+    ("text", "cut"),
+    [
+        (f"HTTPS://H/P?KEY={QUERY_MARK}", "HTTPS://H/P?[query removed]"),
+        (f"GET /x?search={QUERY_MARK} 200", "GET /x?[query removed] 200"),
+        (
+            f"postgresql://holly:{QUERY_MARK}@db:5432/holly?sslmode=require",
+            "postgresql://[userinfo removed]@db:5432/holly?[query removed]",
+        ),
+        (f"https://user:{QUERY_MARK}@host/p", "https://[userinfo removed]@host/p"),
+        ("and/or? either way", "and/or? either way"),
+        ("https://host/p", "https://host/p"),
+    ],
+)
+def test_a_credential_or_query_in_any_url_or_path_is_cut(text: str, cut: str) -> None:
+    assert without_query(text) == cut
 
 
 def test_a_logged_exception_goes_into_the_attributes(capsys: pytest.CaptureFixture[str]) -> None:
@@ -233,25 +254,54 @@ async def test_every_line_of_a_request_carries_its_id_and_email_and_no_header_va
     assert isinstance(request_line["attributes"]["http.server.request.duration_ms"], int)
 
 
-async def test_an_unhandled_error_is_logged_with_its_request_id(
+async def test_an_unhandled_error_is_logged_once_with_its_request_id(
     api_app: FastAPI, capsys: pytest.CaptureFixture[str]
 ) -> None:
     configure_logging()
+    raised: list[RuntimeError] = []
 
     def fails() -> None:
-        msg = "kaput"
-        raise RuntimeError(msg)
+        error = RuntimeError("kaput")
+        raised.append(error)
+        raise error
 
     api_app.add_api_route("/fails", fails, methods=["GET"])
     transport = httpx2.ASGITransport(app=api_app, raise_app_exceptions=False)
     async with httpx2.AsyncClient(transport=transport, base_url="http://holly.test") as client:
         response = await client.get("/fails", headers={REQUEST_ID_HEADER: "req-500"})
     assert response.status_code == 500
-    lines = log_lines(capsys.readouterr().out)
+    # The server then logs the same exception again, outside the request, as uvicorn does:
+    # that line is dropped, as the handler's line already holds it with the request's id.
+    [error] = raised
+    uvicorn_error = logging.getLogger("uvicorn.error")
+    uvicorn_error.error("Exception in ASGI application\n", exc_info=error)
+    # Any other exception the server logs is still written.
+    uvicorn_error.error("Exception in ASGI application\n", exc_info=RuntimeError("other"))
+    lines = [
+        line
+        for line in log_lines(capsys.readouterr().out)
+        if not line["attributes"].get("logger.name", "").startswith("httpx")
+    ]
     request_line = next(line for line in lines if line["body"] == "GET /fails 500")
     assert request_line["attributes"]["http.request.header.x-request-id"] == "req-500"
-    [error] = [line for line in lines if line["body"] == "unhandled error"]
-    held_to_the_standard(error)
-    assert error["severity_text"] == "ERROR"
-    assert error["attributes"]["http.request.header.x-request-id"] == "req-500"
-    assert error["attributes"]["exception.message"] == "kaput"
+    kaput = [line for line in lines if line["attributes"].get("exception.message") == "kaput"]
+    [logged] = kaput
+    held_to_the_standard(logged)
+    assert (logged["severity_text"], logged["body"]) == ("ERROR", "unhandled error")
+    assert logged["attributes"]["http.request.header.x-request-id"] == "req-500"
+    assert [line["attributes"].get("exception.message") for line in lines][-1] == "other"
+
+
+def test_a_record_that_cannot_be_formatted_is_reported_on_stdout(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    handler = StdoutHandler()
+    handler.setFormatter(JsonFormatter())
+    record = logging.LogRecord("lib", logging.INFO, __file__, 1, "%s and %s", ("one",), None)
+    handler.emit(record)
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    [line] = log_lines(captured.out)
+    assert (line["severity_text"], line["body"]) == ("ERROR", "a log line could not be written")
+    assert line["attributes"]["logger.name"] == "lib"
+    assert line["attributes"]["exception.type"] == "TypeError"

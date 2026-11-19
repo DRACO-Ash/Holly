@@ -35,8 +35,18 @@ _SEVERITIES: tuple[tuple[int, str, int], ...] = (
     (logging.DEBUG, "DEBUG", 5),
 )
 
-# A URL's query string, cut wherever it appears in a line: it can carry a key or a search.
-_QUERY = re.compile(r"(\bhttps?://[^\s?#\"'<>]+)\?[^\s#\"'<>]*")
+# A URL's user and password and its query string, cut wherever they appear in a line: either
+# can carry a credential or a search. Any scheme, in any case; and a path's query too.
+_STOP = "\\s?#\"'<>"
+_URL = re.compile(
+    rf"\b([a-z][a-z0-9+.-]*://)([^{_STOP}/@]+@)?([^{_STOP}]*)(\?[^\s#\"'<>]*)?", re.IGNORECASE
+)
+_PATH_QUERY = re.compile(rf"(?<![\w/:])(/[^{_STOP}]*)\?[^\s#\"'<>]*")
+_QUERY_CUT = "?[query removed]"
+# Set on an exception the 500 handler has logged with its request's attributes, so the server's
+# own "Exception in ASGI application" line, written later and outside the request, is not
+# written a second time without them.
+_LOGGED = "_holly_logged"
 
 ExcInfo = tuple[type[BaseException], BaseException, TracebackType | None]
 
@@ -48,8 +58,23 @@ def severity(level: int) -> tuple[str, int]:
     return "TRACE", 1
 
 
+def _cut_url(match: re.Match[str]) -> str:
+    scheme, userinfo, rest, query = match.groups()
+    return (
+        scheme + ("[userinfo removed]@" if userinfo else "") + rest + (_QUERY_CUT if query else "")
+    )
+
+
 def without_query(text: str) -> str:
-    return _QUERY.sub(r"\1?[query removed]", text)
+    return _PATH_QUERY.sub(rf"\1{_QUERY_CUT}", _URL.sub(_cut_url, text))
+
+
+def mark_logged(error: BaseException) -> None:
+    """Marks an exception as written in full, with its request's attributes."""
+    try:
+        setattr(error, _LOGGED, True)
+    except (AttributeError, TypeError):  # an exception that takes no attribute: logged twice
+        return
 
 
 def _scalar(value: object) -> object:
@@ -113,9 +138,11 @@ def _write(line: str) -> None:
     sys.stdout.flush()
 
 
-def log_event(event: str, *, level: int = logging.INFO, **fields: object) -> None:
+def log_event(
+    event: str, *, level: int = logging.INFO, exc_info: ExcInfo | None = None, **fields: object
+) -> None:
     """Write one named event to stdout, its fields in the attributes. Never pass a secret."""
-    _write(log_line(event, level=level, attributes={"event": event, **fields}))
+    _write(log_line(event, level=level, attributes={"event": event, **fields}, exc_info=exc_info))
 
 
 class JsonFormatter(logging.Formatter):
@@ -130,15 +157,40 @@ class JsonFormatter(logging.Formatter):
         )
 
 
+def _not_logged_twice(record: logging.LogRecord) -> bool:
+    error = record.exc_info[1] if record.exc_info else None
+    return not getattr(error, _LOGGED, False)
+
+
 class StdoutHandler(logging.Handler):
     """Writes each record to whatever sys.stdout is when the record is emitted, as log_event
-    does, so a replaced stdout (a test's capture, say) never leaves a handler on a closed one."""
+    does, so a replaced stdout (a test's capture, say) never leaves a handler on a closed one.
+    A record that cannot be formatted becomes one ERROR line on stdout, never the logging
+    module's report on stderr."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.addFilter(_not_logged_twice)
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
             _write(self.format(record))
         except Exception:  # noqa: BLE001  logging must never raise into the caller
             self.handleError(record)
+
+    def handleError(self, record: logging.LogRecord) -> None:  # noqa: N802  logging's name
+        kind, error, trace = sys.exc_info()
+        try:
+            _write(
+                log_line(
+                    "a log line could not be written",
+                    level=logging.ERROR,
+                    attributes={"logger.name": record.name},
+                    exc_info=(kind, error, trace) if kind and error else None,
+                )
+            )
+        except Exception:  # noqa: BLE001  stdout itself is gone: nothing more can be said
+            return
 
 
 def _uncaught(kind: type[BaseException], error: BaseException, trace: TracebackType | None) -> None:

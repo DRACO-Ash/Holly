@@ -43,7 +43,7 @@ from app.models import (  # noqa: F401  registers every model on Base.metadata
     shift_summary,
     user,
 )
-from fakes import logged_events
+from fakes import log_lines, logged_events
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -281,6 +281,8 @@ class TestWaitForDatabase:
         assert '"error": "ConnectionRefusedError"' in out
         assert '"error": "CannotConnectNowError"' in out
         assert '"status": "ready", "attempts": 4' in out
+        waits = [line for line in log_lines(out) if line["body"] == "database_wait"]
+        assert [line["severity_text"] for line in waits] == ["WARN", "WARN", "WARN", "INFO"]
 
     @pytest.mark.parametrize(
         ("sqlstate", "named"),

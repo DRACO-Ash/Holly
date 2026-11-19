@@ -92,3 +92,5 @@ review security-reviewer PASS f05e017e9430cee2ffbb1b945f518af051368966 # V0.20, 
 review engineering-reviewer FAIL f05e017e9430cee2ffbb1b945f518af051368966 # V0.20, round 4: a server row with no look could wipe a fresh look; browser and server clocks compared
 review security-reviewer PASS 0bd48f1dd36a3ec63f2e9d1ae664a3c0d0ebd808 # V0.20, round 5: no findings
 review engineering-reviewer PASS 0bd48f1dd36a3ec63f2e9d1ae664a3c0d0ebd808 # V0.20, round 5: one minor accepted (late older answer, self-corrects within 60s)
+review security-reviewer PASS 8cc6f2e7ca3c195ce7e6c1c9725b722c764ddf45 # V0.21, round 1: two minors (query cut gaps, email is the gateway's claim)
+review engineering-reviewer FAIL 8cc6f2e7ca3c195ce7e6c1c9725b722c764ddf45 # V0.21, round 1: 500 left a second line without the id; logconfig_dict untested

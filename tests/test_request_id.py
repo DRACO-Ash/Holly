@@ -17,7 +17,8 @@ UseSession = Callable[[FakeSession], FakeSession]
 
 
 @pytest.mark.parametrize(
-    "incoming", ["abc-12345-test-correlation-id", "a", "trace.v1:part_2", "x" * 128]
+    "incoming",
+    ["abc-12345-test-correlation-id", "a", "trace.v1:part_2", "x" * 128, "Zm9v/YmFy+cXV4=="],
 )
 def test_a_plain_token_is_kept(incoming: str) -> None:
     assert choose_request_id(incoming) == incoming

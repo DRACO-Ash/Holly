@@ -325,10 +325,11 @@ class DatabaseNotConfiguredError(RuntimeError):
 
 
 class InvalidSettingsError(RuntimeError):
-    """Holly's settings are missing or unsafe. It is a RuntimeError because gunicorn prints a
-    RuntimeError raised at start as one line and exits 1, with no traceback. The message names
-    each variable at fault and never repeats a value: pydantic's own message echoes the raw
-    input, which can hold part of a password."""
+    """Holly's settings are missing or unsafe. At start the gunicorn hook writes it as one FATAL
+    "refused" line on stdout and exits 1 (app/gunicorn_conf.py). It is raised from None, so the
+    line's stack trace holds no earlier error, and the message names each variable at fault
+    and never repeats a value: pydantic's own message echoes the raw input, which can hold part
+    of a password."""
 
 
 def _problems(exc: ValidationError) -> str:

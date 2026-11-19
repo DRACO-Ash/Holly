@@ -27,7 +27,9 @@ REQUEST_ID_HEADER = "X-Request-ID"
 EMAIL_HEADER = "X-Auth-Request-Email"
 REQUEST_ID_ATTRIBUTE = "http.request.header.x-request-id"
 EMAIL_ATTRIBUTE = "user.email"
-_ACCEPTABLE_ID = re.compile(r"[A-Za-z0-9._:-]{1,128}")
+# Letters, digits and . _ : - / + = cover UUIDs, trace ids and base64 forms; nothing in it can
+# break a header or, once JSON-encoded, a log line.
+_ACCEPTABLE_ID = re.compile(r"[A-Za-z0-9._:/+=-]{1,128}")
 _PLAIN_EMAIL = re.compile(r"[A-Za-z0-9._%+'-]{1,64}@[A-Za-z0-9.-]{1,189}\.[A-Za-z]{2,63}")
 
 _NONE: Mapping[str, str] = MappingProxyType({})

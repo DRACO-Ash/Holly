@@ -21,7 +21,12 @@ from app.migrate import run_migrations, wait_for_database
 
 
 def _refuse(error: Exception) -> NoReturn:
-    log_event("refused", level=logging.CRITICAL, reason=str(error))
+    log_event(
+        "refused",
+        level=logging.CRITICAL,
+        exc_info=(type(error), error, error.__traceback__),
+        reason=str(error),
+    )
     raise SystemExit(1) from error
 
 

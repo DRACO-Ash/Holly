@@ -38,7 +38,7 @@ from app.api.v1.routes import (
 )
 from app.config import DatabaseNotConfiguredError, get_settings
 from app.core.body_limit import BodySizeLimitMiddleware
-from app.core.logging import SERVICE_NAME, log_event
+from app.core.logging import SERVICE_NAME, log_event, mark_logged
 from app.core.net import client_ip
 from app.core.rate_limit import GLOBAL_LIMIT
 from app.core.request_id import REQUEST_ID_HEADER, RequestIDMiddleware
@@ -250,6 +250,7 @@ def create_app(static_dir: Path = STATIC_DIR) -> FastAPI:
             exc_info=exc,
             extra={"attributes": dict(getattr(request.state, "log_attributes", {}))},
         )
+        mark_logged(exc)
         headers = {**SECURITY_HEADERS, "Content-Security-Policy": API_CSP}
         request_id = getattr(request.state, "request_id", None)
         if request_id is not None:
