@@ -102,3 +102,5 @@ review security-reviewer PASS 8be505ac18db4152ea321e9a706c2656a2f768fc # V0.21, 
 review engineering-reviewer FAIL 8be505ac18db4152ea321e9a706c2656a2f768fc # V0.21, round 4: 3 cut mutants survived the whole suite; class-mark branch untested
 review security-reviewer PASS 08d7e97f6346800775a2af704231df82d1874c85 # V0.21, round 5: leading // and :// cut, linear; two minors, no change
 review engineering-reviewer FAIL 08d7e97f6346800775a2af704231df82d1874c85 # V0.21, round 5: 2 over-cutting mutants survived the whole suite
+review security-reviewer PASS d3c85154090f6d717d93132f4b37eadf5dd7e39d # V0.21, round 6: tests-only delta; no new finding
+review engineering-reviewer FAIL d3c85154090f6d717d93132f4b37eadf5dd7e39d # V0.21, round 6: wider battery: 3 leaking cut mutants and a loose email check survived

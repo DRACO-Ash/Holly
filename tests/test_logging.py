@@ -11,6 +11,7 @@ import sys
 import time
 import warnings
 from logging.config import dictConfig
+from types import SimpleNamespace
 from typing import Any
 
 import httpx2
@@ -19,6 +20,7 @@ from fastapi import FastAPI
 from gunicorn.config import Config
 from gunicorn.glogging import Logger
 
+from app.core import request_id as request_id_module
 from app.core.logging import (
     GUNICORN_LOGCONFIG,
     JsonFormatter,
@@ -30,7 +32,11 @@ from app.core.logging import (
     severity,
     without_query,
 )
-from app.core.request_id import EMAIL_HEADER, REQUEST_ID_HEADER, request_attributes
+from app.core.request_id import (
+    EMAIL_HEADER,
+    REQUEST_ID_HEADER,
+    request_attributes,
+)
 from fakes import FakeSession, log_lines
 
 TOP_LEVEL = {"timestamp", "severity_text", "severity_number", "body", "attributes"}
@@ -141,6 +147,14 @@ def test_a_query_string_is_cut_from_every_part_of_a_line() -> None:
         ("a@b,https://h/p", "a@b,https://h/p"),
         ("/api/users/a@b.com", "/api/users/a@b.com"),
         ("x@", "x@"),
+        (f"a<//u:{QUERY_MARK}@h", "a<//[userinfo removed]@h"),
+        (f"err\n//u:{QUERY_MARK}@h/db", "err\n//[userinfo removed]@h/db"),
+        (f"a\t//u:{QUERY_MARK}@h", "a\t//[userinfo removed]@h"),
+        ("GET /x?k 200", "GET /x?[query removed] 200"),
+        (f"a+://u:{QUERY_MARK}@h", "a+://[userinfo removed]@h"),
+        (f"a.://u:{QUERY_MARK}@h", "a.://[userinfo removed]@h"),
+        (f"a-://u:{QUERY_MARK}@h", "a-://[userinfo removed]@h"),
+        ("c:/dir@x", "c:/dir@x"),
         ("https://@host/p", "https://[userinfo removed]@host/p"),
         (f"://u:{QUERY_MARK}@h", "://[userinfo removed]@h"),
         (f"//u:{QUERY_MARK}@h/db", "//[userinfo removed]@h/db"),
@@ -237,6 +251,8 @@ def test_gunicorn_and_its_uvicorn_worker_write_their_lines_to_stdout(
         ("not an email", False),
         ('a"b@example.com', False),
         ("x" * 65 + "@example.com", False),
+        ("analyst@example.com junk", False),
+        ("analyst@example.com\tx", False),
         ("", False),
         (None, False),
     ],
@@ -444,3 +460,39 @@ def test_a_mark_on_the_exceptions_class_drops_the_line_without_raising(
     server.error("Exception in ASGI application", exc_info=MarkedError())
     captured = capsys.readouterr()
     assert (captured.out, captured.err) == ("", "")
+
+
+def test_a_url_in_a_list_attribute_is_cut() -> None:
+    line = json.loads(log_line("x", attributes={"urls": [f"https://u:p@h/?q={QUERY_MARK}"]}))
+    assert line["attributes"]["urls"] == ["https://[userinfo removed]@h/?[query removed]"]
+
+
+def test_exc_info_with_no_exception_adds_no_exception_fields(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    configure_logging()
+    logging.getLogger("app.test").error("no exception here", exc_info=True)
+    [line] = log_lines(capsys.readouterr().out)
+    assert line["body"] == "no exception here"
+    assert not any(key.startswith("exception.") for key in line["attributes"])
+
+
+async def test_the_request_line_gives_the_duration_in_milliseconds(
+    api: httpx2.AsyncClient,
+    use_session: Any,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    configure_logging()
+    use_session(FakeSession([None]))
+    ticks = iter([10.0, 10.25])
+    monkeypatch.setattr(
+        request_id_module, "time", SimpleNamespace(perf_counter=lambda: next(ticks, 10.25))
+    )
+    await api.get("/api/v1/health", headers={REQUEST_ID_HEADER: "req-ms"})
+    [line] = [
+        line
+        for line in log_lines(capsys.readouterr().out)
+        if line["attributes"].get("logger.name") == "app.request"
+    ]
+    assert line["attributes"]["http.server.request.duration_ms"] == 250
