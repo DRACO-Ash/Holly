@@ -36,13 +36,16 @@ _SEVERITIES: tuple[tuple[int, str, int], ...] = (
 )
 
 # A URL's user and password and its query string, cut wherever they appear in a line: either
-# can carry a credential or a search. Any scheme, in any case; and a path's query too.
-_STOP = "\\s?#\"'<>"
-_URL = re.compile(
-    rf"\b([a-z][a-z0-9+.-]*://)([^{_STOP}/@]+@)?([^{_STOP}]*)(\?[^\s#\"'<>]*)?", re.IGNORECASE
-)
-_PATH_QUERY = re.compile(rf"(?<![\w/:])(/[^{_STOP}]*)\?[^\s#\"'<>]*")
+# can carry a credential or a search. Any scheme, in any case, and a path's query too. The text
+# is split once on the characters that end a URL, and each piece is read from left to right at
+# most a few times, so the cut takes time in proportion to the line's length: a request line
+# can be about 16 KiB long, from anyone, signed in or not.
+_ENDS = re.compile(r"([\s\"'<>])")
+_SCHEME_CHARACTERS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+.-")
 _QUERY_CUT = "?[query removed]"
+# The name gunicorn's defaults give the handler on stdout.
+_CONSOLE = "console"
+_USERINFO_CUT = "[userinfo removed]@"
 # Set on an exception the 500 handler has logged with its request's attributes, so the server's
 # own "Exception in ASGI application" line, written later and outside the request, is not
 # written a second time without them.
@@ -58,15 +61,40 @@ def severity(level: int) -> tuple[str, int]:
     return "TRACE", 1
 
 
-def _cut_url(match: re.Match[str]) -> str:
-    scheme, userinfo, rest, query = match.groups()
-    return (
-        scheme + ("[userinfo removed]@" if userinfo else "") + rest + (_QUERY_CUT if query else "")
-    )
+def _scheme_end(piece: str) -> int:
+    """Where the first "://" with a scheme before it ends in the piece, or -1."""
+    marker = piece.find("://")
+    start = marker
+    while start > 0 and piece[start - 1] in _SCHEME_CHARACTERS:
+        start -= 1
+    return marker + 3 if 0 <= start < marker else -1
+
+
+def _cut_url(piece: str, after_scheme: int) -> str:
+    """Everything up to the last @ is taken as the user and password, so a password holding
+    a / ? or # is cut whole; an @ later in the URL only cuts more than it needs to."""
+    head, rest = piece[:after_scheme], piece[after_scheme:]
+    at = rest.rfind("@")
+    if at > 0:
+        rest = _USERINFO_CUT + rest[at + 1 :]
+    query = rest.find("?")
+    return head + (rest if query < 0 else rest[:query] + _QUERY_CUT)
+
+
+def _cut_piece(piece: str) -> str:
+    after_scheme = _scheme_end(piece)
+    if after_scheme >= 0:
+        return _cut_url(piece, after_scheme)
+    # A path, absolute or relative, with something after its ?: "/x?a", "api/v1/x?a",
+    # "url:/x?a". A question in prose ("and/or?") has nothing after it.
+    query = piece.find("?")
+    if 0 < query < len(piece) - 1 and "/" in piece[:query]:
+        return piece[:query] + _QUERY_CUT
+    return piece
 
 
 def without_query(text: str) -> str:
-    return _PATH_QUERY.sub(rf"\1{_QUERY_CUT}", _URL.sub(_cut_url, text))
+    return "".join(_cut_piece(piece) for piece in _ENDS.split(text))
 
 
 def mark_logged(error: BaseException) -> None:
@@ -158,8 +186,13 @@ class JsonFormatter(logging.Formatter):
 
 
 def _not_logged_twice(record: logging.LogRecord) -> bool:
+    """Drops the server's own line for an exception already logged with its request, once:
+    the mark is cleared, so the same exception raised again is logged again."""
     error = record.exc_info[1] if record.exc_info else None
-    return not getattr(error, _LOGGED, False)
+    if not getattr(error, _LOGGED, False):
+        return True
+    delattr(error, _LOGGED)
+    return False
 
 
 class StdoutHandler(logging.Handler):
@@ -212,12 +245,12 @@ GUNICORN_LOGCONFIG: dict[str, Any] = {
     "version": 1,
     "disable_existing_loggers": False,
     "formatters": {"json": {"()": "app.core.logging.JsonFormatter"}},
-    "handlers": {"console": _stdout_handler(), "error_console": _stdout_handler()},
-    "root": _logger("INFO", "console", propagate=True),
+    "handlers": {_CONSOLE: _stdout_handler(), "error_console": _stdout_handler()},
+    "root": _logger("INFO", _CONSOLE, propagate=True),
     "loggers": {
         "gunicorn.error": _logger("INFO", "error_console"),
         # Holly writes its own request line (app/core/request_id.py), without the query string.
-        "gunicorn.access": _logger("WARNING", "console"),
+        "gunicorn.access": _logger("WARNING", _CONSOLE),
     },
 }
 

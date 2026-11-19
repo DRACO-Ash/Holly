@@ -3,10 +3,12 @@ standard's top-level fields, flat attributes, the request id and the gateway's e
 line written for a request, exceptions in the attributes, and no query string, header value or
 service name anywhere. gunicorn's and uvicorn's own lines are held to it too."""
 
+import io
 import json
 import logging
 import re
 import sys
+import time
 import warnings
 from logging.config import dictConfig
 from typing import Any
@@ -24,6 +26,7 @@ from app.core.logging import (
     configure_logging,
     log_event,
     log_line,
+    mark_logged,
     severity,
     without_query,
 )
@@ -104,6 +107,15 @@ def test_a_query_string_is_cut_from_every_part_of_a_line() -> None:
             "postgresql://[userinfo removed]@db:5432/holly?[query removed]",
         ),
         (f"https://user:{QUERY_MARK}@host/p", "https://[userinfo removed]@host/p"),
+        (f"https://user:pa@{QUERY_MARK}@host/p", "https://[userinfo removed]@host/p"),
+        (f"s://u:{QUERY_MARK}@h", "s://[userinfo removed]@h"),
+        (f"x_postgresql://holly:{QUERY_MARK}@db", "x_postgresql://[userinfo removed]@db"),
+        (f"postgresql://holly:pa#{QUERY_MARK}@db/h", "postgresql://[userinfo removed]@db/h"),
+        (f"postgresql://holly:pa/{QUERY_MARK}@db/h", "postgresql://[userinfo removed]@db/h"),
+        (f"postgresql://holly:pa?{QUERY_MARK}@db/h", "postgresql://[userinfo removed]@db/h"),
+        (f"url:/x?token={QUERY_MARK}", "url:/x?[query removed]"),
+        (f"GET api/v1/x?token={QUERY_MARK} 200", "GET api/v1/x?[query removed] 200"),
+        (f"http://[::1]/p?q={QUERY_MARK}", "http://[::1]/p?[query removed]"),
         ("and/or? either way", "and/or? either way"),
         ("https://host/p", "https://host/p"),
     ],
@@ -305,3 +317,78 @@ def test_a_record_that_cannot_be_formatted_is_reported_on_stdout(
     assert (line["severity_text"], line["body"]) == ("ERROR", "a log line could not be written")
     assert line["attributes"]["logger.name"] == "lib"
     assert line["attributes"]["exception.type"] == "TypeError"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "/" + "-/" * 8000,
+        "/" + "-/" * 8000 + "?x",
+        "a." * 8000,
+        "a." * 8000 + "?x",
+        "a://" * 4000,
+        "a://" * 4000 + "?x",
+        "a" * 16000 + "://h?x",
+        "@" * 8000 + "x://" + "@" * 8000,
+    ],
+    ids=[
+        "slashes",
+        "slashes-query",
+        "dots",
+        "dots-query",
+        "schemes",
+        "schemes-query",
+        "long-scheme",
+        "ats",
+    ],
+)
+def test_the_cut_takes_time_in_proportion_to_a_long_line(text: str) -> None:
+    # A request line can be about 16 KiB, from anyone, and its path is cut twice on the one
+    # worker. Patterns that rescan the rest of the line from every start took about a second
+    # on these; a single pass takes well under the bound.
+    started = time.perf_counter()
+    without_query(text)
+    assert time.perf_counter() - started < 0.05
+
+
+def test_a_mark_that_cannot_be_set_leaves_the_servers_line_written(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    class Unmarkable(Exception):  # noqa: N818  a test double
+        def __setattr__(self, name: str, value: object) -> None:
+            raise AttributeError(name)
+
+    error = Unmarkable("frozen")
+    mark_logged(error)
+    configure_logging()
+    logging.getLogger("uvicorn.error").error("Exception in ASGI application", exc_info=error)
+    [line] = log_lines(capsys.readouterr().out)
+    assert line["attributes"]["exception.message"] == "frozen"
+
+
+def test_the_mark_drops_one_later_line_only(capsys: pytest.CaptureFixture[str]) -> None:
+    configure_logging()
+    error = RuntimeError("raised twice")
+    mark_logged(error)
+    server = logging.getLogger("uvicorn.error")
+    server.error("Exception in ASGI application", exc_info=error)
+    server.error("Exception in ASGI application", exc_info=error)
+    assert len(log_lines(capsys.readouterr().out)) == 1
+
+
+class _ClosedStdout(io.StringIO):
+    def write(self, _text: str) -> int:
+        msg = "stdout is closed"
+        raise OSError(msg)
+
+
+def test_a_report_that_cannot_be_written_is_dropped_quietly(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    handler = StdoutHandler()
+    handler.setFormatter(JsonFormatter())
+    record = logging.LogRecord("lib", logging.INFO, __file__, 1, "%s and %s", ("one",), None)
+    monkeypatch.setattr("sys.stdout", _ClosedStdout())
+    handler.emit(record)
+    monkeypatch.undo()
+    assert capsys.readouterr().err == ""
