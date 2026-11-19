@@ -145,21 +145,27 @@ def _uncaught(kind: type[BaseException], error: BaseException, trace: TracebackT
     _write(log_line("uncaught exception", level=logging.CRITICAL, exc_info=(kind, error, trace)))
 
 
+def _stdout_handler() -> dict[str, str]:
+    return {"class": "app.core.logging.StdoutHandler", "formatter": "json"}
+
+
+def _logger(level: str, handler: str, *, propagate: bool = False) -> dict[str, Any]:
+    return {"level": level, "handlers": [handler], "propagate": propagate}
+
+
 # gunicorn's logging, in its logconfig_dict form, so its own lines and those of the uvicorn
 # worker (which takes gunicorn's handlers) are written here too, on stdout, in the same form.
+# gunicorn's defaults name the two handlers console and error_console.
 GUNICORN_LOGCONFIG: dict[str, Any] = {
     "version": 1,
     "disable_existing_loggers": False,
     "formatters": {"json": {"()": "app.core.logging.JsonFormatter"}},
-    "handlers": {
-        "console": {"class": "app.core.logging.StdoutHandler", "formatter": "json"},
-        "error_console": {"class": "app.core.logging.StdoutHandler", "formatter": "json"},
-    },
-    "root": {"level": "INFO", "handlers": ["console"]},
+    "handlers": {"console": _stdout_handler(), "error_console": _stdout_handler()},
+    "root": _logger("INFO", "console", propagate=True),
     "loggers": {
-        "gunicorn.error": {"level": "INFO", "handlers": ["error_console"], "propagate": False},
+        "gunicorn.error": _logger("INFO", "error_console"),
         # Holly writes its own request line (app/core/request_id.py), without the query string.
-        "gunicorn.access": {"level": "WARNING", "handlers": ["console"], "propagate": False},
+        "gunicorn.access": _logger("WARNING", "console"),
     },
 }
 
