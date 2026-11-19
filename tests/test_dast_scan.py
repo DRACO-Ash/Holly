@@ -19,7 +19,9 @@ from app.factory import create_app
 
 
 def logged(captured: str) -> list[dict[str, object]]:
-    return [json.loads(line) for line in captured.splitlines() if line.startswith("{")]
+    return [
+        json.loads(line)["attributes"] for line in captured.splitlines() if line.startswith("{")
+    ]
 
 
 @pytest.mark.parametrize("value", [None, "false", "0", "no", "maybe", ""])

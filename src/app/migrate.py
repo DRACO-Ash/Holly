@@ -11,6 +11,7 @@ points at the same directory.
 """
 
 import asyncio
+import logging
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -92,7 +93,9 @@ def wait_for_database(
                 f"(last error: {error})"
             )
             raise RuntimeError(msg) from None
-        log_event("database_wait", status="retrying", attempt=attempt, error=error)
+        log_event(
+            "database_wait", level=logging.WARNING, status="retrying", attempt=attempt, error=error
+        )
         sleep(DATABASE_RETRY_SECONDS)
 
 

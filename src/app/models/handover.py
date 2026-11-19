@@ -18,6 +18,9 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
+# The account a row belongs to or was written by.
+USER_ID = "app_user.id"
+
 CONFIRMED = "confirmed"
 REJECTED = "rejected"
 
@@ -37,7 +40,7 @@ class HandoverThreadLink(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     event_key: Mapped[str] = mapped_column(String(200), nullable=False)
     decision: Mapped[str] = mapped_column(String(16), nullable=False)
     decided_by: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("app_user.id", ondelete="SET NULL"), nullable=True
+        UUID(as_uuid=True), ForeignKey(USER_ID, ondelete="SET NULL"), nullable=True
     )
     decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
@@ -57,7 +60,7 @@ class HandoverNote(Base, UUIDPrimaryKeyMixin, TimestampMixin):
 
     sat_no: Mapped[int] = mapped_column(Integer, nullable=False)
     author_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("app_user.id", ondelete="SET NULL"), nullable=True
+        UUID(as_uuid=True), ForeignKey(USER_ID, ondelete="SET NULL"), nullable=True
     )
     text: Mapped[str] = mapped_column(Text, nullable=False)
 
@@ -71,7 +74,7 @@ class ObjectWatch(Base, UUIDPrimaryKeyMixin, TimestampMixin):
     __tablename__ = "object_watch"
 
     user_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("app_user.id", ondelete="CASCADE"), nullable=False
+        UUID(as_uuid=True), ForeignKey(USER_ID, ondelete="CASCADE"), nullable=False
     )
     sat_no: Mapped[int] = mapped_column(Integer, nullable=False)
     pinned: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sql_false())

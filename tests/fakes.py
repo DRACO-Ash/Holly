@@ -1,6 +1,7 @@
 """Test doubles shared by the route and service tests: a database session that hands out
 canned results in order and records writes, and builders for the rows routes read."""
 
+import json
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -79,3 +80,13 @@ def make_user(
         created_at=NOW,
         updated_at=NOW,
     )
+
+
+def log_lines(captured: str) -> list[dict[str, Any]]:
+    """Every JSON log line in captured stdout, whole."""
+    return [json.loads(line) for line in captured.splitlines() if line.startswith("{")]
+
+
+def logged_events(captured: str) -> list[dict[str, Any]]:
+    """The attributes of each named event (log_event) in captured stdout."""
+    return [line["attributes"] for line in log_lines(captured) if "event" in line["attributes"]]

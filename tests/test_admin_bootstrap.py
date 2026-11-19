@@ -45,7 +45,9 @@ def database(monkeypatch: pytest.MonkeyPatch) -> Callable[[int], FakeSession]:
 
 
 def logged(captured: str) -> list[dict[str, object]]:
-    return [json.loads(line) for line in captured.splitlines() if line.startswith("{")]
+    return [
+        json.loads(line)["attributes"] for line in captured.splitlines() if line.startswith("{")
+    ]
 
 
 async def test_no_account_and_both_variables_create_one_active_admin(

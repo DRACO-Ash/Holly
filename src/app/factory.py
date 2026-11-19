@@ -6,6 +6,7 @@ One process serves three things:
 ● the dashboard itself: the React app built into app/static by the container build.
 """
 
+import logging
 import os
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -45,6 +46,8 @@ from app.db.session import dispose_engine
 from app.dependencies import TOKEN_HEADER
 from app.services.background_refresh import start_background_loops, stop_background_loops
 from app.services.procedure_storage import prepare_storage
+
+_error_log = logging.getLogger("app.error")
 
 # Liveness and readiness paths: public, unauthenticated, and touching nothing.
 HEALTH_PATHS = ("/healthz", "/health", "/readyz", "/livez", "/ping")
@@ -87,6 +90,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         # not look healthy (appstore-gate-compliance).
         log_event(
             "boot",
+            level=logging.ERROR,
             version=__version__,
             storage=str(procedure_dir),
             storage_writable=False,
@@ -237,9 +241,15 @@ def create_app(static_dir: Path = STATIC_DIR) -> FastAPI:
         return JSONResponse({"detail": "Service unavailable"}, status_code=503)
 
     @app.exception_handler(500)
-    def _server_error(request: Request, _exc: Exception) -> PlainTextResponse:
-        # A generic body; the traceback stays in the server log. Starlette builds this response
-        # outside the header and request-id middleware, so their headers are added here too.
+    def _server_error(request: Request, exc: Exception) -> PlainTextResponse:
+        # A generic body; the traceback stays in the server log, on a line that carries the
+        # request's id. Starlette builds this response outside the header and request-id
+        # middleware, so their headers and log attributes are added here too.
+        _error_log.error(
+            "unhandled error",
+            exc_info=exc,
+            extra={"attributes": dict(getattr(request.state, "log_attributes", {}))},
+        )
         headers = {**SECURITY_HEADERS, "Content-Security-Policy": API_CSP}
         request_id = getattr(request.state, "request_id", None)
         if request_id is not None:

@@ -25,6 +25,7 @@ from app.config import (
     resolve_port,
 )
 from app.factory import create_app
+from fakes import log_lines
 
 # Non-ASCII digits, built from code points so the source stays plain ASCII.
 # str.isdigit() is true for both, so the ASCII check is what must refuse them.
@@ -472,13 +473,32 @@ class TestABadEnvironmentStopsTheBootClearly:
         monkeypatch.delenv("APP_SECRET_KEY")
         on_starting = runpy.run_module("app.gunicorn_conf")["on_starting"]
         monkeypatch.setitem(on_starting.__globals__, "configure_logging", lambda: None)
-        with pytest.raises(InvalidSettingsError, match="APP_SECRET_KEY: Field required"):
+        with pytest.raises(SystemExit) as raised:
             on_starting(object())
+        assert raised.value.code == 1
+        assert isinstance(raised.value.__cause__, InvalidSettingsError)
+        assert "APP_SECRET_KEY: Field required" in str(raised.value.__cause__)
 
-    def test_gunicorn_prints_the_refusal_as_one_line(self) -> None:
-        # gunicorn's BaseApplication.run catches RuntimeError around the master's start, where
-        # on_starting runs the migrations, and prints "Error: <message>" with no traceback.
-        assert issubclass(InvalidSettingsError, RuntimeError)
+    def test_the_refusal_is_one_fatal_line_on_stdout(
+        self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        # gunicorn would print "Error: <message>" to stderr for an error it catches; the hook
+        # writes the refusal in the logging standard's form instead and exits, so it prints
+        # nothing itself.
+        monkeypatch.delenv("APP_SECRET_KEY")
+        on_starting = runpy.run_module("app.gunicorn_conf")["on_starting"]
+        monkeypatch.setitem(on_starting.__globals__, "configure_logging", lambda: None)
+        with pytest.raises(SystemExit):
+            on_starting(object())
+        captured = capsys.readouterr()
+        assert captured.err == ""
+        [line] = log_lines(captured.out)
+        assert (line["severity_text"], line["severity_number"], line["body"]) == (
+            "FATAL",
+            21,
+            "refused",
+        )
+        assert "APP_SECRET_KEY: Field required" in line["attributes"]["reason"]
 
 
 class _StoppedBeforeConnectingError(Exception):
@@ -529,8 +549,9 @@ class TestEveryPasswordCharacterReachesTheEngineExactly:
     ) -> None:
         secret = PUNCTUATED[mark]
         handed: list[URL] = []
-        with pytest.raises(_StoppedBeforeConnectingError) as raised:
+        with pytest.raises(SystemExit) as raised:
             self.start_master(monkeypatch, secret, handed)
+        assert isinstance(raised.value.__cause__, _StoppedBeforeConnectingError)
         [url] = handed
         assert (url.drivername, url.username, url.password) == (
             "postgresql+asyncpg",
@@ -557,13 +578,15 @@ class TestEveryPasswordCharacterReachesTheEngineExactly:
         self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], secret: str
     ) -> None:
         handed: list[URL] = []
-        with pytest.raises(InvalidSettingsError) as raised:
+        with pytest.raises(SystemExit) as raised:
             self.start_master(monkeypatch, secret, handed)
-        assert str(raised.value) == (
+        refusal = raised.value.__cause__
+        assert isinstance(refusal, InvalidSettingsError)
+        assert str(refusal) == (
             "Holly cannot start: "
             "DATABASE_URL must be a postgres:// or postgresql:// URL with a host"
         )
         assert handed == [], "no engine was made"
-        assert raised.value.__cause__ is None
+        assert refusal.__cause__ is None
         printed = capsys.readouterr().out + "".join(traceback.format_exception(raised.value))
         assert fragments_in(printed, secret) == []

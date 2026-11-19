@@ -7,7 +7,6 @@ platform and security-hardening, not from the code under test, so loosening a po
 dropping a path fails here first and can only pass through a deliberate, reviewed test edit.
 """
 
-import json
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -27,6 +26,7 @@ from app.core.body_limit import LARGE_BODY_ROUTES
 from app.core.rate_limit import GLOBAL_LIMIT
 from app.dependencies import get_current_user, get_signed_in_user
 from app.factory import create_app
+from fakes import log_lines, logged_events
 
 PROBE_PATHS = ["/healthz", "/health", "/readyz", "/livez", "/ping"]
 
@@ -409,28 +409,23 @@ def test_status_reports_an_unset_input(client: TestClient, monkeypatch: pytest.M
     assert client.get("/status").json()["config"]["PORT"] == {"set": False, "length": 0}
 
 
-def _events(captured: str) -> list[dict[str, Any]]:
-    lines = [json.loads(line) for line in captured.splitlines() if line.startswith("{")]
-    return [line for line in lines if "event" in line]
-
-
 def test_boot_and_shutdown_each_log_one_json_line(
     capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
     with TestClient(create_app(static_dir=tmp_path / "not-built")):
         pass
-    assert _events(capsys.readouterr().out) == [
+    captured = capsys.readouterr().out
+    assert logged_events(captured) == [
         {
             "event": "boot",
-            "service": "holly",
-            "request_id": "-",
             "version": __version__,
             "storage": str(tmp_path / "procedures"),
             "storage_writable": True,
             "background_refresh": False,
         },
-        {"event": "shutdown", "service": "holly", "request_id": "-", "version": __version__},
+        {"event": "shutdown", "version": __version__},
     ]
+    assert {line["severity_text"] for line in log_lines(captured)} == {"INFO"}
 
 
 def test_a_store_that_refuses_writes_stops_the_boot_with_the_errno(
@@ -444,7 +439,10 @@ def test_a_store_that_refuses_writes_stops_the_boot_with_the_errno(
         TestClient(create_app(static_dir=tmp_path / "not-built")),
     ):
         pass
-    [boot] = _events(capsys.readouterr().out)
+    captured = capsys.readouterr().out
+    [boot] = logged_events(captured)
+    [line] = [line for line in log_lines(captured) if line["body"] == "boot"]
+    assert (line["severity_text"], line["severity_number"]) == ("ERROR", 17)
     assert boot["event"] == "boot"
     assert boot["storage"] == str(blocker / "procedures")
     assert boot["storage_writable"] is False

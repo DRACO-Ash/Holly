@@ -9,6 +9,7 @@ import pytest
 from gunicorn.config import Config
 
 from app.config import get_settings
+from fakes import log_lines
 
 
 def load_settings(monkeypatch: pytest.MonkeyPatch, port: str | None) -> dict[str, Any]:
@@ -30,9 +31,18 @@ def test_bind_uses_the_validated_port(
 
 
 @pytest.mark.parametrize("port", ["0", "8080 --check-config", "9090 # the app port"])
-def test_a_malformed_port_stops_the_container(monkeypatch: pytest.MonkeyPatch, port: str) -> None:
-    with pytest.raises(ValueError, match="PORT must be a whole number"):
+def test_a_malformed_port_stops_the_container(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], port: str
+) -> None:
+    with pytest.raises(SystemExit) as raised:
         load_settings(monkeypatch, port)
+    assert raised.value.code == 1
+    assert isinstance(raised.value.__cause__, ValueError)
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    [line] = log_lines(captured.out)
+    assert (line["severity_text"], line["body"]) == ("FATAL", "refused")
+    assert "PORT must be a whole number" in line["attributes"]["reason"]
 
 
 def test_control_socket_is_off_and_one_uvicorn_worker_runs(
@@ -100,9 +110,7 @@ def test_with_no_database_under_the_scan_nothing_is_migrated_or_bootstrapped(
     get_settings.cache_clear()
     hook(SimpleNamespace(cfg=Config()))
     assert called == []
-    assert '"event": "migrations", "service": "holly", "request_id": "-", "status": "skipped"' in (
-        capsys.readouterr().out
-    )
+    assert '"event": "migrations", "status": "skipped"' in capsys.readouterr().out
 
 
 def test_gunicorn_knows_every_setting_the_module_defines(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -120,13 +128,25 @@ def test_gunicorn_knows_every_setting_the_module_defines(monkeypatch: pytest.Mon
         "log_event",
         "prepare_scan_environment",
         "wait_for_database",
+        "GUNICORN_LOGCONFIG",
+        "logging",
+        "Callable",
+        "Mapping",
+        "NoReturn",
     }
     defined = {
         name
         for name in load_settings(monkeypatch, None)
         if not name.startswith("_") and name not in imports
     }
-    assert defined == {"bind", "worker_class", "workers", "control_socket_disable", "on_starting"}
+    assert defined == {
+        "bind",
+        "worker_class",
+        "workers",
+        "control_socket_disable",
+        "logconfig_dict",
+        "on_starting",
+    }
     assert defined <= set(Config().settings)
 
 

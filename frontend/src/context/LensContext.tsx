@@ -70,7 +70,7 @@ export function LensProvider({
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [objects, setObjects] = useState<ReadonlyMap<string, HandoverObject>>(new Map());
   const [notices, setNotices] = useState<readonly ActivityNotice[]>([]);
-  const [watch, setWatchRows] = useState<readonly ObjectWatch[]>([]);
+  const [watchRows, setWatchRows] = useState<readonly ObjectWatch[]>([]);
   const [watchCap, setWatchCap] = useState(0);
   const [watchError, setWatchError] = useState<string | null>(null);
   const [version, setVersion] = useState(0);
@@ -167,21 +167,21 @@ export function LensProvider({
 
   const toggleWatch = useCallback(
     (sat: number) => {
-      const pinned = watch.some((r) => r.sat_no === sat && r.pinned);
+      const pinned = watchRows.some((r) => r.sat_no === sat && r.pinned);
       setWatchError(null);
       setWatch(sat, !pinned)
         .then((row) => setWatchRows((rows) => upsert(rows, row)))
         .catch((error: unknown) => setWatchError(watchRefusal(error, pinned, watchCap)));
     },
-    [watch, watchCap],
+    [watchRows, watchCap],
   );
 
   const lastSeen = useCallback(
     (sat: number) => {
-      const at = pending.get(sat)?.at ?? watch.find((r) => r.sat_no === sat)?.last_seen_at;
+      const at = pending.get(sat)?.at ?? watchRows.find((r) => r.sat_no === sat)?.last_seen_at;
       return at ? Date.parse(at) : null;
     },
-    [watch, pending],
+    [watchRows, pending],
   );
 
   const changed = useCallback(() => setVersion((v) => v + 1), []);
@@ -219,7 +219,7 @@ export function LensProvider({
       objects,
       notices,
       noticeByNotso,
-      watch,
+      watch: watchRows,
       watchCap,
       watchError,
       toggleWatch,
@@ -239,7 +239,7 @@ export function LensProvider({
       objects,
       notices,
       noticeByNotso,
-      watch,
+      watchRows,
       watchCap,
       watchError,
       toggleWatch,

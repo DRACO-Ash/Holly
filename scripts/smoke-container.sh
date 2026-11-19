@@ -17,7 +17,11 @@
 #      password removed, once the admin exists, that does
 #   6. a start as the App Store's DAST scan makes it (APPSTORE_DAST_SCAN=true, nothing else)
 #      that does not serve the probes and the dashboard on 8080
-# Requires Docker and curl. Behind a TLS-intercepting proxy, point DOCKERFILE at a copy whose
+#   7. a log that breaks the App Store's logging standard, as its Logging check reads it: any
+#      line on stderr, a stdout line that is not one JSON object with exactly the standard's
+#      top-level fields and flat attributes, or two requests sent with X-Request-Id whose ids
+#      no line carries in its attributes
+# Requires Docker, curl and python3. Behind a TLS-intercepting proxy, point DOCKERFILE at a copy whose
 # pip and npm steps trust the proxy's certificate authority, and pass the build flags it needs:
 #   DOCKERFILE=/path/to/copy DOCKER_BUILD_FLAGS='--network host --secret id=...' sh scripts/smoke-container.sh
 # PG_IMAGE overrides the database image, for a registry mirror of the same image: it must end in
@@ -115,12 +119,44 @@ probe() {  # $1: PORT value to inject, or empty for unset. $2: the port the cont
     || fail "a dashboard page does not load on its own address"
   curl -fsSI "$base/" | grep -qi "^content-security-policy: default-src 'none'; script-src 'self'" \
     || fail "the dashboard is served without its content security policy"
-  if docker logs "$cid" 2>&1 | grep -E '\[ERROR\]|"level": "ERROR"|Traceback'; then
+  if docker logs "$cid" 2>&1 | grep -E '\[ERROR\]|"severity_text": "(ERROR|FATAL)"|Traceback'; then
     fail "an error in the boot log on port $2"
   fi
   docker logs "$cid" 2>&1 | grep -q '"event": "migrations", .*"status": "applied"' \
     || fail "the boot log does not show the migrations applied on port $2"
+  log_standard "$cid" "$base" "$2"
   echo "port $2: / and every health path answer 200, migrations applied, the dashboard is served, the boot log is clean"
+}
+
+log_standard() {  # $1: container id. $2: base URL. $3: the port, to name the ids.
+  curl -fsS -o /dev/null -H "X-Request-Id: smoke-$3-one" "$2/api/v1/health?probe=1"
+  curl -s -o /dev/null -H "X-Request-Id: smoke-$3-two" "$2/no-such-page"
+  sleep 1
+  errors="$(docker logs "$1" 2>&1 >/dev/null)"
+  [ -z "$errors" ] || fail "the container wrote to stderr on port $3: $(printf '%s' "$errors" | head -n 1)"
+  docker logs "$1" 2>/dev/null | python3 -c '
+import json, sys
+top = {"timestamp", "severity_text", "severity_number", "body", "attributes", "trace_id", "span_id"}
+pairs = {"TRACE": 1, "DEBUG": 5, "INFO": 9, "WARN": 13, "ERROR": 17, "FATAL": 21}
+seen = set()
+for number, text in enumerate(sys.stdin, 1):
+    try:
+        line = json.loads(text)
+    except ValueError:
+        sys.exit(f"line {number} is not JSON")
+    if not isinstance(line, dict) or not {"timestamp", "severity_text", "severity_number", "body", "attributes"} <= set(line) <= top:
+        sys.exit(f"line {number} does not have exactly the standard top-level fields")
+    if pairs.get(line["severity_text"]) != line["severity_number"]:
+        sys.exit(f"line {number} has an unknown severity pair")
+    if any(isinstance(value, dict) for value in line["attributes"].values()):
+        sys.exit(f"line {number} has nested attributes")
+    if "?probe=" in text:
+        sys.exit(f"line {number} carries a query string")
+    seen.add(line["attributes"].get("http.request.header.x-request-id"))
+missing = {sys.argv[1], sys.argv[2]} - seen
+if missing:
+    sys.exit(f"no line carries the request id {sorted(missing)[0]}")
+' "smoke-$3-one" "smoke-$3-two" || fail "the log breaks the logging standard on port $3"
 }
 
 refused() {  # $1: container id. $2: text the log must hold. $3: what was refused.
@@ -409,7 +445,7 @@ docker logs "$cid" 2>&1 | grep -q '"event": "dast_scan", .*"status": "active", .
   || fail "the DAST scan's start did not log what it filled in"
 docker logs "$cid" 2>&1 | grep -q '"event": "migrations", .*"status": "skipped"' \
   || fail "the DAST scan's start did not log the migrations skipped"
-if docker logs "$cid" 2>&1 | grep -E '\[ERROR\]|"level": "ERROR"|Traceback'; then
+if docker logs "$cid" 2>&1 | grep -E '\[ERROR\]|"severity_text": "(ERROR|FATAL)"|Traceback'; then
   fail "an error in the DAST scan's boot log"
 fi
 # With a database, the scan's start waits for it and migrates as any start does.

@@ -9,7 +9,6 @@ container smoke rung (scripts/smoke-container.sh).
 import asyncio
 import configparser
 import io
-import json
 import logging
 import re
 import socket
@@ -44,6 +43,7 @@ from app.models import (  # noqa: F401  registers every model on Base.metadata
     shift_summary,
     user,
 )
+from fakes import logged_events
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -202,7 +202,7 @@ def test_run_migrations_upgrades_to_head_and_logs_each_step(
     [(config, target)] = calls
     assert target == "head"
     assert config.get_main_option("script_location") == str(MIGRATIONS_DIR)
-    events = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    events = logged_events(capsys.readouterr().out)
     assert [(event["event"], event["status"]) for event in events] == [
         ("migrations", "starting"),
         ("migrations", "applied"),

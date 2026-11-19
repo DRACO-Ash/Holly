@@ -9,6 +9,16 @@
 
 All notable changes to Holly are recorded here, newest first. Holly V0.2 is the Daily Operations Dashboard fused into the Holly App Store project and renamed; the sections after it are the Daily Operations Dashboard's own record, kept as written. Holly's releases are numbered V<major>.<minor>, and each has a row in `docs/AUDIT-LOG.md` with the checks that ran.
 
+## Holly V0.21 (2026-11-19)
+
+The App Store's logging standard, and the 2 code smells that stopped V0.20. V0.20's upload passed 11 of 12 stages and failed Code Quality on 2 new issues (fact, from the console on 19 November 2026), so V0.21 carries the Object Lens to the platform with these fixes.
+
+● **Logs to the standard.** Every line is one JSON object on standard output with exactly `timestamp` (UTC, milliseconds), `severity_text`, `severity_number`, `body` and a flat `attributes` object. gunicorn's and uvicorn's own lines, warnings, uncaught errors and every refusal at start take the same form, so nothing is written to standard error. Exceptions go into the attributes as `exception.type`, `exception.message` and `exception.stacktrace`. The service name and the old `time`, `level`, `logger`, `message`, `service` and `request_id` fields are gone.
+● **One line per request**, `<method> <path> <status>`, with the method, the path without its query string, the status and the duration. Every line written for a request carries its id as `http.request.header.x-request-id` and, when the gateway sends a plain one, the analyst's email from `X-Auth-Request-Email` as `user.email`. Any URL's query string is cut from every line.
+● **A refusal at start** (a malformed `PORT`, a missing setting, an unreachable database) is one `FATAL` line, `refused`, with the reason, and the container exits 1.
+● **Code Quality:** `src/app/models/handover.py` names the account key once (`USER_ID`, python:S1192), and the lens's watch rows are `[watchRows, setWatchRows]` (typescript:S6754).
+● **Container smoke** now checks the log as the platform's Logging check reads it: nothing on standard error, every line in the standard's form, and both test requests' ids in the attributes.
+
 ## Holly V0.20 (2026-11-18)
 
 The Object Lens (`docs/roadmap/object-lens-proposal.html`): Holly follows the object wherever the analyst is. The owner decided on 18 November 2026 to build both of the proposal's phases at once, without waiting for the hallway test; the prototype for that test is in `docs/roadmap/object-lens-prototype.html`.

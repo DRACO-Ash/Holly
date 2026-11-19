@@ -2,7 +2,6 @@
 reused only when it is a plain token; anything else is replaced, so a caller cannot write
 arbitrary text into the logs or the response headers."""
 
-import json
 import uuid
 from collections.abc import Callable
 
@@ -12,7 +11,7 @@ from fastapi import FastAPI
 
 from app.core.logging import log_event
 from app.core.request_id import REQUEST_ID_HEADER, choose_request_id, current_request_id
-from fakes import FakeSession
+from fakes import FakeSession, logged_events
 
 UseSession = Callable[[FakeSession], FakeSession]
 
@@ -63,11 +62,9 @@ async def test_a_log_line_written_during_a_request_carries_its_id(
 
     api_app.add_api_route("/logs-an-event", logs_an_event, methods=["GET"])
     await api.get("/logs-an-event", headers={REQUEST_ID_HEADER: "trace-7"})
-    lines = [json.loads(text) for text in capsys.readouterr().out.splitlines()]
-    [line] = [line for line in lines if "event" in line]
+    [line] = logged_events(capsys.readouterr().out)
     assert line == {
         "event": "probe.event",
-        "service": "holly",
-        "request_id": "trace-7",
         "detail": "seen",
+        "http.request.header.x-request-id": "trace-7",
     }

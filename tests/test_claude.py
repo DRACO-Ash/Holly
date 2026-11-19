@@ -14,6 +14,7 @@ import pytest
 
 from app.services import claude
 from app.services.claude import AssistantError, DailyTokenBudget, call_claude, extract_json_object
+from fakes import logged_events
 
 Handler = Callable[[httpx2.Request], httpx2.Response]
 
@@ -117,8 +118,7 @@ async def test_every_token_counts_against_the_day_and_is_logged(
     api.answer(200, reply(usage=usage))
     await call_claude("s", "u", max_tokens=256, purpose="shift.polish")
     assert claude.BUDGET.spent == 160
-    lines = [json.loads(text) for text in capsys.readouterr().out.splitlines()]
-    [line] = [line for line in lines if "event" in line]
+    [line] = logged_events(capsys.readouterr().out)
     assert line["event"] == "llm.call"
     assert line["purpose"] == "shift.polish"
     assert line["tokens"] == 160
