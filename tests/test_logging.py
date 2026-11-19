@@ -139,6 +139,8 @@ def test_a_query_string_is_cut_from_every_part_of_a_line() -> None:
         ("and/or? either way", "and/or? either way"),
         ("x?a", "x?a"),
         ("a@b,https://h/p", "a@b,https://h/p"),
+        ("/api/users/a@b.com", "/api/users/a@b.com"),
+        ("x@", "x@"),
         ("https://@host/p", "https://[userinfo removed]@host/p"),
         (f"://u:{QUERY_MARK}@h", "://[userinfo removed]@h"),
         (f"//u:{QUERY_MARK}@h/db", "//[userinfo removed]@h/db"),
