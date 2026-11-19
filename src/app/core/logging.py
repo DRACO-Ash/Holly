@@ -36,10 +36,12 @@ _SEVERITIES: tuple[tuple[int, str, int], ...] = (
 )
 
 # A URL's user and password and its query string, cut wherever they appear in a line: either
-# can carry a credential or a search. Any scheme, in any case, and a path's query too. The text
-# is split once on the characters that end a URL, and each piece is read from left to right at
-# most a few times, so the cut takes time in proportion to the line's length: a request line
-# can be about 16 KiB long, from anyone, signed in or not.
+# can carry a credential or a search. The line is split once on the characters that end a URL
+# (space, quote, < and >), and each piece then takes two cuts, both always: the user and
+# password, then the query. Each is a few scans from left to right, so the cut takes time in
+# proportion to the line's length: a request line can be about 16 KiB long, from anyone,
+# signed in or not. Known limits: a URL with a space or quote inside it is cut only up to that
+# character, and a ? with no / before it in its piece ("x?a=1") is left alone, as prose.
 _ENDS = re.compile(r"([\s\"'<>])")
 _SCHEME_CHARACTERS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+.-")
 _QUERY_CUT = "?[query removed]"
@@ -62,39 +64,40 @@ def severity(level: int) -> tuple[str, int]:
 
 
 def _scheme_end(piece: str) -> int:
-    """Where the first "://" with a scheme before it ends in the piece, or -1."""
+    """Where the first "://" with a scheme character just before it ends, or -1."""
     marker = piece.find("://")
-    start = marker
-    while start > 0 and piece[start - 1] in _SCHEME_CHARACTERS:
-        start -= 1
-    return marker + 3 if 0 <= start < marker else -1
+    while marker >= 0:
+        if marker > 0 and piece[marker - 1] in _SCHEME_CHARACTERS:
+            return marker + 3
+        marker = piece.find("://", marker + 3)
+    return -1
 
 
-def _cut_url(piece: str, after_scheme: int) -> str:
-    """Everything up to the last @ is taken as the user and password, so a password holding
-    a / ? or # is cut whole; an @ later in the URL only cuts more than it needs to."""
-    head, rest = piece[:after_scheme], piece[after_scheme:]
-    at = rest.rfind("@")
-    if at > 0:
-        rest = _USERINFO_CUT + rest[at + 1 :]
-    query = rest.find("?")
-    return head + (rest if query < 0 else rest[:query] + _QUERY_CUT)
-
-
-def _cut_piece(piece: str) -> str:
+def _cut_userinfo(piece: str) -> str:
+    """After a URL's scheme, everything up to the last @ in the piece is taken as a user and
+    password, so one holding / ? # or @ is cut whole; an @ later on cuts more than it needs."""
     after_scheme = _scheme_end(piece)
-    if after_scheme >= 0:
-        return _cut_url(piece, after_scheme)
-    # A path, absolute or relative, with something after its ?: "/x?a", "api/v1/x?a",
-    # "url:/x?a". A question in prose ("and/or?") has nothing after it.
-    query = piece.find("?")
-    if 0 < query < len(piece) - 1 and "/" in piece[:query]:
+    if after_scheme < 0:
+        return piece
+    at = piece.rfind("@", after_scheme)
+    if at < 0:
+        return piece
+    return piece[:after_scheme] + _USERINFO_CUT + piece[at + 1 :]
+
+
+def _cut_query(piece: str) -> str:
+    """From the first ? after the piece's first /, when text follows it: the query of a URL
+    ("https://h/p?a", the scheme's // being that /) or of a path, absolute or relative
+    ("/x?a", "api/v1/x?a"). A question in prose ("and/or?") has nothing after it."""
+    slash = piece.find("/")
+    query = piece.find("?", slash + 1) if slash >= 0 else -1
+    if 0 <= query < len(piece) - 1:
         return piece[:query] + _QUERY_CUT
     return piece
 
 
 def without_query(text: str) -> str:
-    return "".join(_cut_piece(piece) for piece in _ENDS.split(text))
+    return "".join(_cut_query(_cut_userinfo(piece)) for piece in _ENDS.split(text))
 
 
 def mark_logged(error: BaseException) -> None:
@@ -191,7 +194,10 @@ def _not_logged_twice(record: logging.LogRecord) -> bool:
     error = record.exc_info[1] if record.exc_info else None
     if not getattr(error, _LOGGED, False):
         return True
-    delattr(error, _LOGGED)
+    try:
+        delattr(error, _LOGGED)
+    except AttributeError:  # the mark came from the class, not this exception: drop it anyway
+        return False
     return False
 
 

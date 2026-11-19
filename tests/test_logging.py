@@ -116,7 +116,29 @@ def test_a_query_string_is_cut_from_every_part_of_a_line() -> None:
         (f"url:/x?token={QUERY_MARK}", "url:/x?[query removed]"),
         (f"GET api/v1/x?token={QUERY_MARK} 200", "GET api/v1/x?[query removed] 200"),
         (f"http://[::1]/p?q={QUERY_MARK}", "http://[::1]/p?[query removed]"),
+        (
+            f"/cb?code={QUERY_MARK}&redirect_uri=https://host/x",
+            "/cb?[query removed]",
+        ),
+        (f"GET /cb?code={QUERY_MARK}&next=https://host/x 200", "GET /cb?[query removed] 200"),
+        (f"next=/login?token={QUERY_MARK};http://h/", "next=/login?[query removed]"),
+        (f"a?b,/cb?code={QUERY_MARK}", "a?b,/cb?[query removed]"),
+        (f"why?/cb?code={QUERY_MARK}", "why?/cb?[query removed]"),
+        (
+            f"x=://;db=postgresql://u:{QUERY_MARK}@h/db",
+            "x=://;db=postgresql://[userinfo removed]@h/db",
+        ),
+        (f"(://)postgresql://u:{QUERY_MARK}@h/db", "(://)postgresql://[userinfo removed]@h/db"),
+        (
+            f"url=://x,postgresql://u:{QUERY_MARK}@h/db?a=1",
+            "url=://x,postgresql://[userinfo removed]@h/db?[query removed]",
+        ),
+        (f"('a?b','/x?token={QUERY_MARK}')", "('a?b','/x?[query removed]')"),
+        (f'"http://h/p?q={QUERY_MARK}"', '"http://h/p?[query removed]"'),
+        ("<http://h/p?q=1>", "<http://h/p?[query removed]>"),
         ("and/or? either way", "and/or? either way"),
+        ("x?a", "x?a"),
+        ("really?yes", "really?yes"),
         ("https://host/p", "https://host/p"),
     ],
 )
@@ -330,6 +352,10 @@ def test_a_record_that_cannot_be_formatted_is_reported_on_stdout(
         "a://" * 4000 + "?x",
         "a" * 16000 + "://h?x",
         "@" * 8000 + "x://" + "@" * 8000,
+        "=://" * 5000,
+        "=://" * 5000 + "a://u@h",
+        "x?" * 8000,
+        "/?" * 8000,
     ],
     ids=[
         "slashes",
@@ -340,6 +366,10 @@ def test_a_record_that_cannot_be_formatted_is_reported_on_stdout(
         "schemes-query",
         "long-scheme",
         "ats",
+        "bare-schemes",
+        "bare-schemes-url",
+        "questions",
+        "slash-questions",
     ],
 )
 def test_the_cut_takes_time_in_proportion_to_a_long_line(text: str) -> None:

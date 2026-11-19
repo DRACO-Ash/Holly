@@ -96,3 +96,5 @@ review security-reviewer PASS 8cc6f2e7ca3c195ce7e6c1c9725b722c764ddf45 # V0.21, 
 review engineering-reviewer FAIL 8cc6f2e7ca3c195ce7e6c1c9725b722c764ddf45 # V0.21, round 1: 500 left a second line without the id; logconfig_dict untested
 review engineering-reviewer FAIL ee45ea6ebf6d9ab7a448a9fc09cd21a62368e054 # V0.21, round 2: the wider query cut is quadratic on long paths; 2 changed lines untested
 review security-reviewer FAIL ee45ea6ebf6d9ab7a448a9fc09cd21a62368e054 # V0.21, round 2: unauthenticated slow-path stall from the quadratic cut; cut gaps
+review security-reviewer PASS 92580f54908cb85b77aff1b3d2a7911955d2a6e6 # V0.21, round 3: linear cut holds; two minor cut gaps
+review engineering-reviewer FAIL 92580f54908cb85b77aff1b3d2a7911955d2a6e6 # V0.21, round 3: one-cut-or-the-other leaked queries holding URLs; 3 mutants survived
