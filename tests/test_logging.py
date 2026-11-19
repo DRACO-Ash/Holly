@@ -138,6 +138,13 @@ def test_a_query_string_is_cut_from_every_part_of_a_line() -> None:
         ("<http://h/p?q=1>", "<http://h/p?[query removed]>"),
         ("and/or? either way", "and/or? either way"),
         ("x?a", "x?a"),
+        ("a@b,https://h/p", "a@b,https://h/p"),
+        ("https://@host/p", "https://[userinfo removed]@host/p"),
+        (f"://u:{QUERY_MARK}@h", "://[userinfo removed]@h"),
+        (f"//u:{QUERY_MARK}@h/db", "//[userinfo removed]@h/db"),
+        (f"://u:{QUERY_MARK}@h/", "://[userinfo removed]@h/"),
+        (f"s3://u:{QUERY_MARK}@bucket", "s3://[userinfo removed]@bucket"),
+        ("x=://y@h", "x=://y@h"),
         ("really?yes", "really?yes"),
         ("https://host/p", "https://host/p"),
     ],
@@ -422,3 +429,16 @@ def test_a_report_that_cannot_be_written_is_dropped_quietly(
     handler.emit(record)
     monkeypatch.undo()
     assert capsys.readouterr().err == ""
+
+
+def test_a_mark_on_the_exceptions_class_drops_the_line_without_raising(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    class MarkedError(Exception):
+        _holly_logged = True
+
+    configure_logging()
+    server = logging.getLogger("uvicorn.error")
+    server.error("Exception in ASGI application", exc_info=MarkedError())
+    captured = capsys.readouterr()
+    assert (captured.out, captured.err) == ("", "")

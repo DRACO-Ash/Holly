@@ -41,7 +41,9 @@ _SEVERITIES: tuple[tuple[int, str, int], ...] = (
 # password, then the query. Each is a few scans from left to right, so the cut takes time in
 # proportion to the line's length: a request line can be about 16 KiB long, from anyone,
 # signed in or not. Known limits: a URL with a space or quote inside it is cut only up to that
-# character, and a ? with no / before it in its piece ("x?a=1") is left alone, as prose.
+# character; a ? with no / before it in its piece ("x?a=1", "cb?code=1") is left alone, as
+# prose; and a malformed URL without "://" or a leading "//" ("http:/u:p@h") keeps its user and
+# password.
 _ENDS = re.compile(r"([\s\"'<>])")
 _SCHEME_CHARACTERS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+.-")
 _QUERY_CUT = "?[query removed]"
@@ -64,13 +66,15 @@ def severity(level: int) -> tuple[str, int]:
 
 
 def _scheme_end(piece: str) -> int:
-    """Where the first "://" with a scheme character just before it ends, or -1."""
+    """Where a URL's user and password could start: after the first "://" that opens the piece
+    or has a scheme character just before it, or after a "//" that opens the piece (a URL
+    without its scheme); -1 when there is none."""
     marker = piece.find("://")
     while marker >= 0:
-        if marker > 0 and piece[marker - 1] in _SCHEME_CHARACTERS:
+        if marker == 0 or piece[marker - 1] in _SCHEME_CHARACTERS:
             return marker + 3
         marker = piece.find("://", marker + 3)
-    return -1
+    return 2 if piece.startswith("//") else -1
 
 
 def _cut_userinfo(piece: str) -> str:

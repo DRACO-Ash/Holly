@@ -98,3 +98,5 @@ review engineering-reviewer FAIL ee45ea6ebf6d9ab7a448a9fc09cd21a62368e054 # V0.2
 review security-reviewer FAIL ee45ea6ebf6d9ab7a448a9fc09cd21a62368e054 # V0.21, round 2: unauthenticated slow-path stall from the quadratic cut; cut gaps
 review security-reviewer PASS 92580f54908cb85b77aff1b3d2a7911955d2a6e6 # V0.21, round 3: linear cut holds; two minor cut gaps
 review engineering-reviewer FAIL 92580f54908cb85b77aff1b3d2a7911955d2a6e6 # V0.21, round 3: one-cut-or-the-other leaked queries holding URLs; 3 mutants survived
+review security-reviewer PASS 8be505ac18db4152ea321e9a706c2656a2f768fc # V0.21, round 4: rebuilt cut closes the round 3 leaks, linear; two minors
+review engineering-reviewer FAIL 8be505ac18db4152ea321e9a706c2656a2f768fc # V0.21, round 4: 3 cut mutants survived the whole suite; class-mark branch untested
