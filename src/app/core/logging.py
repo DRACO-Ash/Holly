@@ -221,7 +221,8 @@ class StdoutHandler(logging.Handler):
         except Exception:  # noqa: BLE001  logging must never raise into the caller
             self.handleError(record)
 
-    def handleError(self, record: logging.LogRecord) -> None:  # noqa: N802  logging's name
+    # The logging module's own method name.
+    def handleError(self, record: logging.LogRecord) -> None:  # noqa: N802
         kind, error, trace = sys.exc_info()
         try:
             _write(
@@ -232,7 +233,8 @@ class StdoutHandler(logging.Handler):
                     exc_info=(kind, error, trace) if kind and error else None,
                 )
             )
-        except Exception:  # noqa: BLE001  stdout itself is gone: nothing more can be said
+        # Stdout itself is gone: nothing more can be said.
+        except Exception:  # noqa: BLE001
             return
 
 

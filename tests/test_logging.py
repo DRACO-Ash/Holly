@@ -409,7 +409,8 @@ def test_the_cut_takes_time_in_proportion_to_a_long_line(text: str) -> None:
 def test_a_mark_that_cannot_be_set_leaves_the_servers_line_written(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    class Unmarkable(Exception):  # noqa: N818  a test double
+    # A test double, named for what it does.
+    class Unmarkable(Exception):  # noqa: N818
         def __setattr__(self, name: str, value: object) -> None:
             raise AttributeError(name)
 

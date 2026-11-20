@@ -9,6 +9,10 @@
 
 All notable changes to Holly are recorded here, newest first. Holly V0.2 is the Daily Operations Dashboard fused into the Holly App Store project and renamed; the sections after it are the Daily Operations Dashboard's own record, kept as written. Holly's releases are numbered V<major>.<minor>, and each has a row in `docs/AUDIT-LOG.md` with the checks that ran.
 
+## Holly V0.22 (2026-11-20)
+
+The one code smell that stopped V0.21. V0.21's upload failed Code Quality on 1 new issue (fact, from the console on 20 November 2026): python:S7632 at `src/app/gunicorn_conf.py:36`, an issue suppression comment Sonar could not read. The comment's explanation held a comma, which, by inference, Sonar read as a second, invalid rule code. The explanation of each suppression V0.21 added now sits on the line above, so each `# noqa:` names its codes alone. V0.22 carries V0.20's Object Lens and V0.21's logging standard to the platform unchanged.
+
 ## Holly V0.21 (2026-11-19)
 
 The App Store's logging standard, and the 2 code smells that stopped V0.20. V0.20's upload passed 11 of 12 stages and failed Code Quality on 2 new issues (fact, from the console on 19 November 2026), so V0.21 carries the Object Lens to the platform with these fixes.

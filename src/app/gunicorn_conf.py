@@ -33,7 +33,8 @@ def _refuse(error: Exception) -> NoReturn:
 def _refusing_on_error[T](step: Callable[[], T]) -> T:
     try:
         return step()
-    except Exception as error:  # noqa: BLE001  every refusal is logged the same way, then exits
+    # Every refusal is logged the same way and then exits.
+    except Exception as error:  # noqa: BLE001
         _refuse(error)
 
 
