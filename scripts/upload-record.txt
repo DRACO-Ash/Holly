@@ -106,3 +106,5 @@ review security-reviewer PASS d3c85154090f6d717d93132f4b37eadf5dd7e39d # V0.21, 
 review engineering-reviewer FAIL d3c85154090f6d717d93132f4b37eadf5dd7e39d # V0.21, round 6: wider battery: 3 leaking cut mutants and a loose email check survived
 review security-reviewer PASS c82dcea9fa78ddcbc9d5f2cadc46812eca2caa4c # V0.21, round 7: no finding
 review engineering-reviewer PASS c82dcea9fa78ddcbc9d5f2cadc46812eca2caa4c # V0.21, round 7: 87 of 93 mutants caught, 6 equivalent or outside the diff
+review security-reviewer PASS 06a64e45cc9065dbf4d43fa05aeab5c6ecd3a638 # V0.22, round 1: comments and version only; no finding
+review engineering-reviewer PASS 06a64e45cc9065dbf4d43fa05aeab5c6ecd3a638 # V0.22, round 1: same syntax tree, suppressions still apply; 2 minors
